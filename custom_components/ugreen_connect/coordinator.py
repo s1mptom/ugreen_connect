@@ -42,6 +42,7 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.rtcx = rtcx
         self._debug_dump = debug_dump
         self._dumped = False
+        self._power_errors: dict[str, str] = {}
         self._products: dict[str, Any] = {}
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -67,6 +68,7 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # per-device, so a failure there must not take the inventory down with
         # it -- the connectivity sensors stay useful either way.
         power: dict[str, Any] = {}
+        errors: dict[str, str] = {}
         for device in devices:
             key = device_key(device)
             iot_id = (device.get("extra") or {}).get("iotId")
@@ -74,14 +76,25 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 continue
             try:
                 power[key] = await self.rtcx.async_power(iot_id)
+                if power[key] is None:
+                    errors[key] = "device returned no usable PT_data frame"
             except UgreenError as err:
-                _LOGGER.debug("power for %s failed: %s", key, err)
+                # Warn rather than debug: without this the entities simply never
+                # appear, with nothing anywhere saying why.
+                if self._power_errors.get(key) != str(err):
+                    _LOGGER.warning("Live power unavailable for %s: %s", key, err)
+                errors[key] = str(err)
                 power[key] = None
+        self._power_errors = errors
 
-        data = {"devices": devices, "detail": self._products, "power": power}
+        data = {
+            "devices": devices,
+            "detail": self._products,
+            "power": power,
+            "power_errors": errors,
+        }
 
-        if self._debug_dump and not self._dumped:
-            self._dumped = True
+        if self._debug_dump:
             await self.hass.async_add_executor_job(self._write_dump, data)
 
         return data

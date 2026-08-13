@@ -30,6 +30,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
         session,
         REGIONS.get(region, REGIONS[DEFAULT_REGION]),
         DEFAULT_LANGUAGE,
+        region,
     )
 
     try:

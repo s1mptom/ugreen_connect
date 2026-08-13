@@ -40,6 +40,7 @@ from .const import (
     CODE_NO_PERMISSION,
     CODE_OK,
     DEFAULT_LANGUAGE,
+    DEFAULT_REGION,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -84,10 +85,14 @@ class UgreenApi:
         session: aiohttp.ClientSession,
         base_url: str,
         language: str = DEFAULT_LANGUAGE,
+        region: str = DEFAULT_REGION,
     ) -> None:
         self._session = session
         self._base = base_url.rstrip("/")
         self._language = language
+        # The app calls the region `serverNodeCode`, and some endpoints reject
+        # the request outright when it is missing.
+        self._region = region
         self._token: str | None = None
         self._refresh_token: str | None = None
         self._user_id: str | None = None
@@ -356,6 +361,11 @@ class UgreenApi:
                 "client_id": client_id,
                 "response_type": "code",
                 "state": str(uuid.uuid4()),
+            },
+            # This endpoint is the one that insists on knowing the region.
+            extra_headers={
+                "serverNodeCode": self._region,
+                "x-ugreen-app-system": "android",
             },
         )
         code = (payload.get("data") or {}).get("code")
