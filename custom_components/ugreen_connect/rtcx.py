@@ -42,6 +42,7 @@ from .api import UgreenApi, UgreenAuthError, UgreenError
 from .const import (
     GATEWAY_LANGUAGE,
     GATEWAY_OK,
+    HANDSHAKE_PROTOCOL,
     POWER_SETTLE_SECONDS,
     PT_DATA_MAX_AGE,
     RTCX_TOKEN_MARGIN,
@@ -60,12 +61,23 @@ FRAME_QUERY = 0xAA
 FRAME_NOTIFY = 0xEE
 FRAME_SETTING = 0x11
 
+QUERY_GET_DEVICE_STATE = 1
+QUERY_GET_SN = 5
 QUERY_GET_POWER_INFO = 6
+QUERY_GET_UPGRADE_STATUS = 7
+QUERY_GET_WIFI_SSID = 8
+QUERY_GET_PRODUCT_VERSION = 10
+
+SETTING_SET_BRIGHTNESS = 1
 
 # One 7-byte record per port, then one handshake-protocol byte per port.
 PORT_RECORD = 7
 PORT_COUNT = 8
 POWER_BODY_MIN = PORT_RECORD * PORT_COUNT
+
+# Offset of the brightness byte in the GET_DEVICE_STATE reply, confirmed by
+# setting a value and reading it back.
+STATE_BRIGHTNESS = 2
 
 
 def crc16_modbus(data: bytes) -> int:
@@ -84,29 +96,37 @@ def build_frame(frame_type: int, cmd: int, payload: bytes = b"\x00") -> str:
     return (body + crc16_modbus(body).to_bytes(2, "little")).hex().upper()
 
 
-def parse_power_frame(value: str) -> dict[str, dict[str, float]] | None:
-    """Decode a ``GET_POWER_INFO`` reply into ``{port_name: {volt, amp, watt}}``.
-
-    Returns None for anything else -- the property also holds replies to other
-    commands, and the last one simply stays there until the device sends a new.
-    """
+def frame_body(value: str, frame_type: int, cmd: int) -> bytes | None:
+    """Return a frame's payload if it is the reply we asked for and the CRC holds."""
     try:
         raw = bytes.fromhex(value)
     except ValueError:
         _LOGGER.debug("PT_data is not hex: %r", value)
         return None
-
     if len(raw) < 6:
         return None
-    frame_type, cmd = raw[0], raw[1]
     length = int.from_bytes(raw[2:4], "big")
     body = raw[4 : 4 + length]
     if len(body) != length:
         return None
-    if crc16_modbus(raw[: 4 + length]) != int.from_bytes(raw[4 + length : 6 + length], "little"):
+    if crc16_modbus(raw[: 4 + length]) != int.from_bytes(
+        raw[4 + length : 6 + length], "little"
+    ):
         _LOGGER.debug("PT_data CRC mismatch: %s", value)
         return None
-    if frame_type != FRAME_QUERY or cmd != QUERY_GET_POWER_INFO:
+    if raw[0] != frame_type or raw[1] != cmd:
+        return None
+    return body
+
+
+def parse_power_frame(value: str) -> dict[str, dict[str, Any]] | None:
+    """Decode a ``GET_POWER_INFO`` reply into ``{port_name: {volt, amp, watt}}``.
+
+    Returns None for anything else -- the property also holds replies to other
+    commands, and the last one simply stays there until the device sends a new.
+    """
+    body = frame_body(value, FRAME_QUERY, QUERY_GET_POWER_INFO)
+    if body is None:
         return None
     if len(body) < POWER_BODY_MIN:
         _LOGGER.debug("power body too short: %d < %d", len(body), POWER_BODY_MIN)
@@ -115,13 +135,19 @@ def parse_power_frame(value: str) -> dict[str, dict[str, float]] | None:
     def u16(offset: int) -> int:
         return int.from_bytes(body[offset : offset + 2], "big")
 
-    ports: dict[str, dict[str, float]] = {}
+    ports: dict[str, dict[str, Any]] = {}
     for index, name in enumerate(X783_PORTS):
         base = PORT_RECORD * index
+        # The protocol byte block follows the port records; a port that has
+        # nothing attached reports 0 ("none").
+        proto_at = POWER_BODY_MIN + index
         ports[name] = {
             "voltage": u16(base) / 10,
             "current": u16(base + 2) / 10,
             "power": u16(base + 4) / 10,
+            "protocol": HANDSHAKE_PROTOCOL.get(
+                body[proto_at] if len(body) > proto_at else 0, "unknown"
+            ),
         }
     return ports
 
@@ -272,45 +298,78 @@ class RtcxClient:
         payload = await self.call("/client/thing/status/get", {"iotId": iot_id})
         return (payload.get("data") or {}).get("status") == 1
 
+    async def _ask(self, iot_id: str, frame_type: int, cmd: int,
+                   payload: bytes = b"\x00") -> str | None:
+        """Send one frame and return the raw PT_data the device answers with.
+
+        The device replies asynchronously: the write only queues the frame, and
+        the answer turns up as the property's new value a moment later.
+        """
+        await self.call(
+            "/client/thing/properties/set",
+            {"iotId": iot_id, "items": {"PT_data": build_frame(frame_type, cmd, payload)}},
+        )
+        await asyncio.sleep(POWER_SETTLE_SECONDS)
+        payload_map = await self.call(
+            "/client/thing/properties/get/all", {"iotId": iot_id}
+        )
+        prop_map = (payload_map.get("data") or {}).get("propertyMap") or {}
+        entries = prop_map.get("PT_data") or []
+        if not entries:
+            return None
+        entry = entries[0]
+        stamp = entry.get("time")
+        # The property keeps its last frame forever, so an unresponsive device
+        # would otherwise look like it is still answering.
+        if stamp and (time.time() * 1000 - stamp) > PT_DATA_MAX_AGE * 1000:
+            _LOGGER.debug("PT_data for %s is stale (%s)", iot_id, stamp)
+            return None
+        return entry.get("value")
+
+    async def async_text_query(self, iot_id: str, cmd: int) -> str | None:
+        """Queries whose reply is a plain ASCII string (SSID, serial number)."""
+        value = await self._ask(iot_id, FRAME_QUERY, cmd)
+        body = frame_body(value, FRAME_QUERY, cmd) if value else None
+        return body.decode("ascii", "replace").strip("\x00").strip() if body else None
+
+    async def async_firmware_version(self, iot_id: str) -> str | None:
+        """Three bytes, one per version component."""
+        value = await self._ask(iot_id, FRAME_QUERY, QUERY_GET_PRODUCT_VERSION)
+        body = frame_body(value, FRAME_QUERY, QUERY_GET_PRODUCT_VERSION) if value else None
+        return ".".join(str(b) for b in body) if body else None
+
+    async def async_brightness(self, iot_id: str) -> int | None:
+        value = await self._ask(iot_id, FRAME_QUERY, QUERY_GET_DEVICE_STATE)
+        body = frame_body(value, FRAME_QUERY, QUERY_GET_DEVICE_STATE) if value else None
+        if not body or len(body) <= STATE_BRIGHTNESS:
+            return None
+        return body[STATE_BRIGHTNESS]
+
+    async def async_set_brightness(self, iot_id: str, value: int) -> None:
+        level = max(0, min(100, int(value)))
+        await self.call(
+            "/client/thing/properties/set",
+            {
+                "iotId": iot_id,
+                "items": {
+                    "PT_data": build_frame(FRAME_SETTING, SETTING_SET_BRIGHTNESS, bytes([level]))
+                },
+            },
+        )
+
     async def async_power(self, iot_id: str) -> dict[str, Any] | None:
         """Ask the charger for a power report and read the answer back.
 
         The device replies asynchronously: the write only queues the query, and
         the reply shows up as the property's new value a moment later.
         """
-        await self.call(
-            "/client/thing/properties/set",
-            {
-                "iotId": iot_id,
-                "items": {"PT_data": build_frame(FRAME_QUERY, QUERY_GET_POWER_INFO)},
-            },
-        )
-        await asyncio.sleep(POWER_SETTLE_SECONDS)
-
-        payload = await self.call("/client/thing/properties/get/all", {"iotId": iot_id})
-        prop_map = (payload.get("data") or {}).get("propertyMap") or {}
-        entries = prop_map.get("PT_data") or []
-        if not entries:
-            return None
-        entry = entries[0]
-        value, stamp = entry.get("value"), entry.get("time")
-
-        # The property keeps the last frame forever, so a device that stopped
-        # answering would otherwise look like it is reporting steady values.
-        if stamp and (time.time() * 1000 - stamp) > PT_DATA_MAX_AGE * 1000:
-            _LOGGER.debug("PT_data for %s is stale (%s)", iot_id, stamp)
-            return None
-
+        value = await self._ask(iot_id, FRAME_QUERY, QUERY_GET_POWER_INFO)
         ports = parse_power_frame(value) if value else None
         if ports is None:
             return None
-
-        work_mode = (prop_map.get("DeviceWorkMode") or [{}])[0].get("value")
         return {
             "ports": ports,
             "total": round(sum(port["power"] for port in ports.values()), 1),
-            "work_mode": work_mode,
-            "updated": stamp,
         }
 
 

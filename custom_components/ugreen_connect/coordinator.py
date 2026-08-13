@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import timedelta
 from typing import Any
 
@@ -13,8 +14,13 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import UgreenApi, UgreenAuthError, UgreenError
-from .const import DEBUG_DUMP_FILE, DEFAULT_SCAN_INTERVAL, DOMAIN
-from .rtcx import RtcxClient
+from .const import (
+    DEBUG_DUMP_FILE,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    STATIC_INFO_INTERVAL,
+)
+from .rtcx import QUERY_GET_WIFI_SSID, RtcxClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,6 +49,7 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._debug_dump = debug_dump
         self._dumped = False
         self._power_errors: dict[str, str] = {}
+        self._static: dict[str, tuple[dict[str, Any], float]] = {}
         self._products: dict[str, Any] = {}
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -78,6 +85,9 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 power[key] = await self.rtcx.async_power(iot_id)
                 if power[key] is None:
                     errors[key] = "device returned no usable PT_data frame"
+                else:
+                    power[key]["brightness"] = await self.rtcx.async_brightness(iot_id)
+                    power[key].update(await self._static_info(key, iot_id))
             except UgreenError as err:
                 # Warn rather than debug: without this the entities simply never
                 # appear, with nothing anywhere saying why.
@@ -98,6 +108,21 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self.hass.async_add_executor_job(self._write_dump, data)
 
         return data
+
+    async def _static_info(self, key: str, iot_id: str) -> dict[str, Any]:
+        """Firmware version and SSID -- cached, since each costs a round trip to
+        the device and neither changes between polls."""
+        cached, fetched_at = self._static.get(key, ({}, 0.0))
+        if cached and time.time() - fetched_at < STATIC_INFO_INTERVAL:
+            return cached
+        info = {
+            "firmware": await self.rtcx.async_firmware_version(iot_id),
+            "ssid": await self.rtcx.async_text_query(iot_id, QUERY_GET_WIFI_SSID),
+        }
+        # Keep whatever was already known if the device declined to answer.
+        info = {k: v if v is not None else cached.get(k) for k, v in info.items()}
+        self._static[key] = (info, time.time())
+        return info
 
     def _write_dump(self, data: dict[str, Any]) -> None:
         """Write one raw snapshot so the entity layer can be built from real data."""

@@ -26,7 +26,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import UgreenConfigEntry
-from .const import DOMAIN, X783_PORTS
+from .const import DOMAIN, HANDSHAKE_PROTOCOL, X783_PORTS
 from .coordinator import UgreenCoordinator, device_key
 
 # extra.onlineStatus / extra.networkStatus are 1 when up, 0 when down.
@@ -72,13 +72,15 @@ async def async_setup_entry(
             # voltage; the report pads unused slots with zeroes.
             for port in X783_PORTS:
                 values = reading["ports"].get(port) or {}
-                if not any(values.values()) or (key, port) in known_ports:
+                live = any(v for k, v in values.items() if k in MEASUREMENTS)
+                if not live or (key, port) in known_ports:
                     continue
                 known_ports.add((key, port))
                 new.extend(
                     UgreenPortSensor(coordinator, key, port, kind)
                     for kind in MEASUREMENTS
                 )
+                new.append(UgreenPortProtocolSensor(coordinator, key, port))
         if new:
             async_add_entities(new)
 
@@ -122,6 +124,8 @@ class UgreenDeviceEntity(CoordinatorEntity[UgreenCoordinator], SensorEntity):
             model_id=self._product.get("productNo"),
             serial_number=self._key,
         )
+        if firmware := (self._reading or {}).get("firmware"):
+            info["sw_version"] = firmware
         if mac := device.get("deviceMac"):
             info["connections"] = {(CONNECTION_NETWORK_MAC, mac)}
         return info
@@ -192,6 +196,31 @@ class UgreenPortSensor(UgreenDeviceEntity):
         return (reading["ports"].get(self._port) or {}).get(self._kind)
 
 
+class UgreenPortProtocolSensor(UgreenDeviceEntity):
+    """Fast-charge protocol a port negotiated with whatever is plugged into it."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = sorted(set(HANDSHAKE_PROTOCOL.values()) | {"unknown"})
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: UgreenCoordinator, key: str, port: str) -> None:
+        super().__init__(coordinator, key)
+        self._port = port
+        self._attr_name = f"{port} protocol"
+        self._attr_unique_id = f"{key}_{port}_protocol"
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._reading is not None
+
+    @property
+    def native_value(self) -> str | None:
+        reading = self._reading
+        if not reading:
+            return None
+        return (reading["ports"].get(self._port) or {}).get("protocol")
+
+
 class UgreenTotalPowerSensor(UgreenDeviceEntity):
     """Combined output of every port."""
 
@@ -218,6 +247,6 @@ class UgreenTotalPowerSensor(UgreenDeviceEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         reading = self._reading or {}
         return {
-            "work_mode": reading.get("work_mode"),
-            "updated": reading.get("updated"),
+            "firmware": reading.get("firmware"),
+            "ssid": reading.get("ssid"),
         }
