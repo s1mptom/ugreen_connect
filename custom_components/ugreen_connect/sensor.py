@@ -20,6 +20,7 @@ from homeassistant.const import (
     UnitOfPower,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -51,6 +52,18 @@ async def async_setup_entry(
     known: set[str] = set()
     known_ports: set[tuple[str, str]] = set()
 
+    # A port only reveals itself by drawing power, but once it has, its entities
+    # should stay put -- otherwise unplugging a cable makes them vanish on the
+    # next restart, taking their history with them. The registry remembers.
+    registry = er.async_get(hass)
+    seen_before = {
+        (key, port)
+        for key in {device_key(d) for d in coordinator.data.get("devices", [])}
+        if key
+        for port in X783_PORTS
+        if registry.async_get_entity_id("sensor", DOMAIN, f"{key}_{port}_power")
+    }
+
     @callback
     def _add_new_devices() -> None:
         new: list[SensorEntity] = []
@@ -73,7 +86,7 @@ async def async_setup_entry(
             for port in X783_PORTS:
                 values = reading["ports"].get(port) or {}
                 live = any(v for k, v in values.items() if k in MEASUREMENTS)
-                if not live or (key, port) in known_ports:
+                if (not live and (key, port) not in seen_before) or (key, port) in known_ports:
                     continue
                 known_ports.add((key, port))
                 new.extend(
