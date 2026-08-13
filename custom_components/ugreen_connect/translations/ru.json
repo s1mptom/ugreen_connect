@@ -1,0 +1,55 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "UGREEN Connect",
+        "description": "Войдите тем же аккаунтом, что и в приложении UgreenConnect. Выберите регион, в котором зарегистрирован аккаунт — между регионами аккаунты не общие.",
+        "data": {
+          "email": "Email",
+          "password": "Пароль",
+          "region": "Регион",
+          "debug_dump": "Сохранять сырой ответ облака в папку конфигурации"
+        },
+        "data_description": {
+          "debug_dump": "Пишет ugreen_connect_debug.json один раз за перезапуск. Нужно, пока интеграция дорабатывается; потом можно выключить."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Повторная авторизация UGREEN Connect",
+        "description": "Пароль для {email} отклонён. Введите его заново.",
+        "data": {
+          "password": "Пароль"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Не удалось связаться с облаком UGREEN.",
+      "invalid_auth": "Аккаунт или пароль отклонены."
+    },
+    "abort": {
+      "already_configured": "Этот аккаунт уже добавлен.",
+      "reauth_successful": "Повторная авторизация выполнена."
+    }
+  },
+  "selector": {
+    "region": {
+      "options": {
+        "europe": "Европа",
+        "america": "Америка",
+        "asia": "Азия / остальной мир",
+        "china": "Китай"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Статус в облаке",
+        "state": {
+          "online": "В сети",
+          "offline": "Не в сети"
+        }
+      }
+    }
+  }
+}

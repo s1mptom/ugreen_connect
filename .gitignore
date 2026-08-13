@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+._*
+
+# Never commit captures or sessions -- they carry account tokens.
+*.har
+*.flows
+*session*.json
+cred.json
+rtcxkey.json
+ugreen_connect_debug.json

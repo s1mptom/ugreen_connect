@@ -1,0 +1,55 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "UGREEN Connect",
+        "description": "Sign in with the same account you use in the UgreenConnect app. Pick the region your account was registered in — accounts are not shared between regions.",
+        "data": {
+          "email": "Email",
+          "password": "Password",
+          "region": "Region",
+          "debug_dump": "Write a raw cloud snapshot to the config folder"
+        },
+        "data_description": {
+          "debug_dump": "Saves ugreen_connect_debug.json once per restart. Useful while the integration is still being built out; safe to turn off later."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate UGREEN Connect",
+        "description": "The password for {email} was rejected. Enter it again.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the UGREEN cloud.",
+      "invalid_auth": "The account or password was rejected."
+    },
+    "abort": {
+      "already_configured": "This account is already set up.",
+      "reauth_successful": "Re-authentication was successful."
+    }
+  },
+  "selector": {
+    "region": {
+      "options": {
+        "europe": "Europe",
+        "america": "Americas",
+        "asia": "Asia / Rest of world",
+        "china": "China"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Cloud status",
+        "state": {
+          "online": "Online",
+          "offline": "Offline"
+        }
+      }
+    }
+  }
+}
