@@ -32,23 +32,32 @@ const css = `
   .seg button[aria-pressed="true"] { background: var(--primary-color);
                                      color: var(--text-primary-color); }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-          gap: 10px; }
+          gap: 10px 10px; }
+  .cell { display: flex; flex-direction: column; gap: 5px; }
+  .cell .lab { font-size: .8em; color: var(--secondary-text-color); text-align: center;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tile { position: relative; border: 2px solid transparent; border-radius: 8px;
           overflow: hidden; cursor: pointer; background: var(--secondary-background-color);
-          aspect-ratio: ${RATIO}; padding: 0; }
+          aspect-ratio: ${RATIO}; padding: 0; container-type: size; }
   /* Pictures are held rotated a quarter turn anticlockwise, so the preview is
-     turned back. The box is sized with the tile's sides swapped, which after
-     the rotation lands exactly on the tile. */
+     turned back. The box takes the tile's sides swapped, which after the
+     rotation lands exactly on it. The sides are read as container units rather
+     than percentages: a percentage would be measured against a box the tile's
+     own border has already shrunk out of ratio, leaving bare strips at both
+     ends once the picture is turned. */
   .tile img { position: absolute; top: 50%; left: 50%;
-              width: ${(100 / RATIO).toFixed(3)}%; height: ${(100 * RATIO).toFixed(3)}%;
-              object-fit: cover;
+              width: 100cqh; height: 100cqw; object-fit: cover;
               transform: translate(-50%, -50%) rotate(90deg); display: block; }
-  .tile[aria-pressed="true"] { border-color: var(--primary-color); }
-  .tile .cap { position: absolute; left: 0; right: 0; bottom: 0; font-size: .72em;
-               background: rgba(0,0,0,.45); color: #fff; padding: 2px 5px;
-               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile[aria-pressed="true"] { border-color: var(--success-color, #4caf50); }
   .tile.plain { display: flex; align-items: center; justify-content: center;
                 color: var(--secondary-text-color); font-size: .85em; }
+  /* The app marks the chosen picture and clock with a green tick in the corner;
+     a border alone is easy to miss on a dark tile. */
+  .mark { position: absolute; right: 4px; bottom: 4px; width: 18px; height: 18px;
+          border-radius: 50%; background: var(--success-color, #4caf50); color: #fff;
+          display: none; align-items: center; justify-content: center;
+          font-size: 12px; line-height: 1; }
+  [aria-pressed="true"] > .mark { display: flex; }
   .styles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .style { display: flex; flex-direction: column; gap: 5px; }
   .style .lab { font-size: .8em; color: var(--secondary-text-color); text-align: center; }
@@ -58,14 +67,24 @@ const css = `
            border: 2px solid transparent; border-radius: 8px; padding: 0;
            cursor: pointer; background: #0b0b0b; overflow: hidden;
            aspect-ratio: ${RATIO}; }
-  .clock[aria-pressed="true"] { border-color: var(--primary-color); }
-  .clock .face { position: absolute; inset: 0; display: flex; flex-direction: column;
-                 justify-content: center; color: #fff; line-height: 1.1; }
-  .clock .face.centre { align-items: center; }
-  .clock .face.left { align-items: flex-start; padding-left: 8%; }
-  .clock .face b { font-size: 19cqw; font-weight: 700; letter-spacing: .01em; }
-  .clock .face i { font-size: 5.2cqw; font-style: normal; opacity: .8;
-                   letter-spacing: .1em; margin-top: 2cqw; }
+  .clock[aria-pressed="true"] { border-color: var(--success-color, #4caf50); }
+  /* Both styles hang the date under the time, flush with it; what the style
+     changes is where that pair sits -- middle for one, left for the other. */
+  .face { position: absolute; inset: 0; display: flex; align-items: center;
+          color: #fff; line-height: 1.1; }
+  .face.centre { justify-content: center; }
+  .face.left { justify-content: flex-start; padding-left: 7%; }
+  .face .blk { display: flex; flex-direction: column; align-items: flex-start; }
+  .face b { font-size: var(--fs, 15cqw); font-weight: 700; letter-spacing: .01em; }
+  .face i { font-size: var(--fd, 5cqw); font-style: normal; opacity: .85;
+            letter-spacing: .1em; margin-top: 2cqw; }
+  /* The picture below is the charger's own, so the clock needs its own contrast. */
+  .hero .face { text-shadow: 0 1px 6px rgba(0,0,0,.65); --fs: 10cqw; --fd: 3.6cqw; }
+  .hero { position: relative; width: 100%; aspect-ratio: ${RATIO}; border-radius: 10px;
+          overflow: hidden; background: #0b0b0b; container-type: size; }
+  .hero img { position: absolute; top: 50%; left: 50%;
+              width: 100cqh; height: 100cqw; object-fit: cover;
+              transform: translate(-50%, -50%) rotate(90deg); display: block; }
   .stage { position: relative; width: 100%; aspect-ratio: ${RATIO * 1.5};
            background: #202020; border-radius: 8px; overflow: hidden;
            touch-action: none; cursor: grab; }
@@ -137,6 +156,7 @@ class UgreenWallpaperCard extends HTMLElement {
             <ha-switch class="power"></ha-switch>
           </div>
           <div class="settings">
+            <div class="hero"><span class="face centre"><span class="blk"><b></b><i></i></span></span></div>
             <div class="field fmt"><span>Time format</span>
               <span class="seg">
                 <button data-fmt="12h" aria-pressed="false">12 h</button>
@@ -148,13 +168,15 @@ class UgreenWallpaperCard extends HTMLElement {
               <div class="styles">
                 <div class="style">
                   <button class="clock" data-sty="style_1" aria-pressed="false">
-                    <span class="face centre"><b>09:00</b><i>MON, JUN 09</i></span>
+                    <span class="face centre"><span class="blk"><b>09:00</b><i>MON, JUN 09</i></span></span>
+                    <span class="mark">✓</span>
                   </button>
                   <span class="lab">Style 1</span>
                 </div>
                 <div class="style">
                   <button class="clock" data-sty="style_2" aria-pressed="false">
-                    <span class="face left"><b>09:00</b><i>MON, JUN 09</i></span>
+                    <span class="face left"><span class="blk"><b>09:00</b><i>MON, JUN 09</i></span></span>
+                    <span class="mark">✓</span>
                   </button>
                   <span class="lab">Style 2</span>
                 </div>
@@ -163,6 +185,10 @@ class UgreenWallpaperCard extends HTMLElement {
             <div>
               <div class="field"><span>Wallpaper</span></div>
               <div class="grid"></div>
+            </div>
+            <div class="own" hidden>
+              <div class="field"><span>Custom wallpaper</span></div>
+              <div class="grid mine"></div>
             </div>
             <div class="row">
               <label class="btn primary">Upload a picture<input type="file" accept="image/*" hidden></label>
@@ -184,7 +210,10 @@ class UgreenWallpaperCard extends HTMLElement {
 
     this._power = this.querySelector('.power');
     this._settings = this.querySelector('.settings');
+    this._hero = this.querySelector('.hero');
     this._grid = this.querySelector('.grid');
+    this._mine = this.querySelector('.grid.mine');
+    this._own = this.querySelector('.own');
     this._statusEl = this.querySelector('.status');
     this._editor = this.querySelector('.editor');
     this._stage = this.querySelector('.stage');
@@ -242,22 +271,68 @@ class UgreenWallpaperCard extends HTMLElement {
     const signature = JSON.stringify([list.map((w) => w.id), current]);
     if (signature !== this._gridSig) {
       this._gridSig = signature;
+      // Stock pictures and the owner's own are kept apart, as the app keeps them.
+      const stock = list.filter((w) => w.stock);
+      const mine = list.filter((w) => !w.stock);
       this._grid.innerHTML = '';
-      this._grid.appendChild(this._tile({ id: 'none', label: 'None' }, current === 'none'));
-      list.forEach((w) => this._grid.appendChild(this._tile(w, w.id === current)));
+      this._grid.appendChild(this._tile({ id: 'none' }, 'None', current === 'none'));
+      stock.forEach((w, i) => this._grid.appendChild(
+        this._tile(w, `Wallpaper ${i + 1}`, w.id === current)));
+      this._mine.innerHTML = '';
+      mine.forEach((w, i) => this._mine.appendChild(
+        this._tile(w, mine.length > 1 ? `Picture ${i + 1}` : 'Yours', w.id === current)));
+      this._own.hidden = mine.length === 0;
     }
+    this._drawHero(list, current, sty, fmt);
   }
 
-  _tile(w, active) {
+  /* The strip the charger will actually show: the chosen picture with the clock
+     over it, in the chosen style. The app leads with the same thing. */
+  _drawHero(list, current, sty, fmt) {
+    const pic = list.find((w) => w.id === current && w.url);
+    const img = this._hero.querySelector('img');
+    if (pic && img?.dataset.url !== pic.url) {
+      (img || this._hero.insertAdjacentElement('afterbegin', new Image()))
+        .setAttribute('src', pic.url);
+      this._hero.querySelector('img').dataset.url = pic.url;
+    } else if (!pic && img) {
+      img.remove();
+    }
+    const face = this._hero.querySelector('.face');
+    face.className = `face ${sty === 'style_2' ? 'left' : 'centre'}`;
+    const now = new Date();
+    const h = now.getHours();
+    const hh = fmt === '12h' ? (h % 12 || 12) : h;
+    face.querySelector('b').textContent =
+      `${fmt === '12h' ? hh : String(hh).padStart(2, '0')}:`
+      + String(now.getMinutes()).padStart(2, '0')
+      + (fmt === '12h' ? (h < 12 ? ' AM' : ' PM') : '');
+    face.querySelector('i').textContent = now
+      .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: '2-digit' })
+      .replace(/(\w+) (\w+) (\d+)/, '$1, $2 $3').toUpperCase();
+    if (!this._tick) this._tick = setInterval(() => this._sync(), 20000);
+  }
+
+  disconnectedCallback() {
+    if (this._tick) { clearInterval(this._tick); this._tick = null; }
+  }
+
+  _tile(w, label, active) {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
     const el = document.createElement('button');
     el.className = 'tile' + (w.url ? '' : ' plain');
     el.setAttribute('aria-pressed', String(!!active));
-    el.title = w.name || w.id;
-    el.innerHTML = w.url
-      ? `<img src="${w.url}" loading="lazy" alt=""><span class="cap">${w.stock ? 'Built-in' : 'Yours'}</span>`
-      : (w.label || w.id);
+    // The name goes under the tile either way, so a plain one is left empty.
+    el.innerHTML = (w.url ? `<img src="${w.url}" loading="lazy" alt="">` : '')
+      + '<span class="mark">✓</span>';
     el.addEventListener('click', () => this._select(this._entities().wallpaper, w.id));
-    return el;
+    cell.appendChild(el);
+    const cap = document.createElement('span');
+    cap.className = 'lab';
+    cap.textContent = label;
+    cell.appendChild(cap);
+    return cell;
   }
 
   _select(entityId, option) {
