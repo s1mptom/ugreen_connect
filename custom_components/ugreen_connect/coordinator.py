@@ -152,6 +152,7 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "id": item.get("fileNameMd5"),
                 "url": item.get("url"),
                 "name": item.get("fileName"),
+                "size": item.get("fileSize"),
                 "stock": item.get("stock", True),
             }
             for item in items

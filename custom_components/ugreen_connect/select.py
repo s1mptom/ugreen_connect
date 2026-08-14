@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from typing import Any
 
 from homeassistant.components.select import SelectEntity
@@ -9,7 +11,13 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import UgreenConfigEntry
-from .const import CHARGING_MODES, CLOCK_STYLES, SELECTABLE_MODES, TIME_FORMATS
+from .const import (
+    CHARGING_MODES,
+    CLOCK_STYLES,
+    PICTURE_SETTLE_SECONDS,
+    SELECTABLE_MODES,
+    TIME_FORMATS,
+)
 from .coordinator import UgreenCoordinator, device_key
 from .entity import UgreenDeviceEntity
 
@@ -112,7 +120,16 @@ class UgreenWallpaper(UgreenDeviceEntity, SelectEntity):
 
     @property
     def options(self) -> list[str]:
-        return [self.NONE, *((self._reading or {}).get("wallpapers") or [])]
+        """Everything on the device, plus anything the account offers.
+
+        The two sets only partly overlap: the charger holds the pictures it has
+        downloaded, while the library moves on without it.
+        """
+        reading = self._reading or {}
+        on_device = list(reading.get("wallpapers") or [])
+        offered = [w["id"] for w in reading.get("wallpaper_list") or [] if w.get("id")]
+        seen = dict.fromkeys([*on_device, *offered])
+        return [self.NONE, *seen]
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -129,6 +146,22 @@ class UgreenWallpaper(UgreenDeviceEntity, SelectEntity):
         if not iot_id:
             return
         wallpaper = None if option == self.NONE else option
+
+        # A picture the charger has never downloaded has to be handed over
+        # first, or the screensaver would point at something it does not have
+        # and the screen would simply keep what it was showing.
+        if wallpaper and wallpaper not in (reading.get("wallpapers") or []):
+            offer = next(
+                (w for w in reading.get("wallpaper_list") or [] if w.get("id") == wallpaper),
+                None,
+            )
+            if offer and offer.get("url"):
+                await self.coordinator.rtcx.async_set_picture(
+                    iot_id, offer["url"], offer.get("size") or 0, wallpaper,
+                    stock=bool(offer.get("stock")),
+                )
+                await asyncio.sleep(PICTURE_SETTLE_SECONDS)
+
         # Same block as the screensaver switch: send the current flags back so
         # picking a picture does not also turn the screensaver off.
         await self.coordinator.rtcx.async_set_screensaver(

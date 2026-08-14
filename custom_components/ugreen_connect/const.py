@@ -93,6 +93,10 @@ SLEEP_NEVER: Final = 0
 # re-read often enough that a preview in the dashboard stays loadable.
 WALLPAPER_LIST_INTERVAL: Final = 900
 
+# How long to let the charger download a picture before pointing the screensaver
+# at it.
+PICTURE_SETTLE_SECONDS: Final = 5
+
 # Dumped next to configuration.yaml on every refresh while `debug_dump` is on.
 # It is the raw, unmodified cloud payload and is what the entity layer is built
 # from -- see the integration README.
