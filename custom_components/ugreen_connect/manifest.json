@@ -9,8 +9,5 @@
   "integration_type": "hub",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/s1mptom/ugreen_connect/issues",
-  "requirements": [
-    "Pillow"
-  ],
-  "version": "0.11.1"
+  "version": "0.12.0"
 }

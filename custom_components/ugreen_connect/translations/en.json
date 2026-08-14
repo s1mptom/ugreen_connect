@@ -93,5 +93,29 @@
         }
       }
     }
+  },
+  "services": {
+    "set_wallpaper": {
+      "name": "Set wallpaper",
+      "description": "Upload a picture and show it on the charger's screen. It is cropped to 560x170 from the centre; the card lets you choose the crop yourself.",
+      "fields": {
+        "device_id": {
+          "name": "Charger",
+          "description": "Which charger to send the picture to."
+        },
+        "path": {
+          "name": "File",
+          "description": "Path to an image on the Home Assistant host, e.g. /config/www/desk.jpg."
+        },
+        "url": {
+          "name": "URL",
+          "description": "Address of an image to fetch and upload."
+        },
+        "image": {
+          "name": "Image data",
+          "description": "The picture itself, base64 encoded, with or without a data: prefix."
+        }
+      }
+    }
   }
 }

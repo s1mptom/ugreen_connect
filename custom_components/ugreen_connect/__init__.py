@@ -57,7 +57,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
         _LOGGER.warning("RTCX gateway unavailable, live power disabled: %s", err)
 
     coordinator = UgreenCoordinator(
-        hass, entry, api, rtcx, debug_dump=entry.data.get(CONF_DEBUG_DUMP, True)
+        hass, entry, api, rtcx, debug_dump=entry.data.get(CONF_DEBUG_DUMP, False)
     )
     await coordinator.async_config_entry_first_refresh()
 

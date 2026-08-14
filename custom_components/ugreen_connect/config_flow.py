@@ -45,7 +45,9 @@ STEP_USER_SCHEMA = vol.Schema(
                 translation_key="region",
             )
         ),
-        vol.Required(CONF_DEBUG_DUMP, default=True): bool,
+        # Off by default: it writes the raw cloud payload, device ids included,
+        # next to configuration.yaml on every refresh.
+        vol.Required(CONF_DEBUG_DUMP, default=False): bool,
     }
 )
 
