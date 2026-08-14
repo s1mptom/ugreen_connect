@@ -86,7 +86,7 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if power[key] is None:
                     errors[key] = "device returned no usable PT_data frame"
                 else:
-                    power[key]["brightness"] = await self.rtcx.async_brightness(iot_id)
+                    power[key].update(await self.rtcx.async_device_state(iot_id) or {})
                     power[key].update(await self._static_info(key, iot_id))
             except UgreenError as err:
                 # Warn rather than debug: without this the entities simply never

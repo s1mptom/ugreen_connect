@@ -57,6 +57,16 @@ HANDSHAKE_PROTOCOL: Final[dict[int, str]] = {
 # Firmware version and SSID never change between polls; re-read them rarely.
 STATIC_INFO_INTERVAL: Final = 3600
 
+# Charging presets. "custom" is left out on purpose: it needs the 35 parameter
+# bytes the presets leave at zero, and those are only meaningful alongside the
+# app's own mode editor.
+CHARGING_MODES: Final[dict[int, str]] = {
+    0: "standard", 1: "energy_saving", 2: "dc_fast", 3: "port_priority", 4: "custom",
+}
+SELECTABLE_MODES: Final[tuple[str, ...]] = (
+    "standard", "energy_saving", "dc_fast", "port_priority",
+)
+
 # Dumped next to configuration.yaml on every refresh while `debug_dump` is on.
 # It is the raw, unmodified cloud payload and is what the entity layer is built
 # from -- see the integration README.

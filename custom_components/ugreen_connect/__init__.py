@@ -17,7 +17,12 @@ from .rtcx import RtcxClient
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.NUMBER]
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.SWITCH,
+]
 
 type UgreenConfigEntry = ConfigEntry[UgreenCoordinator]
 

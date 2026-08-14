@@ -40,6 +40,7 @@ import aiohttp
 
 from .api import UgreenApi, UgreenAuthError, UgreenError
 from .const import (
+    CHARGING_MODES,
     GATEWAY_LANGUAGE,
     GATEWAY_OK,
     HANDSHAKE_PROTOCOL,
@@ -69,15 +70,28 @@ QUERY_GET_WIFI_SSID = 8
 QUERY_GET_PRODUCT_VERSION = 10
 
 SETTING_SET_BRIGHTNESS = 1
+SETTING_SET_SLEEP_TIME = 2
+SETTING_SET_CHARGING_MODE = 4
+SETTING_SET_SCREENSAVER = 5
+
+# The mode byte is followed by 35 parameter bytes; every preset leaves them zero
+# and only the app's "custom" mode fills them in.
+CHARGING_MODE_PARAMS = 35
 
 # One 7-byte record per port, then one handshake-protocol byte per port.
 PORT_RECORD = 7
 PORT_COUNT = 8
 POWER_BODY_MIN = PORT_RECORD * PORT_COUNT
 
-# Offset of the brightness byte in the GET_DEVICE_STATE reply, confirmed by
-# setting a value and reading it back.
+# Offsets into the GET_DEVICE_STATE reply. Each was confirmed by writing a
+# distinctive value and reading it back, not inferred.
 STATE_BRIGHTNESS = 2
+STATE_SLEEP_TIME = 3
+STATE_CHARGING_MODE = 4
+STATE_SCREENSAVER = 40  # then theme at 41 and a further flag at 42
+STATE_IMAGE_ID = 43  # six ASCII bytes naming the wallpaper in use
+STATE_WALLPAPER_COUNT = 49  # then that many six-byte ids
+IMAGE_ID_LEN = 6
 
 
 def crc16_modbus(data: bytes) -> int:
@@ -338,23 +352,74 @@ class RtcxClient:
         body = frame_body(value, FRAME_QUERY, QUERY_GET_PRODUCT_VERSION) if value else None
         return ".".join(str(b) for b in body) if body else None
 
-    async def async_brightness(self, iot_id: str) -> int | None:
+    async def async_device_state(self, iot_id: str) -> dict[str, Any] | None:
+        """Everything the screen settings need, in one round trip.
+
+        Byte offsets were established by writing a distinctive value and reading
+        it back on a real X783, not by guessing.
+        """
         value = await self._ask(iot_id, FRAME_QUERY, QUERY_GET_DEVICE_STATE)
         body = frame_body(value, FRAME_QUERY, QUERY_GET_DEVICE_STATE) if value else None
-        if not body or len(body) <= STATE_BRIGHTNESS:
+        if not body or len(body) <= STATE_WALLPAPER_COUNT:
             return None
-        return body[STATE_BRIGHTNESS]
 
-    async def async_set_brightness(self, iot_id: str, value: int) -> None:
-        level = max(0, min(100, int(value)))
+        image = body[STATE_IMAGE_ID : STATE_IMAGE_ID + IMAGE_ID_LEN]
+        count = body[STATE_WALLPAPER_COUNT]
+        start = STATE_WALLPAPER_COUNT + 1
+        wallpapers = [
+            body[start + IMAGE_ID_LEN * i : start + IMAGE_ID_LEN * (i + 1)].decode(
+                "ascii", "replace"
+            )
+            for i in range(count)
+            if len(body) >= start + IMAGE_ID_LEN * (i + 1)
+        ]
+        return {
+            "brightness": body[STATE_BRIGHTNESS],
+            "sleep_time": body[STATE_SLEEP_TIME],
+            "charging_mode": CHARGING_MODES.get(body[STATE_CHARGING_MODE]),
+            "screensaver": bool(body[STATE_SCREENSAVER]),
+            "screensaver_theme": body[STATE_SCREENSAVER + 1],
+            "screensaver_flag": body[STATE_SCREENSAVER + 2],
+            # All-0xFF is how "no picture" is spelled.
+            "wallpaper": None if image == b"\xff" * IMAGE_ID_LEN else image.decode(
+                "ascii", "replace"
+            ),
+            "wallpapers": wallpapers,
+        }
+
+    async def _setting(self, iot_id: str, cmd: int, payload: bytes) -> None:
         await self.call(
             "/client/thing/properties/set",
-            {
-                "iotId": iot_id,
-                "items": {
-                    "PT_data": build_frame(FRAME_SETTING, SETTING_SET_BRIGHTNESS, bytes([level]))
-                },
-            },
+            {"iotId": iot_id, "items": {"PT_data": build_frame(FRAME_SETTING, cmd, payload)}},
+        )
+
+    async def async_set_brightness(self, iot_id: str, value: int) -> None:
+        await self._setting(
+            iot_id, SETTING_SET_BRIGHTNESS, bytes([max(0, min(100, int(value)))])
+        )
+
+    async def async_set_sleep_time(self, iot_id: str, value: int) -> None:
+        await self._setting(
+            iot_id, SETTING_SET_SLEEP_TIME, bytes([max(0, min(255, int(value)))])
+        )
+
+    async def async_set_charging_mode(self, iot_id: str, mode: int) -> None:
+        """Mode byte plus 35 parameter bytes, which the presets leave at zero."""
+        await self._setting(
+            iot_id, SETTING_SET_CHARGING_MODE, bytes([mode]) + bytes(CHARGING_MODE_PARAMS)
+        )
+
+    async def async_set_screensaver(
+        self, iot_id: str, enabled: bool, theme: int, flag: int, wallpaper: str | None
+    ) -> None:
+        """The trailing six bytes name a wallpaper by id; 'FFFFFF' means none."""
+        image = (
+            wallpaper.encode("ascii")[:IMAGE_ID_LEN].ljust(IMAGE_ID_LEN, b"F")
+            if wallpaper
+            else b"\xff" * IMAGE_ID_LEN
+        )
+        await self._setting(
+            iot_id, SETTING_SET_SCREENSAVER, bytes([1 if enabled else 0, theme, flag]) + image
         )
 
     async def async_power(self, iot_id: str) -> dict[str, Any] | None:
