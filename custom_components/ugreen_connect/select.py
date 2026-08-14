@@ -7,12 +7,12 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import UgreenConfigEntry
-from .const import CHARGING_MODES, CLOCK_POSITIONS, SELECTABLE_MODES, TIME_FORMATS
+from .const import CHARGING_MODES, CLOCK_STYLES, SELECTABLE_MODES, TIME_FORMATS
 from .coordinator import UgreenCoordinator, device_key
 from .entity import UgreenDeviceEntity
 
 MODE_VALUE = {name: value for value, name in CHARGING_MODES.items()}
-CLOCK_POSITION_VALUE = {name: value for value, name in CLOCK_POSITIONS.items()}
+CLOCK_STYLE_VALUE = {name: value for value, name in CLOCK_STYLES.items()}
 TIME_FORMAT_VALUE = {name: value for value, name in TIME_FORMATS.items()}
 
 
@@ -42,9 +42,9 @@ async def async_setup_entry(
                 new.append(UgreenWallpaper(coordinator, key))
             # The clock options only exist alongside the screensaver state.
             if reading.get("screensaver_theme") is not None:
-                if (key, "clock_position") not in known:
-                    known.add((key, "clock_position"))
-                    new.append(UgreenClockPosition(coordinator, key))
+                if (key, "clock_style") not in known:
+                    known.add((key, "clock_style"))
+                    new.append(UgreenClockStyle(coordinator, key))
                 if (key, "time_format") not in known:
                     known.add((key, "time_format"))
                     new.append(UgreenTimeFormat(coordinator, key))
@@ -162,28 +162,28 @@ class _UgreenScreensaverOption(UgreenDeviceEntity, SelectEntity):
         self.async_write_ha_state()
 
 
-class UgreenClockPosition(_UgreenScreensaverOption):
-    """Where the clock sits on the screensaver."""
+class UgreenClockStyle(_UgreenScreensaverOption):
+    """Which of the two clock faces the screensaver draws."""
 
-    _attr_name = "Clock position"
+    _attr_name = "Clock style"
     _attr_icon = "mdi:clock-outline"
-    _attr_options = list(CLOCK_POSITIONS.values())
+    _attr_options = list(CLOCK_STYLES.values())
 
     def __init__(self, coordinator: UgreenCoordinator, key: str) -> None:
         super().__init__(coordinator, key)
-        self._attr_unique_id = f"{key}_clock_position"
+        self._attr_unique_id = f"{key}_clock_style"
 
     @property
     def available(self) -> bool:
-        return super().available and (self._reading or {}).get("screensaver_theme") is not None
+        return super().available and (self._reading or {}).get("screensaver_flag") is not None
 
     @property
     def current_option(self) -> str | None:
-        return CLOCK_POSITIONS.get((self._reading or {}).get("screensaver_theme"))
+        return CLOCK_STYLES.get((self._reading or {}).get("screensaver_flag"))
 
     async def async_select_option(self, option: str) -> None:
-        if option in CLOCK_POSITION_VALUE:
-            await self._send(theme=CLOCK_POSITION_VALUE[option])
+        if option in CLOCK_STYLE_VALUE:
+            await self._send(flag=CLOCK_STYLE_VALUE[option])
 
 
 class UgreenTimeFormat(_UgreenScreensaverOption):
@@ -199,12 +199,12 @@ class UgreenTimeFormat(_UgreenScreensaverOption):
 
     @property
     def available(self) -> bool:
-        return super().available and (self._reading or {}).get("screensaver_flag") is not None
+        return super().available and (self._reading or {}).get("screensaver_theme") is not None
 
     @property
     def current_option(self) -> str | None:
-        return TIME_FORMATS.get((self._reading or {}).get("screensaver_flag"))
+        return TIME_FORMATS.get((self._reading or {}).get("screensaver_theme"))
 
     async def async_select_option(self, option: str) -> None:
         if option in TIME_FORMAT_VALUE:
-            await self._send(flag=TIME_FORMAT_VALUE[option])
+            await self._send(theme=TIME_FORMAT_VALUE[option])

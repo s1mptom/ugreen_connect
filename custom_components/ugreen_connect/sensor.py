@@ -36,9 +36,10 @@ MEASUREMENTS: dict[str, tuple[SensorDeviceClass, str, int]] = {
     "current": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.AMPERE, 1),
 }
 
-# Ports that get entities unconditionally -- every physical port of the X783
-# except DC, which is only surfaced once something is actually plugged into it.
-ALWAYS_PORTS: tuple[str, ...] = tuple(p for p in X783_PORTS if p != "DC")
+# Every port the report carries gets entities, DC included: which sockets a
+# given model actually has is not something this can know, and a port nobody
+# uses simply reads zero.
+ALWAYS_PORTS: tuple[str, ...] = X783_PORTS
 
 
 async def async_setup_entry(

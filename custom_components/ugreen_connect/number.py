@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from homeassistant.components.number import NumberEntity, NumberMode
-from homeassistant.const import PERCENTAGE
+from homeassistant.const import PERCENTAGE, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -78,16 +78,18 @@ class UgreenBrightness(UgreenDeviceEntity, NumberEntity):
 
 
 class UgreenSleepTime(UgreenDeviceEntity, NumberEntity):
-    """How long the screen stays awake.
+    """How long the screen stays awake, in minutes.
 
-    The device takes a single byte and the app never labels its unit, so the
-    raw value is exposed rather than a guessed one.
+    The app offers 1, 5, 10, 30 and "Always On", which write exactly those
+    minutes and zero -- so zero here means the screen never sleeps. Any value up
+    to 255 is accepted, the presets are just what the app shows.
     """
 
     _attr_name = "Screen sleep timeout"
     _attr_native_min_value = 0
     _attr_native_max_value = 255
     _attr_native_step = 1
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
     _attr_mode = NumberMode.BOX
     _attr_icon = "mdi:monitor-off"
     _attr_entity_category = EntityCategory.CONFIG
