@@ -207,7 +207,9 @@ property, which is what makes it download the file.
 
 ## Settings
 
-*Settings → Devices & Services → UGREEN Connect → Configure*:
+*Settings → Devices & Services → UGREEN Connect → the cog on the account row*:
+
+<img src="docs/options.png" alt="The options dialog" width="480">
 
 | Setting | Default | Notes |
 |---|---|---|
