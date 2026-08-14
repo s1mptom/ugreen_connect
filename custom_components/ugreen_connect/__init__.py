@@ -14,6 +14,7 @@ from .api import UgreenApi, UgreenAuthError, UgreenError
 from .const import CONF_DEBUG_DUMP, CONF_REGION, DEFAULT_LANGUAGE, DEFAULT_REGION, REGIONS
 from .coordinator import UgreenCoordinator
 from .rtcx import RtcxClient
+from .frontend import async_register_card
 from .services import async_register
 
 _LOGGER = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
 
     entry.runtime_data = coordinator
     await async_register(hass)
+    await async_register_card(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
