@@ -8,6 +8,8 @@ upload, register -- then points the screensaver at the newly stored picture.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import io
 import logging
 import time
@@ -27,12 +29,16 @@ _LOGGER = logging.getLogger(__name__)
 SERVICE_SET_WALLPAPER = "set_wallpaper"
 ATTR_PATH = "path"
 ATTR_URL = "url"
+ATTR_IMAGE = "image"
 
 SCHEMA = vol.Schema(
     {
         vol.Required(CONF_DEVICE_ID): cv.string,
         vol.Exclusive(ATTR_PATH, "source"): cv.string,
         vol.Exclusive(ATTR_URL, "source"): cv.url,
+        # Base64, optionally as a data: URL -- this is how the dashboard card
+        # hands over a picture it cropped in the browser.
+        vol.Exclusive(ATTR_IMAGE, "source"): cv.string,
     }
 )
 
@@ -99,8 +105,10 @@ async def async_register(hass: HomeAssistant) -> None:
             raw = await hass.async_add_executor_job(_read, path)
         elif url := call.data.get(ATTR_URL):
             raw = await _fetch(hass, url)
+        elif encoded := call.data.get(ATTR_IMAGE):
+            raw = _decode(encoded)
         else:
-            raise HomeAssistantError("Give either path or url")
+            raise HomeAssistantError("Give one of path, url or image")
 
         image = await hass.async_add_executor_job(_to_wallpaper, raw)
         file_name = f"ha_wallpaper_{int(time.time())}.jpg"
@@ -137,6 +145,14 @@ async def async_register(hass: HomeAssistant) -> None:
         await coordinator.async_request_refresh()
 
     hass.services.async_register(DOMAIN, SERVICE_SET_WALLPAPER, _handle, schema=SCHEMA)
+
+
+def _decode(encoded: str) -> bytes:
+    payload = encoded.split(",", 1)[-1] if encoded.startswith("data:") else encoded
+    try:
+        return base64.b64decode(payload, validate=True)
+    except (ValueError, binascii.Error) as err:
+        raise HomeAssistantError("image is not valid base64") from err
 
 
 def _read(path: str) -> bytes:
