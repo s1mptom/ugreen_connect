@@ -50,19 +50,22 @@ const css = `
   .tile.plain { display: flex; align-items: center; justify-content: center;
                 color: var(--secondary-text-color); font-size: .85em; }
   .styles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .clock { position: relative; border: 2px solid transparent; border-radius: 8px;
-           padding: 0; cursor: pointer; background: #0b0b0b; overflow: hidden;
+  .style { display: flex; flex-direction: column; gap: 5px; }
+  .style .lab { font-size: .8em; color: var(--secondary-text-color); text-align: center; }
+  /* The tile is its own container so the clock scales with the tile rather
+     than with the page. */
+  .clock { container-type: inline-size; position: relative; width: 100%;
+           border: 2px solid transparent; border-radius: 8px; padding: 0;
+           cursor: pointer; background: #0b0b0b; overflow: hidden;
            aspect-ratio: ${RATIO}; }
   .clock[aria-pressed="true"] { border-color: var(--primary-color); }
   .clock .face { position: absolute; inset: 0; display: flex; flex-direction: column;
-                 justify-content: center; color: #fff; line-height: 1.05; }
+                 justify-content: center; color: #fff; line-height: 1.1; }
   .clock .face.centre { align-items: center; }
-  .clock .face.left { align-items: flex-start; padding-left: 9%; }
-  .clock .face b { font-size: 30cqw; font-weight: 700; letter-spacing: .02em; }
-  .clock .face i { font-size: 9cqw; font-style: normal; opacity: .85; letter-spacing: .08em; }
-  .clock { container-type: inline-size; }
-  .clock .cap { position: absolute; left: 0; right: 0; bottom: 0; font-size: .7em;
-                background: rgba(0,0,0,.45); color: #fff; padding: 2px 5px; }
+  .clock .face.left { align-items: flex-start; padding-left: 8%; }
+  .clock .face b { font-size: 19cqw; font-weight: 700; letter-spacing: .01em; }
+  .clock .face i { font-size: 5.2cqw; font-style: normal; opacity: .8;
+                   letter-spacing: .1em; margin-top: 2cqw; }
   .stage { position: relative; width: 100%; aspect-ratio: ${RATIO * 1.5};
            background: #202020; border-radius: 8px; overflow: hidden;
            touch-action: none; cursor: grab; }
@@ -143,14 +146,18 @@ class UgreenWallpaperCard extends HTMLElement {
             <div>
               <div class="field"><span>Clock style</span></div>
               <div class="styles">
-                <button class="clock" data-sty="style_1" aria-pressed="false">
-                  <span class="face centre"><b>09:00</b><i>MON, JUN 09</i></span>
-                  <span class="cap">Style 1</span>
-                </button>
-                <button class="clock" data-sty="style_2" aria-pressed="false">
-                  <span class="face left"><b>09:00</b><i>MON, JUN 09</i></span>
-                  <span class="cap">Style 2</span>
-                </button>
+                <div class="style">
+                  <button class="clock" data-sty="style_1" aria-pressed="false">
+                    <span class="face centre"><b>09:00</b><i>MON, JUN 09</i></span>
+                  </button>
+                  <span class="lab">Style 1</span>
+                </div>
+                <div class="style">
+                  <button class="clock" data-sty="style_2" aria-pressed="false">
+                    <span class="face left"><b>09:00</b><i>MON, JUN 09</i></span>
+                  </button>
+                  <span class="lab">Style 2</span>
+                </div>
               </div>
             </div>
             <div>
