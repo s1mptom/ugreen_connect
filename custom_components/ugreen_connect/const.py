@@ -85,9 +85,18 @@ SELECTABLE_MODES: Final[tuple[str, ...]] = (
 TIME_FORMATS: Final[dict[int, str]] = {0: "12h", 1: "24h"}
 CLOCK_STYLES: Final[dict[int, str]] = {0: "style_1", 1: "style_2"}
 
-# Screen Off Time is plain minutes; zero means the screen never sleeps. The app
-# offers 1, 5, 10, 30 and "Always On", which write 1, 5, 10, 30 and 0.
+# Screen Off Time is plain minutes; zero means the screen never sleeps. These
+# are the app's own choices, confirmed by tapping each one and reading the frame
+# it sent -- note it offers 10 minutes, not 15. The device itself takes any
+# value up to 255, so more can be added here without touching anything else.
 SLEEP_NEVER: Final = 0
+SLEEP_OPTIONS: Final[dict[str, int]] = {
+    "1_min": 1,
+    "5_min": 5,
+    "10_min": 10,
+    "30_min": 30,
+    "always_on": SLEEP_NEVER,
+}
 
 # Links to uploaded wallpapers are signed and time-limited, so the list is
 # re-read often enough that a preview in the dashboard stays loadable.

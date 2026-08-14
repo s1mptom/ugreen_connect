@@ -16,6 +16,7 @@ from .const import (
     CLOCK_STYLES,
     PICTURE_SETTLE_SECONDS,
     SELECTABLE_MODES,
+    SLEEP_OPTIONS,
     TIME_FORMATS,
 )
 from .coordinator import UgreenCoordinator, device_key
@@ -44,6 +45,9 @@ async def async_setup_entry(
             reading = (coordinator.data.get("power") or {}).get(key)
             if not reading:
                 continue
+            if reading.get("sleep_time") is not None and (key, "sleep") not in known:
+                known.add((key, "sleep"))
+                new.append(UgreenSleepTime(coordinator, key))
             if reading.get("charging_mode") and (key, "mode") not in known:
                 known.add((key, "mode"))
                 new.append(UgreenChargingMode(coordinator, key))
@@ -248,3 +252,39 @@ class UgreenTimeFormat(_UgreenScreensaverOption):
     async def async_select_option(self, option: str) -> None:
         if option in TIME_FORMAT_VALUE:
             await self._send(theme=TIME_FORMAT_VALUE[option])
+
+
+class UgreenSleepTime(UgreenDeviceEntity, SelectEntity):
+    """How long the screen stays awake, offering the app's own choices.
+
+    The device counts plain minutes and takes any value, but matching the app
+    keeps the two in step; "always_on" is the zero it writes for never sleeping.
+    """
+
+    _attr_name = "Screen off time"
+    _attr_icon = "mdi:monitor-off"
+    _attr_options = list(SLEEP_OPTIONS)
+
+    def __init__(self, coordinator: UgreenCoordinator, key: str) -> None:
+        super().__init__(coordinator, key)
+        self._attr_unique_id = f"{key}_sleep_time_select"
+
+    @property
+    def available(self) -> bool:
+        return super().available and (self._reading or {}).get("sleep_time") is not None
+
+    @property
+    def current_option(self) -> str | None:
+        minutes = (self._reading or {}).get("sleep_time")
+        # A value set outside the app has no matching choice; report nothing
+        # rather than pretend it is one of them.
+        return next((name for name, m in SLEEP_OPTIONS.items() if m == minutes), None)
+
+    async def async_select_option(self, option: str) -> None:
+        iot_id = self._iot_id
+        if not iot_id or option not in SLEEP_OPTIONS:
+            return
+        await self.coordinator.rtcx.async_set_sleep_time(iot_id, SLEEP_OPTIONS[option])
+        if reading := self._reading:
+            reading["sleep_time"] = SLEEP_OPTIONS[option]
+        self.async_write_ha_state()
