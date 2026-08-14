@@ -19,6 +19,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     STATIC_INFO_INTERVAL,
+    WALLPAPER_LIST_INTERVAL,
 )
 from .rtcx import QUERY_GET_WIFI_SSID, RtcxClient
 
@@ -50,6 +51,7 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._dumped = False
         self._power_errors: dict[str, str] = {}
         self._static: dict[str, tuple[dict[str, Any], float]] = {}
+        self._wallpaper_cache: dict[str, tuple[list[dict[str, Any]], float]] = {}
         self._products: dict[str, Any] = {}
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -89,6 +91,7 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     power[key].update(await self.rtcx.async_device_state(iot_id) or {})
                     power[key].update(await self._static_info(key, iot_id))
                     power[key]["ota"] = self.rtcx.ota_state()
+                    power[key]["wallpaper_list"] = await self._wallpapers(device)
             except UgreenError as err:
                 # Warn rather than debug: without this the entities simply never
                 # appear, with nothing anywhere saying why.
@@ -124,6 +127,38 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         info = {k: v if v is not None else cached.get(k) for k, v in info.items()}
         self._static[key] = (info, time.time())
         return info
+
+    async def _wallpapers(self, device: dict[str, Any]) -> list[dict[str, Any]]:
+        """The pictures available for this charger, with preview URLs.
+
+        The dashboard card needs somewhere to point an <img> at, and the device
+        itself only ever names pictures by a six-character id. Links to uploads
+        are signed and expire, so this is re-read on a timer rather than cached
+        for the session.
+        """
+        key = device_key(device) or ""
+        cached, fetched_at = self._wallpaper_cache.get(key, ([], 0.0))
+        if cached and time.time() - fetched_at < WALLPAPER_LIST_INTERVAL:
+            return cached
+        try:
+            items = await self.api.get_wallpapers(
+                device["deviceUniqueCode"], device["productSerialNo"]
+            )
+        except (UgreenError, KeyError) as err:
+            _LOGGER.debug("wallpaper list for %s failed: %s", key, err)
+            return cached
+        listed = [
+            {
+                "id": item.get("fileNameMd5"),
+                "url": item.get("url"),
+                "name": item.get("fileName"),
+                "stock": item.get("stock", True),
+            }
+            for item in items
+            if item.get("fileNameMd5")
+        ]
+        self._wallpaper_cache[key] = (listed, time.time())
+        return listed
 
     def _write_dump(self, data: dict[str, Any]) -> None:
         """Write one raw snapshot so the entity layer can be built from real data."""

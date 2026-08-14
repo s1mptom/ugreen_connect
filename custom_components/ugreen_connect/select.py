@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -111,6 +113,11 @@ class UgreenWallpaper(UgreenDeviceEntity, SelectEntity):
     @property
     def options(self) -> list[str]:
         return [self.NONE, *((self._reading or {}).get("wallpapers") or [])]
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        # The card renders previews from this; the device only knows ids.
+        return {"wallpapers": (self._reading or {}).get("wallpaper_list") or []}
 
     @property
     def current_option(self) -> str | None:

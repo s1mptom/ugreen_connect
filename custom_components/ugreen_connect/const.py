@@ -89,6 +89,10 @@ CLOCK_STYLES: Final[dict[int, str]] = {0: "style_1", 1: "style_2"}
 # offers 1, 5, 10, 30 and "Always On", which write 1, 5, 10, 30 and 0.
 SLEEP_NEVER: Final = 0
 
+# Links to uploaded wallpapers are signed and time-limited, so the list is
+# re-read often enough that a preview in the dashboard stays loadable.
+WALLPAPER_LIST_INTERVAL: Final = 900
+
 # Dumped next to configuration.yaml on every refresh while `debug_dump` is on.
 # It is the raw, unmodified cloud payload and is what the entity layer is built
 # from -- see the integration README.
