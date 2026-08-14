@@ -59,6 +59,35 @@ Manual: copy `custom_components/ugreen_connect` into your `config/` and restart.
 You log in with your normal UGREEN account e-mail and password, and pick the
 region your account belongs to (the same one the app shows).
 
+## Your own wallpaper
+
+The screen is **560 x 170** — wide enough that a photo almost never suits it as
+taken, so the integration ships a card that shows the crop window over your
+picture and lets you drag, zoom and rotate under it:
+
+```yaml
+type: custom:ugreen-wallpaper-card
+device_id: 47c14ea16e4536f4f719b7456b99be39   # your charger
+```
+
+The card is served by the integration, so there is nothing to add in HACS and
+no resource to register. Zoom cannot go below the size that fills the window,
+so a wallpaper never ends up with empty edges.
+
+For automations there is a service taking a local `path`, a `url`, or base64 in
+`image`:
+
+```yaml
+action: ugreen_connect.set_wallpaper
+data:
+  device_id: 47c14ea16e4536f4f719b7456b99be39
+  path: /config/www/desk.jpg
+```
+
+Pictures given to the service (rather than the card) are cover-cropped from the
+centre. Uploading replaces whatever custom picture the charger was holding — it
+keeps one slot of its own alongside the built-in ones.
+
 ## How it works
 
 Two clouds are involved.
