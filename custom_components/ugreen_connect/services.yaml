@@ -1,0 +1,20 @@
+set_wallpaper:
+  target:
+    device:
+      integration: ugreen_connect
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: ugreen_connect
+    path:
+      required: false
+      example: /config/www/desk.jpg
+      selector:
+        text:
+    url:
+      required: false
+      example: https://example.com/desk.jpg
+      selector:
+        text:

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import logging
 import re
@@ -372,6 +373,76 @@ class UgreenApi:
         if not code:
             raise UgreenAuthError(f"oauth/authorize returned no code: {payload}")
         return code
+
+    async def upload_wallpaper(
+        self, image: bytes, file_name: str, device_code: str, product_serial: str
+    ) -> None:
+        """Put a picture into the account's wallpaper library.
+
+        Three steps: ask for a presigned slot, PUT the bytes there, then tell the
+        charger API the object belongs to this device. The presigned URL signs
+        `content-md5`, so that header has to be sent exactly as promised.
+        """
+        digest = hashlib.md5(image).digest()
+        pre = (
+            await self._post(
+                "/app/v1/system/file/upload-pre-info",
+                {
+                    "bizType": 100,
+                    "fileMd5": digest.hex(),
+                    "fileName": file_name,
+                    "fileSize": len(image),
+                },
+            )
+        ).get("data") or {}
+        upload_url, file_key = pre.get("uploadUrl"), pre.get("fileKey")
+        if not upload_url or not file_key:
+            raise UgreenError(f"upload-pre-info gave no slot: {pre}")
+
+        content_md5 = base64.b64encode(digest).decode()
+        try:
+            async with self._session.put(
+                upload_url,
+                data=image,
+                headers={"Content-MD5": content_md5, "Content-Type": "image/jpeg"},
+                timeout=TIMEOUT,
+            ) as resp:
+                if resp.status not in (200, 201, 204):
+                    body = (await resp.text())[:300]
+                    raise UgreenError(f"upload failed: HTTP {resp.status} {body}")
+        except aiohttp.ClientError as err:
+            raise UgreenError(f"upload failed: {err}") from err
+
+        await self._post(
+            "/app/v1/charger/file/wallPaper/save",
+            {
+                "contentMD5": content_md5,
+                "objectKey": file_key,
+                "fileName": file_name,
+                "deviceUniqueCode": device_code,
+                "fileSize": len(image),
+                "productSerialNo": product_serial,
+            },
+        )
+
+    async def get_wallpapers(self, device_code: str, product_serial: str) -> list[dict[str, Any]]:
+        """Both the built-in pictures and the account's own uploads.
+
+        `fileNameMd5` is the six-character id the charger itself knows a picture
+        by, and is what the screensaver command refers to.
+        """
+        data = (
+            await self._request(
+                "/app/v1/charger/file/getWallPapers",
+                {"productSerialNo": product_serial, "deviceUniqueCode": device_code},
+                method="GET",
+            )
+        ).get("data") or {}
+        out: list[dict[str, Any]] = []
+        for group, stock in (("resourceWallpaperList", True), ("customerWallpaperList", False)):
+            for item in data.get(group) or []:
+                out.append(item | {"stock": stock})
+        return out
 
     async def get_power_history(self, **params: Any) -> Any:
         return (await self._post("/app/v1/charger/data/powerHistory", params)).get("data")

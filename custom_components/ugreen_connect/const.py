@@ -47,6 +47,10 @@ POWER_POLL_ATTEMPTS: Final = 3
 # treated as "no reading" rather than as a live one.
 PT_DATA_MAX_AGE: Final = 300
 
+# The charger's screen, in pixels. Its stock pictures are stored rotated, but
+# what the app uploads is this way round.
+WALLPAPER_SIZE: Final[tuple[int, int]] = (560, 170)
+
 # Port order of the X783's power report, from the app's own port table.
 X783_PORTS: Final[tuple[str, ...]] = ("C1", "C2", "C3", "C4", "C5", "C6", "A1", "DC")
 
