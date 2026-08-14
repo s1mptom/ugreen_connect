@@ -1,6 +1,9 @@
 {
   "domain": "ugreen_connect",
   "name": "UGREEN Connect",
+  "after_dependencies": [
+    "lovelace"
+  ],
   "codeowners": [
     "@s1mptom"
   ],
@@ -9,12 +12,9 @@
     "http",
     "frontend"
   ],
-  "after_dependencies": [
-    "lovelace"
-  ],
   "documentation": "https://github.com/s1mptom/ugreen_connect",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/s1mptom/ugreen_connect/issues",
-  "version": "0.12.1"
+  "version": "0.12.2"
 }
