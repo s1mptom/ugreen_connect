@@ -10,3 +10,6 @@ __pycache__/
 cred.json
 rtcxkey.json
 ugreen_connect_debug.json
+
+# Session working notes, never part of the component
+.memsearch/
