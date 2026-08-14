@@ -29,6 +29,7 @@ get readings into Home Assistant without a Bluetooth proxy next to the device.
 | `switch.<device>_screensaver` | screensaver on the idle screen |
 | `select.<device>_charging_mode` | standard, energy saving, DC fast, port priority |
 | `select.<device>_wallpaper` | pictures already stored on the charger, or none |
+| `update.<device>_firmware` | installed version, and whether one is waiting |
 
 `custom` is a real charging mode and is reported when the device is in it, but it
 cannot be selected here: it needs the 35 parameter bytes the presets leave at
