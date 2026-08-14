@@ -44,6 +44,7 @@ from .const import (
     GATEWAY_LANGUAGE,
     GATEWAY_OK,
     HANDSHAKE_PROTOCOL,
+    POWER_POLL_ATTEMPTS,
     POWER_SETTLE_SECONDS,
     PT_DATA_MAX_AGE,
     RTCX_TOKEN_MARGIN,
@@ -323,22 +324,34 @@ class RtcxClient:
             "/client/thing/properties/set",
             {"iotId": iot_id, "items": {"PT_data": build_frame(frame_type, cmd, payload)}},
         )
-        await asyncio.sleep(POWER_SETTLE_SECONDS)
-        payload_map = await self.call(
-            "/client/thing/properties/get/all", {"iotId": iot_id}
-        )
-        prop_map = (payload_map.get("data") or {}).get("propertyMap") or {}
-        entries = prop_map.get("PT_data") or []
-        if not entries:
-            return None
-        entry = entries[0]
-        stamp = entry.get("time")
-        # The property keeps its last frame forever, so an unresponsive device
-        # would otherwise look like it is still answering.
-        if stamp and (time.time() * 1000 - stamp) > PT_DATA_MAX_AGE * 1000:
-            _LOGGER.debug("PT_data for %s is stale (%s)", iot_id, stamp)
-            return None
-        return entry.get("value")
+
+        # How long the device takes to answer varies, and until it does the
+        # property still holds the previous reply -- which is a different
+        # command's frame and would be read as "no data". So poll until the
+        # frame on offer is the one that was asked for.
+        for attempt in range(POWER_POLL_ATTEMPTS):
+            await asyncio.sleep(POWER_SETTLE_SECONDS)
+            payload_map = await self.call(
+                "/client/thing/properties/get/all", {"iotId": iot_id}
+            )
+            prop_map = (payload_map.get("data") or {}).get("propertyMap") or {}
+            entries = prop_map.get("PT_data") or []
+            if not entries:
+                continue
+            entry = entries[0]
+            stamp, value = entry.get("time"), entry.get("value")
+            # The property keeps its last frame forever, so an unresponsive
+            # device would otherwise look like it is still answering.
+            if stamp and (time.time() * 1000 - stamp) > PT_DATA_MAX_AGE * 1000:
+                _LOGGER.debug("PT_data for %s is stale (%s)", iot_id, stamp)
+                return None
+            if value and frame_body(value, frame_type, cmd) is not None:
+                return value
+            _LOGGER.debug(
+                "PT_data is not the reply to 0x%02X/%d yet (try %d)",
+                frame_type, cmd, attempt + 1,
+            )
+        return None
 
     async def async_text_query(self, iot_id: str, cmd: int) -> str | None:
         """Queries whose reply is a plain ASCII string (SSID, serial number)."""

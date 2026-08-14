@@ -9,7 +9,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import UgreenConfigEntry
 from .const import CHARGING_MODES, SELECTABLE_MODES
 from .coordinator import UgreenCoordinator, device_key
-from .sensor import UgreenDeviceEntity
+from .entity import UgreenDeviceEntity
 
 MODE_VALUE = {name: value for value, name in CHARGING_MODES.items()}
 
@@ -68,7 +68,7 @@ class UgreenChargingMode(UgreenDeviceEntity, SelectEntity):
         return mode if mode in self._attr_options else None
 
     async def async_select_option(self, option: str) -> None:
-        iot_id = (self._device.get("extra") or {}).get("iotId")
+        iot_id = self._iot_id
         if not iot_id or option not in MODE_VALUE:
             return
         await self.coordinator.rtcx.async_set_charging_mode(iot_id, MODE_VALUE[option])
@@ -108,7 +108,7 @@ class UgreenWallpaper(UgreenDeviceEntity, SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         reading = self._reading or {}
-        iot_id = (self._device.get("extra") or {}).get("iotId")
+        iot_id = self._iot_id
         if not iot_id:
             return
         wallpaper = None if option == self.NONE else option

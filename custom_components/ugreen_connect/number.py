@@ -10,7 +10,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import UgreenConfigEntry
 from .coordinator import UgreenCoordinator, device_key
-from .sensor import UgreenDeviceEntity
+from .entity import UgreenDeviceEntity
 
 
 async def async_setup_entry(
@@ -58,9 +58,6 @@ class UgreenBrightness(UgreenDeviceEntity, NumberEntity):
         super().__init__(coordinator, key)
         self._attr_unique_id = f"{key}_brightness"
 
-    @property
-    def _iot_id(self) -> str | None:
-        return (self._device.get("extra") or {}).get("iotId")
 
     @property
     def available(self) -> bool:
@@ -99,9 +96,6 @@ class UgreenSleepTime(UgreenDeviceEntity, NumberEntity):
         super().__init__(coordinator, key)
         self._attr_unique_id = f"{key}_sleep_time"
 
-    @property
-    def _iot_id(self) -> str | None:
-        return (self._device.get("extra") or {}).get("iotId")
 
     @property
     def available(self) -> bool:

@@ -10,7 +10,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import UgreenConfigEntry
 from .coordinator import UgreenCoordinator, device_key
-from .sensor import UgreenDeviceEntity
+from .entity import UgreenDeviceEntity
 
 
 async def async_setup_entry(
@@ -68,7 +68,7 @@ class UgreenScreensaver(UgreenDeviceEntity, SwitchEntity):
 
     async def _async_set(self, enabled: bool) -> None:
         reading = self._reading or {}
-        iot_id = (self._device.get("extra") or {}).get("iotId")
+        iot_id = self._iot_id
         if not iot_id:
             return
         # The command carries the whole screensaver block, so the theme and the

@@ -21,17 +21,13 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import UgreenConfigEntry
 from .const import DOMAIN, HANDSHAKE_PROTOCOL, X783_PORTS
 from .coordinator import UgreenCoordinator, device_key
-
-# extra.onlineStatus / extra.networkStatus are 1 when up, 0 when down.
-ONLINE = 1
+from .entity import ONLINE, UgreenDeviceEntity
 
 # The report always carries all eight slots; ports the hardware does not have
 # simply read zero forever, so only those seen powered are worth an entity.
@@ -101,54 +97,7 @@ async def async_setup_entry(
     entry.async_on_unload(coordinator.async_add_listener(_add_new_devices))
 
 
-class UgreenDeviceEntity(CoordinatorEntity[UgreenCoordinator], SensorEntity):
-    """Shared plumbing: which device this entity belongs to, and its metadata."""
-
-    _attr_has_entity_name = True
-
-    def __init__(self, coordinator: UgreenCoordinator, key: str) -> None:
-        super().__init__(coordinator)
-        self._key = key
-
-    @property
-    def _device(self) -> dict[str, Any]:
-        for device in self.coordinator.data.get("devices", []):
-            if device_key(device) == self._key:
-                return device
-        return {}
-
-    @property
-    def _product(self) -> dict[str, Any]:
-        product = self.coordinator.data.get("detail", {}).get(self._key)
-        return product if isinstance(product, dict) else {}
-
-    @property
-    def available(self) -> bool:
-        return super().available and bool(self._device)
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        device = self._device
-        info = DeviceInfo(
-            identifiers={(DOMAIN, self._key)},
-            manufacturer="UGREEN",
-            name=device.get("deviceName") or f"UGREEN {self._key}",
-            model=self._product.get("name") or device.get("deviceName"),
-            model_id=self._product.get("productNo"),
-            serial_number=self._key,
-        )
-        if firmware := (self._reading or {}).get("firmware"):
-            info["sw_version"] = firmware
-        if mac := device.get("deviceMac"):
-            info["connections"] = {(CONNECTION_NETWORK_MAC, mac)}
-        return info
-
-    @property
-    def _reading(self) -> dict[str, Any] | None:
-        return (self.coordinator.data.get("power") or {}).get(self._key)
-
-
-class UgreenStatusSensor(UgreenDeviceEntity):
+class UgreenStatusSensor(UgreenDeviceEntity, SensorEntity):
     """Cloud connectivity state of one bound UGREEN device."""
 
     _attr_translation_key = "status"
@@ -179,7 +128,7 @@ class UgreenStatusSensor(UgreenDeviceEntity):
         }
 
 
-class UgreenPortSensor(UgreenDeviceEntity):
+class UgreenPortSensor(UgreenDeviceEntity, SensorEntity):
     """Voltage, current or power of a single charging port."""
 
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -209,7 +158,7 @@ class UgreenPortSensor(UgreenDeviceEntity):
         return (reading["ports"].get(self._port) or {}).get(self._kind)
 
 
-class UgreenPortProtocolSensor(UgreenDeviceEntity):
+class UgreenPortProtocolSensor(UgreenDeviceEntity, SensorEntity):
     """Fast-charge protocol a port negotiated with whatever is plugged into it."""
 
     _attr_device_class = SensorDeviceClass.ENUM
@@ -234,7 +183,7 @@ class UgreenPortProtocolSensor(UgreenDeviceEntity):
         return (reading["ports"].get(self._port) or {}).get("protocol")
 
 
-class UgreenTotalPowerSensor(UgreenDeviceEntity):
+class UgreenTotalPowerSensor(UgreenDeviceEntity, SensorEntity):
     """Combined output of every port."""
 
     _attr_name = "Total power"

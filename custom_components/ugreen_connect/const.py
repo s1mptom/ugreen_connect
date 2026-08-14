@@ -40,7 +40,9 @@ GATEWAY_OK: Final = 200
 RTCX_TOKEN_MARGIN: Final = 300
 # The charger answers a PT_data query asynchronously -- give it time to land
 # before reading the property back.
-POWER_SETTLE_SECONDS: Final = 2.5
+POWER_SETTLE_SECONDS: Final = 2.0
+# ...and how many times to look before giving up on that reply.
+POWER_POLL_ATTEMPTS: Final = 3
 # PT_data keeps its last value indefinitely, so anything older than this is
 # treated as "no reading" rather than as a live one.
 PT_DATA_MAX_AGE: Final = 300
