@@ -1,11 +1,15 @@
 # The view in docs/dashboard.png, as one screenful in four columns.
 #
-# Paste it into a dashboard's raw configuration editor, under `views:`, then
-# replace ugreen_nexode_pro_x783 with your charger's own entity prefix and the
-# device_id under the screensaver card with your charger's (Settings -> Devices,
-# it is the last part of the URL). The power history card is
-# statistics-graph-chart-card from HACS; drop that one card if you would rather
-# not install it.
+# REQUIRES, beyond this integration:
+#   statistics-graph-chart-card  (HACS -> Frontend), used by the Power history
+#   card. Without it that one card shows "Custom element doesn't exist" and the
+#   rest of the dashboard is fine -- delete the card, or swap it for the
+#   built-in `type: history-graph` with the same entities.
+#
+# TO USE: paste under `views:` in a dashboard's raw configuration editor, then
+#   - replace ugreen_nexode_pro_x783 with your charger's own entity prefix, and
+#   - replace the device_id under the screensaver card with your charger's
+#     (Settings -> Devices -> your charger; it is the last part of the URL).
 
 title: UGREEN Nexode Pro 300W
 path: charger
