@@ -24,6 +24,3 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # The domain is not in home-assistant/brands, which only matters for
-          # the default HACS store; adding the repository by hand works either way.
-          ignore: brands
