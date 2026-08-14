@@ -44,10 +44,16 @@ SCHEMA = vol.Schema(
 
 
 def _to_wallpaper(raw: bytes) -> bytes:
-    """Cover-crop to the screen's 560x170 and encode as JPEG.
+    """Cover-crop to the screen's 560x170, then store it the way the charger
+    expects: turned a quarter turn.
 
-    The screen is unusually wide, so scaling to fit would letterbox badly; the
-    picture is scaled to cover and the centre is kept.
+    Every picture in the account's library, the built-in ones included, is held
+    as 170x560 -- the screen's image rotated anticlockwise -- and the app turns
+    it back when it displays one. Uploading a landscape file instead puts the
+    picture on the screen lying on its side.
+
+    Scaling to fit rather than to cover would letterbox badly at this aspect
+    ratio, so the picture is scaled to cover and the centre kept.
     """
     try:
         from PIL import Image  # noqa: PLC0415 - optional, only needed here
@@ -68,7 +74,9 @@ def _to_wallpaper(raw: bytes) -> bytes:
     cropped = resized.crop((left, top, left + width, top + height))
 
     out = io.BytesIO()
-    cropped.save(out, format="JPEG", quality=90)
+    # PIL rotates anticlockwise for a positive angle, which is the direction the
+    # cloud stores these in.
+    cropped.rotate(90, expand=True).save(out, format="JPEG", quality=90)
     return out.getvalue()
 
 
