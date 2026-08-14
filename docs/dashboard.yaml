@@ -1,0 +1,253 @@
+# The view in docs/dashboard.png, as one screenful in four columns.
+#
+# Paste it into a dashboard's raw configuration editor, under `views:`, then
+# replace ugreen_nexode_pro_x783 with your charger's own entity prefix and the
+# device_id under the screensaver card with your charger's (Settings -> Devices,
+# it is the last part of the URL). The power history card is
+# statistics-graph-chart-card from HACS; drop that one card if you would rather
+# not install it.
+
+title: UGREEN Nexode Pro X783
+path: charger
+type: sections
+max_columns: 4
+dense_section_placement: true
+sections:
+- type: grid
+  column_span: 1
+  cards:
+  - type: heading
+    heading: Power
+    icon: mdi:lightning-bolt
+    heading_style: title
+  - type: gauge
+    entity: sensor.ugreen_nexode_pro_x783_total_power
+    name: Total power
+    unit: W
+    min: 0
+    max: 300
+    needle: true
+    severity:
+      green: 0
+      yellow: 150
+      red: 250
+  - type: tile
+    entity: select.ugreen_nexode_pro_x783_charging_mode
+    name: Mode
+    icon: mdi:ev-station
+  - type: tile
+    entity: sensor.ugreen_nexode_pro_x783_cloud_status
+    name: Cloud
+    icon: mdi:cloud-check-variant
+  - type: heading
+    heading: Screen
+    icon: mdi:monitor
+    heading_style: title
+  - type: tile
+    entity: number.ugreen_nexode_pro_x783_screen_brightness
+    name: Brightness
+    icon: mdi:brightness-6
+    features:
+    - type: numeric-input
+      style: slider
+  - type: tile
+    entity: select.ugreen_nexode_pro_x783_screen_off_time
+    name: Screen off
+    icon: mdi:monitor-off
+  - type: heading
+    heading: Device
+    icon: mdi:information-outline
+    heading_style: title
+  - type: tile
+    entity: update.ugreen_nexode_pro_x783_firmware
+    name: Firmware
+    icon: mdi:chip
+  - type: markdown
+    text_only: true
+    content: '**Firmware** {{ state_attr(''sensor.ugreen_nexode_pro_x783_total_power'',''firmware'') }}
+      · **Wi-Fi** {{ state_attr(''sensor.ugreen_nexode_pro_x783_total_power'',''ssid'') }}
+
+
+      **MAC** `{{ state_attr(''sensor.ugreen_nexode_pro_x783_cloud_status'',''mac'') }}`'
+- type: grid
+  column_span: 1
+  cards:
+  - type: custom:ugreen-wallpaper-card
+    device_id: 0123456789abcdef0123456789abcdef
+    title: Screensaver
+- type: grid
+  column_span: 2
+  cards:
+  - type: heading
+    heading: Ports
+    icon: mdi:usb-port
+    heading_style: title
+  - type: grid
+    columns: 4
+    square: false
+    grid_options:
+      columns: full
+    cards:
+    - type: tile
+      entity: sensor.ugreen_nexode_pro_x783_c1_power
+      name: C1
+      icon: mdi:usb-c-port
+      color: green
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.ugreen_nexode_pro_x783_c2_power
+      name: C2
+      icon: mdi:usb-c-port
+      color: green
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.ugreen_nexode_pro_x783_c3_power
+      name: C3
+      icon: mdi:usb-c-port
+      color: green
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.ugreen_nexode_pro_x783_c4_power
+      name: C4
+      icon: mdi:usb-c-port
+      color: green
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.ugreen_nexode_pro_x783_c5_power
+      name: C5
+      icon: mdi:usb-c-port
+      color: green
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.ugreen_nexode_pro_x783_c6_power
+      name: C6
+      icon: mdi:usb-c-port
+      color: green
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.ugreen_nexode_pro_x783_a1_power
+      name: A1
+      icon: mdi:usb-port
+      color: blue
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.ugreen_nexode_pro_x783_dc_power
+      name: DC
+      icon: mdi:current-dc
+      color: blue
+      vertical: true
+      tap_action:
+        action: more-info
+  - type: heading
+    heading: Power history
+    icon: mdi:chart-line
+    heading_style: title
+  - type: custom:statistics-graph-chart-card
+    show_interval_picker: true
+    hours_to_show: 3
+    points_per_hour: 60
+    auto_scale_points: true
+    height: 160
+    update_interval: 60
+    x_grid_style: dashed
+    y_grid_style: dashed
+    chart_mode: timeline
+    grid_options:
+      columns: full
+    drill_down: true
+    extended_window_multiplier: 2
+    interval_options:
+    - 1H
+    - 4H
+    - 12H
+    - 24H
+    - 7D
+    - 30D
+    auto_scale_rules:
+    - up_to_hours: 24
+      group_by: interval
+      points_per_hour: 12
+    - up_to_hours: 168
+      group_by: interval
+      points_per_hour: 2
+    - up_to_hours: 720
+      group_by: 2h
+    entities:
+    - entity: sensor.ugreen_nexode_pro_x783_total_power
+      name: Total
+      color: '#f5a623'
+      legend_stats:
+      - live
+      primary_state_as: last
+      show_color_dot: true
+      decimals: 1
+    - entity: sensor.ugreen_nexode_pro_x783_c1_power
+      name: C1
+      color: '#4a90d9'
+      legend_stats:
+      - live
+      primary_state_as: last
+      show_color_dot: true
+      decimals: 1
+    - entity: sensor.ugreen_nexode_pro_x783_c2_power
+      name: C2
+      color: '#7ed321'
+      legend_stats:
+      - live
+      primary_state_as: last
+      show_color_dot: true
+      decimals: 1
+    - entity: sensor.ugreen_nexode_pro_x783_c3_power
+      name: C3
+      color: '#bd10e0'
+      legend_stats:
+      - live
+      primary_state_as: last
+      show_color_dot: true
+      decimals: 1
+    - entity: sensor.ugreen_nexode_pro_x783_c4_power
+      name: C4
+      color: '#50e3c2'
+      legend_stats:
+      - live
+      primary_state_as: last
+      show_color_dot: true
+      decimals: 1
+    - entity: sensor.ugreen_nexode_pro_x783_c5_power
+      name: C5
+      color: '#e35050'
+      legend_stats:
+      - live
+      primary_state_as: last
+      show_color_dot: true
+      decimals: 1
+    - entity: sensor.ugreen_nexode_pro_x783_c6_power
+      name: C6
+      color: '#9013fe'
+      legend_stats:
+      - live
+      primary_state_as: last
+      show_color_dot: true
+      decimals: 1
+    - entity: sensor.ugreen_nexode_pro_x783_a1_power
+      name: A1
+      color: '#b8e986'
+      legend_stats:
+      - live
+      primary_state_as: last
+      show_color_dot: true
+      decimals: 1

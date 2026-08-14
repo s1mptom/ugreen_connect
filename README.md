@@ -9,6 +9,9 @@ screensaver — clock style, time format and wallpaper, your own included.
 
 ![The charger on a dashboard](docs/dashboard.png)
 
+*That dashboard is [`docs/dashboard.yaml`](docs/dashboard.yaml) — one screenful,
+ready to paste.*
+
 > Not affiliated with, endorsed by, or supported by UGREEN. Trademarks belong to
 > their respective owners.
 
@@ -202,11 +205,35 @@ UGREEN's own storage (`upload-pre-info` → presigned `PUT` → `wallPaper/save`
 the charger is then handed the resulting id and URL through a `PIC_data`
 property, which is what makes it download the file.
 
+## Settings
+
+*Settings → Devices & Services → UGREEN Connect → Configure*:
+
+| Setting | Default | Notes |
+|---|---|---|
+| Poll every | 5 s | each poll is two cloud calls plus a wait for the charger to answer |
+| Region | as set up | only if the account itself moved servers; the password is re-checked first |
+| Debug snapshot | off | writes the unedited cloud payload to `ugreen_connect_debug.json` |
+
+Five seconds keeps the wattage live enough to watch a laptop charge. It is also
+a lot of traffic against someone else's API, so raise it if you would rather be
+gentle — nothing else depends on the rate.
+
+## Translating
+
+Everything the integration says goes through
+`custom_components/ugreen_connect/translations/`. Copy `en.json`, name it for
+your language, translate the values, and open a pull request. Only English and
+Russian exist so far.
+
+The dashboard card keeps its own text in one table at the top of
+`www/ugreen-wallpaper-card.js`: copy the `en` block, key it by language code,
+and translate. Missing keys fall back to English, so a partial translation is
+fine.
+
 ## Limitations
 
-- **Cloud polling only.** The default interval is 5 s, which suits watching a
-  laptop charge but is a lot of traffic against someone else's API; raise it in
-  `const.py` (`DEFAULT_SCAN_INTERVAL`) if you would rather be gentle.
+- **Cloud polling only**, five seconds apart by default — see *Settings* above.
 - Logging in from the app with the same account can invalidate the integration's
   token. It re-authenticates on rejection, so this is self-healing.
 - Per-port switching (`SET_PORT_CONTROL`) and the `custom` charging-mode editor
