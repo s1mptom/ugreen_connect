@@ -238,9 +238,11 @@ fine.
   token. It re-authenticates on rejection, so this is self-healing.
 - Per-port switching (`SET_PORT_CONTROL`) and the `custom` charging-mode editor
   are decoded but not exposed. `FACTORY_RESET` is deliberately left out.
-- Settings changed from the phone app show up here on the next poll. The reverse
-  is not true: **the app caches**, and keeps showing its old value until it is
-  force-stopped and reopened.
+- Settings changed from the phone app show up here on the next poll, wallpapers
+  included: a picture uploaded there is named and previewed within a minute,
+  because an id the library cannot account for sends the integration to read it
+  again. The reverse is not true — **the app caches**, and keeps showing its old
+  value until it is force-stopped and reopened.
 
 ## Contributing
 

@@ -21,6 +21,7 @@ from .const import (
     DOMAIN,
     STATIC_INFO_INTERVAL,
     WALLPAPER_LIST_INTERVAL,
+    WALLPAPER_MISS_INTERVAL,
 )
 from .rtcx import QUERY_GET_WIFI_SSID, RtcxClient
 
@@ -55,6 +56,7 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._power_errors: dict[str, str] = {}
         self._static: dict[str, tuple[dict[str, Any], float]] = {}
         self._wallpaper_cache: dict[str, tuple[list[dict[str, Any]], float]] = {}
+        self._wallpaper_missed: dict[str, float] = {}
         self._products: dict[str, Any] = {}
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -94,7 +96,16 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     power[key].update(await self.rtcx.async_device_state(iot_id) or {})
                     power[key].update(await self._static_info(key, iot_id))
                     power[key]["ota"] = self.rtcx.ota_state()
-                    power[key]["wallpaper_list"] = await self._wallpapers(device)
+                    # A picture uploaded from the phone app is on the charger the
+                    # moment it is chosen, while the library was last read up to
+                    # a quarter of an hour ago and has never heard of it. Seeing
+                    # an id that cannot be named is the signal to look again,
+                    # rather than leaving the card blank until the timer comes
+                    # round.
+                    power[key]["wallpaper_list"] = await self._name_current(
+                        device, key, await self._wallpapers(device),
+                        power[key].get("wallpaper"),
+                    )
             except UgreenError as err:
                 # Warn rather than debug: without this the entities simply never
                 # appear, with nothing anywhere saying why.
@@ -163,6 +174,28 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ]
         self._wallpaper_cache[key] = (listed, time.time())
         return listed
+
+    async def _name_current(
+        self,
+        device: dict[str, Any],
+        key: str,
+        listed: list[dict[str, Any]],
+        current: str | None,
+    ) -> list[dict[str, Any]]:
+        """Re-read the library when the charger shows a picture it does not list.
+
+        Not every unknown id can be found -- a custom picture that has since been
+        replaced in the library stays on the charger but is gone from the
+        account -- so the look-up is rate limited, or a picture like that would
+        have this fetching the library on every single poll.
+        """
+        if not current or any(item.get("id") == current for item in listed):
+            return listed
+        if time.time() - self._wallpaper_missed.get(key, 0.0) < WALLPAPER_MISS_INTERVAL:
+            return listed
+        self._wallpaper_missed[key] = time.time()
+        self._wallpaper_cache.pop(key, None)
+        return await self._wallpapers(device)
 
     async def async_wallpaper_url(self, image_id: str, *, refresh: bool = False) -> str | None:
         """The signed link for one picture, optionally re-read from the account.

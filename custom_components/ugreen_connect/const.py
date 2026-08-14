@@ -104,9 +104,16 @@ SLEEP_OPTIONS: Final[dict[str, int]] = {
     "always_on": SLEEP_NEVER,
 }
 
-# Links to uploaded wallpapers are signed and time-limited, so the list is
-# re-read often enough that a preview in the dashboard stays loadable.
+# Links to uploaded wallpapers are signed and last about ten minutes, which is
+# why previews are served through the integration rather than pointed at the
+# CDN -- the list itself only has to be current enough to name what the charger
+# is showing.
 WALLPAPER_LIST_INTERVAL: Final = 900
+# ...and how often to go looking when the charger names a picture the library
+# has never mentioned, which is what a picture uploaded from the phone app looks
+# like. Rate limited, because a picture that has been replaced in the library
+# stays on the charger and would otherwise be chased on every poll.
+WALLPAPER_MISS_INTERVAL: Final = 60
 
 # How long to let the charger download a picture before pointing the screensaver
 # at it.
