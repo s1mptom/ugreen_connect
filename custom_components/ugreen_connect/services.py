@@ -119,23 +119,38 @@ async def async_register(hass: HomeAssistant) -> None:
             image, file_name, device_code, product_serial
         )
 
-        # The charger knows pictures by a six-character id the API only reveals
-        # once the upload is registered, so read the library back to find it.
-        wallpaper_id = None
+        # The charger knows pictures by a six-character id, and the signed URL
+        # it must download from is only issued once the upload is registered --
+        # so read the library back to get both.
+        entry_for_file = None
         for _ in range(3):
             await asyncio.sleep(2)
             for item in await coordinator.api.get_wallpapers(device_code, product_serial):
                 if item.get("fileName") == file_name:
-                    wallpaper_id = item.get("fileNameMd5")
+                    entry_for_file = item
                     break
-            if wallpaper_id:
+            if entry_for_file:
                 break
-        if not wallpaper_id:
+        if not entry_for_file:
             raise HomeAssistantError("Uploaded, but the cloud never listed the picture")
+
+        wallpaper_id = entry_for_file.get("fileNameMd5")
+        iot_id = record["extra"]["iotId"]
+
+        # Handing over the id alone is not enough: the charger has to be told to
+        # fetch the file, or the screensaver would point at a picture it has
+        # never seen.
+        await coordinator.rtcx.async_set_picture(
+            iot_id,
+            entry_for_file["url"],
+            entry_for_file.get("fileSize") or len(image),
+            wallpaper_id,
+        )
+        await asyncio.sleep(5)
 
         reading = (coordinator.data.get("power") or {}).get(key) or {}
         await coordinator.rtcx.async_set_screensaver(
-            record["extra"]["iotId"],
+            iot_id,
             True,
             reading.get("screensaver_theme", 0),
             reading.get("screensaver_flag", 0),

@@ -443,6 +443,31 @@ class RtcxClient:
             {"iotId": iot_id, "items": {"PT_data": build_frame(FRAME_SETTING, cmd, payload)}},
         )
 
+    async def async_set_picture(
+        self, iot_id: str, url: str, size: int, image_id: str, stock: bool = False
+    ) -> None:
+        """Hand the charger a picture to fetch.
+
+        Unlike everything else here this is a plain property rather than a
+        PT_data frame: the device downloads the file itself, which is why the
+        screensaver only ever refers to pictures by id.
+        """
+        await self.call(
+            "/client/thing/properties/set",
+            {
+                "iotId": iot_id,
+                "items": {
+                    "PIC_data": {
+                        "Type": 1 if stock else 0,
+                        "size": size,
+                        "id": image_id,
+                        "version": "01",
+                        "url": url,
+                    }
+                },
+            },
+        )
+
     async def async_set_brightness(self, iot_id: str, value: int) -> None:
         await self._setting(
             iot_id, SETTING_SET_BRIGHTNESS, bytes([max(0, min(100, int(value)))])
