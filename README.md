@@ -21,11 +21,21 @@ get readings into Home Assistant without a Bluetooth proxy next to the device.
 |---|---|
 | `sensor.<device>_c1_power` … | one per port that has ever drawn power |
 | `sensor.<device>_c1_voltage`, `..._current` | same ports |
-| `sensor.<device>_total_power` | sum across ports; `work_mode` in attributes |
+| `sensor.<device>_c1_protocol` | negotiated fast-charge protocol: PD, PPS, QC, AFC, FCP, UFCS, AVS |
+| `sensor.<device>_total_power` | sum across ports; firmware and SSID in attributes |
 | `sensor.<device>_status` | `online` / `offline` |
+| `number.<device>_screen_brightness` | the charger's display, 0-100 |
 
 Ports are reported in the order `C1 C2 C3 C4 C5 C6 A1 DC`. Slots the hardware
-does not have stay at zero and get no entities.
+does not have stay at zero and never get entities; a port keeps its entities
+once it has been seen, so unplugging a cable does not delete its history.
+
+**What the device does not offer.** Its TSL model declares `WiFiRSSI`,
+`errorCode`, `IPAddress` and more, but the X783 never populates them — asking
+for those identifiers returns the same four properties it always reports. There
+is no temperature sensor of any kind, and no energy total, so the charger cannot
+feed Home Assistant's Energy dashboard directly (a Riemann-sum helper over
+`total_power` is the usual workaround).
 
 ## Install
 
