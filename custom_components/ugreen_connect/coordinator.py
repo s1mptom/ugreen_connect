@@ -88,6 +88,7 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 else:
                     power[key].update(await self.rtcx.async_device_state(iot_id) or {})
                     power[key].update(await self._static_info(key, iot_id))
+                    power[key]["ota"] = self.rtcx.ota_state()
             except UgreenError as err:
                 # Warn rather than debug: without this the entities simply never
                 # appear, with nothing anywhere saying why.

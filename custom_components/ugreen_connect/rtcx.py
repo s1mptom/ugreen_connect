@@ -177,6 +177,8 @@ class RtcxClient:
         self._token: str | None = None
         self._expires_at: float = 0.0
         self._lock = asyncio.Lock()
+        # Last propertyMap seen, so OTA state can be read without another call.
+        self.last_properties: dict[str, Any] = {}
         # Stable per-account, so the cloud sees one client rather than a new one
         # on every restart. The app uses "ANDRC_" + 12 hex.
         self._client_key = "ANDRC_" + hashlib.sha256(
@@ -345,6 +347,12 @@ class RtcxClient:
             if stamp and (time.time() * 1000 - stamp) > PT_DATA_MAX_AGE * 1000:
                 _LOGGER.debug("PT_data for %s is stale (%s)", iot_id, stamp)
                 return None
+            # Keep the rest of the map: OTA state rides along in the same
+            # response, so reading it costs no extra round trip.
+            self.last_properties = {
+                name: (entries[0].get("value") if entries else None)
+                for name, entries in prop_map.items()
+            }
             if value and frame_body(value, frame_type, cmd) is not None:
                 return value
             _LOGGER.debug(
@@ -352,6 +360,35 @@ class RtcxClient:
                 frame_type, cmd, attempt + 1,
             )
         return None
+
+    def ota_state(self) -> dict[str, Any]:
+        """Firmware update state, read from the properties already fetched.
+
+        ``OTA_ugrade`` (the cloud's spelling) only appears once an update is
+        actually waiting -- its absence is how "up to date" is expressed, which
+        is why nothing here invents a version when it is missing.
+        """
+        raw = self.last_properties.get("OTA_ugrade")
+        offer: dict[str, Any] = {}
+        if isinstance(raw, dict):
+            offer = raw
+        elif isinstance(raw, str) and raw:
+            try:
+                offer = json.loads(raw)
+            except json.JSONDecodeError:
+                _LOGGER.debug("OTA_ugrade is not JSON: %r", raw)
+
+        raw_progress = self.last_properties.get("OTA_status")
+        try:
+            progress: int | None = int(raw_progress)
+        except (TypeError, ValueError):
+            progress = None
+        return {
+            "available": offer.get("version"),
+            "module": offer.get("module"),
+            "size": offer.get("size"),
+            "progress": progress,
+        }
 
     async def async_text_query(self, iot_id: str, cmd: int) -> str | None:
         """Queries whose reply is a plain ASCII string (SSID, serial number)."""
