@@ -57,7 +57,9 @@ PT_DATA_MAX_AGE: Final = 300
 # what the app uploads is this way round.
 WALLPAPER_SIZE: Final[tuple[int, int]] = (560, 170)
 
-# Port order of the X783's power report, from the app's own port table.
+# Port order of the power report on the Nexode Pro 300W, from the app's own port
+# table. X783 is what the app calls that model internally, and is kept here
+# because a second model would need its own list beside this one.
 X783_PORTS: Final[tuple[str, ...]] = ("C1", "C2", "C3", "C4", "C5", "C6", "A1", "DC")
 
 # The charging protocol each port negotiated, reported one byte per port at the

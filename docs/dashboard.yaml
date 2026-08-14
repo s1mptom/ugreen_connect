@@ -7,7 +7,7 @@
 # statistics-graph-chart-card from HACS; drop that one card if you would rather
 # not install it.
 
-title: UGREEN Nexode Pro X783
+title: UGREEN Nexode Pro 300W
 path: charger
 type: sections
 max_columns: 4

@@ -406,7 +406,7 @@ class RtcxClient:
         """Everything the screen settings need, in one round trip.
 
         Byte offsets were established by writing a distinctive value and reading
-        it back on a real X783, not by guessing.
+        it back on a real charger, not by guessing.
         """
         value = await self._ask(iot_id, FRAME_QUERY, QUERY_GET_DEVICE_STATE)
         body = frame_body(value, FRAME_QUERY, QUERY_GET_DEVICE_STATE) if value else None

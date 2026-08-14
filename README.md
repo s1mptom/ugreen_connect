@@ -1,7 +1,10 @@
 # UGREEN Connect for Home Assistant
 
 Home Assistant integration for chargers managed by the **UgreenConnect** app
-(`*.ugreeniot.com`). Developed against a **UGREEN Nexode Pro X783**.
+(`*.ugreeniot.com`). Developed against a **UGREEN Nexode Pro 300W (X783)** —
+sold as the *Nexode Pro Smart Display Desktop Charger, 300W, 8-Port, GaN*.
+`X783` is the code the app knows it by, and the one that turns up in entity ids;
+it is not printed on the box.
 
 Live per-port **voltage, current and power**, plus everything the app's screen
 settings can do: brightness, screen-off time, charging mode, and the whole
@@ -76,7 +79,7 @@ entities once it has been seen, so unplugging a cable does not delete its
 history.
 
 **What the device does not offer.** Its TSL model declares `WiFiRSSI`,
-`errorCode`, `IPAddress` and more, but the X783 never populates them — asking
+`errorCode`, `IPAddress` and more, but this charger never populates them — asking
 for those identifiers returns the same four properties it always reports. There
 is no temperature sensor of any kind, and no energy total, so the charger cannot
 feed Home Assistant's Energy dashboard directly (a Riemann-sum helper over
@@ -250,7 +253,8 @@ fine.
 
 Issues and pull requests are welcome, especially from owners of other UGREEN
 chargers — the port table and the byte offsets in `const.py` and `rtcx.py` are
-X783-specific and are the first thing another model will disagree about. A
+specific to the 300W eight-port model and are the first thing another one will
+disagree about. A
 diagnostics download (*Settings → Devices & Services → UGREEN Connect →
 Download diagnostics*) is the most useful thing to attach; it has credentials
 redacted.
