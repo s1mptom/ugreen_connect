@@ -72,7 +72,7 @@ async def async_setup_entry(
 class UgreenChargingMode(UgreenDeviceEntity, SelectEntity):
     """Which power-sharing preset the charger runs."""
 
-    _attr_name = "Charging mode"
+    _attr_translation_key = "charging_mode"
     _attr_icon = "mdi:ev-station"
     _attr_options = list(SELECTABLE_MODES)
 
@@ -109,7 +109,7 @@ class UgreenWallpaper(UgreenDeviceEntity, SelectEntity):
     already on the charger.
     """
 
-    _attr_name = "Wallpaper"
+    _attr_translation_key = "wallpaper"
     _attr_icon = "mdi:image"
 
     NONE = "none"
@@ -209,7 +209,7 @@ class _UgreenScreensaverOption(UgreenDeviceEntity, SelectEntity):
 class UgreenClockStyle(_UgreenScreensaverOption):
     """Which of the two clock faces the screensaver draws."""
 
-    _attr_name = "Clock style"
+    _attr_translation_key = "clock_style"
     _attr_icon = "mdi:clock-outline"
     _attr_options = list(CLOCK_STYLES.values())
 
@@ -233,7 +233,7 @@ class UgreenClockStyle(_UgreenScreensaverOption):
 class UgreenTimeFormat(_UgreenScreensaverOption):
     """12- or 24-hour clock on the screensaver."""
 
-    _attr_name = "Time format"
+    _attr_translation_key = "time_format"
     _attr_icon = "mdi:clock-digital"
     _attr_options = list(TIME_FORMATS.values())
 
@@ -261,7 +261,7 @@ class UgreenSleepTime(UgreenDeviceEntity, SelectEntity):
     keeps the two in step; "always_on" is the zero it writes for never sleeping.
     """
 
-    _attr_name = "Screen off time"
+    _attr_translation_key = "screen_off_time"
     _attr_icon = "mdi:monitor-off"
     _attr_options = list(SLEEP_OPTIONS)
 

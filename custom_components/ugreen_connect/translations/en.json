@@ -50,6 +50,48 @@
           "offline": "Offline"
         }
       }
+    },
+    "select": {
+      "charging_mode": {
+        "name": "Charging mode",
+        "state": {
+          "adaptive_power": "Adaptive power",
+          "thermal_safe": "Thermal safe",
+          "dc_turbo": "DC turbo",
+          "priority": "Priority",
+          "custom": "Custom"
+        }
+      },
+      "clock_style": {
+        "name": "Clock style",
+        "state": {
+          "style_1": "Style 1",
+          "style_2": "Style 2"
+        }
+      },
+      "time_format": {
+        "name": "Time format",
+        "state": {
+          "12h": "12-hour",
+          "24h": "24-hour"
+        }
+      },
+      "screen_off_time": {
+        "name": "Screen off time",
+        "state": {
+          "1_min": "1 minute",
+          "5_min": "5 minutes",
+          "10_min": "10 minutes",
+          "30_min": "30 minutes",
+          "always_on": "Always on"
+        }
+      },
+      "wallpaper": {
+        "name": "Wallpaper",
+        "state": {
+          "none": "None"
+        }
+      }
     }
   }
 }

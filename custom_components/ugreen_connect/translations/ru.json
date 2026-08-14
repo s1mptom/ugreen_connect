@@ -50,6 +50,48 @@
           "offline": "Не в сети"
         }
       }
+    },
+    "select": {
+      "charging_mode": {
+        "name": "Режим зарядки",
+        "state": {
+          "adaptive_power": "Адаптивная мощность",
+          "thermal_safe": "Тепловая защита",
+          "dc_turbo": "DC-турбо",
+          "priority": "Приоритет",
+          "custom": "Свой"
+        }
+      },
+      "clock_style": {
+        "name": "Стиль часов",
+        "state": {
+          "style_1": "Стиль 1",
+          "style_2": "Стиль 2"
+        }
+      },
+      "time_format": {
+        "name": "Формат времени",
+        "state": {
+          "12h": "12 часов",
+          "24h": "24 часа"
+        }
+      },
+      "screen_off_time": {
+        "name": "Гашение экрана",
+        "state": {
+          "1_min": "1 минута",
+          "5_min": "5 минут",
+          "10_min": "10 минут",
+          "30_min": "30 минут",
+          "always_on": "Всегда включён"
+        }
+      },
+      "wallpaper": {
+        "name": "Обои",
+        "state": {
+          "none": "Нет"
+        }
+      }
     }
   }
 }
