@@ -1,7 +1,6 @@
 set_wallpaper:
-  target:
-    device:
-      integration: ugreen_connect
+  # No `target:` -- a service target cannot filter devices by integration, and
+  # the charger is already picked with the device selector below.
   fields:
     device_id:
       required: true
