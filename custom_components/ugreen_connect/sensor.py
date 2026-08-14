@@ -29,13 +29,16 @@ from .const import DOMAIN, HANDSHAKE_PROTOCOL, X783_PORTS
 from .coordinator import UgreenCoordinator, device_key
 from .entity import ONLINE, UgreenDeviceEntity
 
-# The report always carries all eight slots; ports the hardware does not have
-# simply read zero forever, so only those seen powered are worth an entity.
+# The report always carries all eight slots.
 MEASUREMENTS: dict[str, tuple[SensorDeviceClass, str, int]] = {
     "power": (SensorDeviceClass.POWER, UnitOfPower.WATT, 1),
     "voltage": (SensorDeviceClass.VOLTAGE, UnitOfElectricPotential.VOLT, 1),
     "current": (SensorDeviceClass.CURRENT, UnitOfElectricCurrent.AMPERE, 1),
 }
+
+# Ports that get entities unconditionally -- every physical port of the X783
+# except DC, which is only surfaced once something is actually plugged into it.
+ALWAYS_PORTS: tuple[str, ...] = tuple(p for p in X783_PORTS if p != "DC")
 
 
 async def async_setup_entry(
@@ -77,12 +80,18 @@ async def async_setup_entry(
             if (key, "total") not in known_ports:
                 known_ports.add((key, "total"))
                 new.append(UgreenTotalPowerSensor(coordinator, key))
-            # A port is only worth an entity once it has actually shown a
-            # voltage; the report pads unused slots with zeroes.
+            # Every real port of the device gets its entities up front, so the
+            # dashboard shows the full layout from the start rather than waiting
+            # for a port to happen to be drawing power during a poll. DC is the
+            # exception: it only matters when something is actually plugged in.
             for port in X783_PORTS:
                 values = reading["ports"].get(port) or {}
                 live = any(v for k, v in values.items() if k in MEASUREMENTS)
-                if (not live and (key, port) not in seen_before) or (key, port) in known_ports:
+                always = port in ALWAYS_PORTS
+                if (
+                    (not live and not always and (key, port) not in seen_before)
+                    or (key, port) in known_ports
+                ):
                     continue
                 known_ports.add((key, port))
                 new.extend(

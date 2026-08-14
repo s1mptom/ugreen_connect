@@ -7,11 +7,13 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import UgreenConfigEntry
-from .const import CHARGING_MODES, SELECTABLE_MODES
+from .const import CHARGING_MODES, CLOCK_POSITIONS, SELECTABLE_MODES, TIME_FORMATS
 from .coordinator import UgreenCoordinator, device_key
 from .entity import UgreenDeviceEntity
 
 MODE_VALUE = {name: value for value, name in CHARGING_MODES.items()}
+CLOCK_POSITION_VALUE = {name: value for value, name in CLOCK_POSITIONS.items()}
+TIME_FORMAT_VALUE = {name: value for value, name in TIME_FORMATS.items()}
 
 
 async def async_setup_entry(
@@ -38,6 +40,14 @@ async def async_setup_entry(
             if reading.get("wallpapers") and (key, "wallpaper") not in known:
                 known.add((key, "wallpaper"))
                 new.append(UgreenWallpaper(coordinator, key))
+            # The clock options only exist alongside the screensaver state.
+            if reading.get("screensaver_theme") is not None:
+                if (key, "clock_position") not in known:
+                    known.add((key, "clock_position"))
+                    new.append(UgreenClockPosition(coordinator, key))
+                if (key, "time_format") not in known:
+                    known.add((key, "time_format"))
+                    new.append(UgreenTimeFormat(coordinator, key))
         if new:
             async_add_entities(new)
 
@@ -123,3 +133,78 @@ class UgreenWallpaper(UgreenDeviceEntity, SelectEntity):
         )
         reading["wallpaper"] = wallpaper
         self.async_write_ha_state()
+
+
+class _UgreenScreensaverOption(UgreenDeviceEntity, SelectEntity):
+    """Base for the clock options carried in the screensaver frame.
+
+    Each writes back the current screensaver on/off, both option bytes and the
+    wallpaper, changing only its own byte -- otherwise setting one would reset
+    the others.
+    """
+
+    async def _send(self, *, theme: int | None = None, flag: int | None = None) -> None:
+        reading = self._reading or {}
+        iot_id = self._iot_id
+        if not iot_id:
+            return
+        await self.coordinator.rtcx.async_set_screensaver(
+            iot_id,
+            bool(reading.get("screensaver", True)),
+            reading.get("screensaver_theme", 0) if theme is None else theme,
+            reading.get("screensaver_flag", 0) if flag is None else flag,
+            reading.get("wallpaper"),
+        )
+        if theme is not None:
+            reading["screensaver_theme"] = theme
+        if flag is not None:
+            reading["screensaver_flag"] = flag
+        self.async_write_ha_state()
+
+
+class UgreenClockPosition(_UgreenScreensaverOption):
+    """Where the clock sits on the screensaver."""
+
+    _attr_name = "Clock position"
+    _attr_icon = "mdi:clock-outline"
+    _attr_options = list(CLOCK_POSITIONS.values())
+
+    def __init__(self, coordinator: UgreenCoordinator, key: str) -> None:
+        super().__init__(coordinator, key)
+        self._attr_unique_id = f"{key}_clock_position"
+
+    @property
+    def available(self) -> bool:
+        return super().available and (self._reading or {}).get("screensaver_theme") is not None
+
+    @property
+    def current_option(self) -> str | None:
+        return CLOCK_POSITIONS.get((self._reading or {}).get("screensaver_theme"))
+
+    async def async_select_option(self, option: str) -> None:
+        if option in CLOCK_POSITION_VALUE:
+            await self._send(theme=CLOCK_POSITION_VALUE[option])
+
+
+class UgreenTimeFormat(_UgreenScreensaverOption):
+    """12- or 24-hour clock on the screensaver."""
+
+    _attr_name = "Time format"
+    _attr_icon = "mdi:clock-digital"
+    _attr_options = list(TIME_FORMATS.values())
+
+    def __init__(self, coordinator: UgreenCoordinator, key: str) -> None:
+        super().__init__(coordinator, key)
+        self._attr_unique_id = f"{key}_time_format"
+
+    @property
+    def available(self) -> bool:
+        return super().available and (self._reading or {}).get("screensaver_flag") is not None
+
+    @property
+    def current_option(self) -> str | None:
+        return TIME_FORMATS.get((self._reading or {}).get("screensaver_flag"))
+
+    async def async_select_option(self, option: str) -> None:
+        if option in TIME_FORMAT_VALUE:
+            await self._send(flag=TIME_FORMAT_VALUE[option])

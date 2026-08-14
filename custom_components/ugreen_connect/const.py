@@ -27,7 +27,7 @@ CODE_NO_PERMISSION: Final = 100003
 CODE_MISSING_HEADER: Final = 100013
 CODE_NO_SID: Final = 200010
 
-DEFAULT_SCAN_INTERVAL: Final = 60
+DEFAULT_SCAN_INTERVAL: Final = 5
 
 # --- RTCX/Polaris gateway (live telemetry) ---------------------------------
 # The gateway envelope uses an underscore locale, unlike the account API header.
@@ -72,6 +72,14 @@ CHARGING_MODES: Final[dict[int, str]] = {
 SELECTABLE_MODES: Final[tuple[str, ...]] = (
     "standard", "energy_saving", "dc_fast", "port_priority",
 )
+
+# Screensaver clock options. These ride along in the screensaver frame as the
+# two bytes after the on/off flag: byte 41 (`theme`) and byte 42 (`flag`).
+# The exact value<->meaning mapping is inferred from the app's UI strings
+# (clockStyle / timeFormat) and the device's current state, not from a captured
+# write, so it may need correcting against what the screen actually shows.
+CLOCK_POSITIONS: Final[dict[int, str]] = {0: "left", 1: "center"}
+TIME_FORMATS: Final[dict[int, str]] = {0: "12h", 1: "24h"}
 
 # Dumped next to configuration.yaml on every refresh while `debug_dump` is on.
 # It is the raw, unmodified cloud payload and is what the entity layer is built
