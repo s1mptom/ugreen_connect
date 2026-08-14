@@ -17,6 +17,41 @@ const OUT_W = 560;
 const OUT_H = 170;
 const RATIO = OUT_W / OUT_H;
 
+/* Everything the card says, in one place.
+ *
+ * To add a language: copy the whole `en` block, key it by the language code
+ * Home Assistant uses ("de", "fr", "ru", ...), and translate the values. Keys
+ * that are missing fall back to English, so a partial translation is fine, and
+ * `{n}` in a value is replaced by a number. */
+const TEXT = {
+  en: {
+    title: 'Screensaver',
+    timeFormat: 'Time format',
+    hours12: '12 h',
+    hours24: '24 h',
+    clockStyle: 'Clock style',
+    style1: 'Style 1',
+    style2: 'Style 2',
+    wallpaper: 'Wallpaper',
+    none: 'None',
+    stockPicture: 'Wallpaper {n}',
+    customWallpaper: 'Custom wallpaper',
+    yours: 'Yours',
+    ownPicture: 'Picture {n}',
+    upload: 'Upload a picture',
+    rotate: 'Rotate 90°',
+    reset: 'Reset',
+    cancel: 'Cancel',
+    apply: 'Use this',
+    dragHint: 'Drag to move, scroll or pinch to zoom.',
+    notAnImage: 'That file is not an image',
+    needDevice: 'Set device_id in the card config',
+    uploading: 'Uploading…',
+    sent: 'Done — the charger is fetching it now.',
+    failed: 'Upload failed',
+  },
+};
+
 const css = `
   .body { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
   .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -120,6 +155,14 @@ class UgreenWallpaperCard extends HTMLElement {
 
   getCardSize() { return 8; }
 
+  /* One string, in the viewer's language where there is one. */
+  _t(key, vars) {
+    const lang = (this._hass?.locale?.language || this._hass?.language || 'en')
+      .toLowerCase().split('-')[0];
+    const text = (TEXT[lang] || {})[key] ?? TEXT.en[key] ?? key;
+    return vars ? text.replace(/\{(\w+)\}/g, (_, name) => vars[name]) : text;
+  }
+
   /* Entities ------------------------------------------------------------ */
 
   _find(domain, suffix) {
@@ -152,54 +195,54 @@ class UgreenWallpaperCard extends HTMLElement {
       <ha-card>
         <div class="body">
           <div class="head">
-            <h2>${this._config.title || 'Screensaver'}</h2>
+            <h2>${this._config.title || this._t('title')}</h2>
             <ha-switch class="power"></ha-switch>
           </div>
           <div class="settings">
             <div class="hero"><span class="face centre"><span class="blk"><b></b><i></i></span></span></div>
-            <div class="field fmt"><span>Time format</span>
+            <div class="field fmt"><span>${this._t('timeFormat')}</span>
               <span class="seg">
-                <button data-fmt="12h" aria-pressed="false">12 h</button>
-                <button data-fmt="24h" aria-pressed="false">24 h</button>
+                <button data-fmt="12h" aria-pressed="false">${this._t('hours12')}</button>
+                <button data-fmt="24h" aria-pressed="false">${this._t('hours24')}</button>
               </span>
             </div>
             <div>
-              <div class="field"><span>Clock style</span></div>
+              <div class="field"><span>${this._t('clockStyle')}</span></div>
               <div class="styles">
                 <div class="style">
                   <button class="clock" data-sty="style_1" aria-pressed="false">
                     <span class="face centre"><span class="blk"><b>09:00</b><i>MON, JUN 09</i></span></span>
                     <span class="mark">✓</span>
                   </button>
-                  <span class="lab">Style 1</span>
+                  <span class="lab">${this._t('style1')}</span>
                 </div>
                 <div class="style">
                   <button class="clock" data-sty="style_2" aria-pressed="false">
                     <span class="face left"><span class="blk"><b>09:00</b><i>MON, JUN 09</i></span></span>
                     <span class="mark">✓</span>
                   </button>
-                  <span class="lab">Style 2</span>
+                  <span class="lab">${this._t('style2')}</span>
                 </div>
               </div>
             </div>
             <div>
-              <div class="field"><span>Wallpaper</span></div>
+              <div class="field"><span>${this._t('wallpaper')}</span></div>
               <div class="grid"></div>
             </div>
             <div class="own" hidden>
-              <div class="field"><span>Custom wallpaper</span></div>
+              <div class="field"><span>${this._t('customWallpaper')}</span></div>
               <div class="grid mine"></div>
             </div>
             <div class="row">
-              <label class="btn primary">Upload a picture<input type="file" accept="image/*" hidden></label>
+              <label class="btn primary">${this._t('upload')}<input type="file" accept="image/*" hidden></label>
             </div>
             <div class="editor" hidden>
               <div class="stage"><canvas></canvas></div>
               <div class="row" style="margin-top:10px">
-                <button class="btn" data-act="rot">Rotate 90°</button>
-                <button class="btn" data-act="fit">Reset</button>
-                <button class="btn" data-act="cancel">Cancel</button>
-                <button class="btn primary" data-act="apply">Use this</button>
+                <button class="btn" data-act="rot">${this._t('rotate')}</button>
+                <button class="btn" data-act="fit">${this._t('reset')}</button>
+                <button class="btn" data-act="cancel">${this._t('cancel')}</button>
+                <button class="btn primary" data-act="apply">${this._t('apply')}</button>
               </div>
             </div>
             <div class="status"></div>
@@ -275,12 +318,13 @@ class UgreenWallpaperCard extends HTMLElement {
       const stock = list.filter((w) => w.stock);
       const mine = list.filter((w) => !w.stock);
       this._grid.innerHTML = '';
-      this._grid.appendChild(this._tile({ id: 'none' }, 'None', current === 'none'));
+      this._grid.appendChild(this._tile({ id: 'none' }, this._t('none'), current === 'none'));
       stock.forEach((w, i) => this._grid.appendChild(
-        this._tile(w, `Wallpaper ${i + 1}`, w.id === current)));
+        this._tile(w, this._t('stockPicture', { n: i + 1 }), w.id === current)));
       this._mine.innerHTML = '';
       mine.forEach((w, i) => this._mine.appendChild(
-        this._tile(w, mine.length > 1 ? `Picture ${i + 1}` : 'Yours', w.id === current)));
+        this._tile(w, mine.length > 1 ? this._t('ownPicture', { n: i + 1 }) : this._t('yours'),
+                       w.id === current)));
       this._own.hidden = mine.length === 0;
     }
     this._drawHero(list, current, sty, fmt);
@@ -289,12 +333,12 @@ class UgreenWallpaperCard extends HTMLElement {
   /* The strip the charger will actually show: the chosen picture with the clock
      over it, in the chosen style. The app leads with the same thing. */
   _drawHero(list, current, sty, fmt) {
-    const pic = list.find((w) => w.id === current && w.url);
+    const pic = list.find((w) => w.id === current && (w.preview || w.url));
     const img = this._hero.querySelector('img');
-    if (pic && img?.dataset.url !== pic.url) {
-      (img || this._hero.insertAdjacentElement('afterbegin', new Image()))
-        .setAttribute('src', pic.url);
-      this._hero.querySelector('img').dataset.url = pic.url;
+    if (pic && img?.dataset.pic !== pic.id) {
+      const target = img || this._hero.insertAdjacentElement('afterbegin', new Image());
+      target.dataset.pic = pic.id;
+      this._show(target, pic);
     } else if (!pic && img) {
       img.remove();
     }
@@ -315,17 +359,42 @@ class UgreenWallpaperCard extends HTMLElement {
 
   disconnectedCallback() {
     if (this._tick) { clearInterval(this._tick); this._tick = null; }
+    for (const url of Object.values(this._blobs || {})) URL.revokeObjectURL(url);
+    this._blobs = {};
+  }
+
+  /* Point an <img> at a picture.
+
+     The address the integration serves needs Home Assistant's own credentials,
+     which an <img> never sends, so it is fetched here and handed over as a
+     blob. The CDN link stays as a fallback -- it works for the first ten
+     minutes after the card is drawn, which is better than a broken image. */
+  async _show(img, w) {
+    this._blobs ||= {};
+    if (this._blobs[w.id]) { img.src = this._blobs[w.id]; return; }
+    const token = this._hass?.auth?.data?.access_token;
+    if (w.preview && token) {
+      try {
+        const reply = await fetch(w.preview, { headers: { authorization: `Bearer ${token}` } });
+        if (reply.ok) {
+          img.src = this._blobs[w.id] = URL.createObjectURL(await reply.blob());
+          return;
+        }
+      } catch (err) { /* fall through to the CDN */ }
+    }
+    if (w.url) img.src = w.url;
   }
 
   _tile(w, label, active) {
     const cell = document.createElement('div');
     cell.className = 'cell';
     const el = document.createElement('button');
-    el.className = 'tile' + (w.url ? '' : ' plain');
+    const pic = w.preview || w.url;
+    el.className = 'tile' + (pic ? '' : ' plain');
     el.setAttribute('aria-pressed', String(!!active));
     // The name goes under the tile either way, so a plain one is left empty.
-    el.innerHTML = (w.url ? `<img src="${w.url}" loading="lazy" alt="">` : '')
-      + '<span class="mark">✓</span>';
+    el.innerHTML = (pic ? '<img alt="">' : '') + '<span class="mark">✓</span>';
+    if (pic) this._show(el.querySelector('img'), w);
     el.addEventListener('click', () => this._select(this._entities().wallpaper, w.id));
     cell.appendChild(el);
     const cap = document.createElement('span');
@@ -353,14 +422,14 @@ class UgreenWallpaperCard extends HTMLElement {
       const img = new Image();
       await new Promise((ok, no) => {
         img.onload = ok;
-        img.onerror = () => no(new Error('That file is not an image'));
+        img.onerror = () => no(new Error(this._t('notAnImage')));
         img.src = url;
       });
       this._image = img;
       this._angle = 0;
       this._editor.hidden = false;
       this._fit(true);
-      this._status('Drag to move, scroll or pinch to zoom.');
+      this._status(this._t('dragHint'));
     } catch (err) {
       this._status(err.message, true);
     } finally {
@@ -491,13 +560,13 @@ class UgreenWallpaperCard extends HTMLElement {
     const deviceId = this._config.device_id
       || this._state(this._entities().wallpaper)?.attributes?.device_id;
     if (!deviceId) {
-      this._status('Set device_id in the card config', true);
+      this._status(this._t('needDevice'), true);
       return;
     }
     this._busy = true;
     const apply = this.querySelector('[data-act=apply]');
     apply.disabled = true;
-    this._status('Uploading…');
+    this._status(this._t('uploading'));
 
     const out = document.createElement('canvas');
     out.width = OUT_W;
@@ -517,10 +586,10 @@ class UgreenWallpaperCard extends HTMLElement {
         device_id: deviceId,
         image: out.toDataURL('image/jpeg', 0.9),
       });
-      this._status('Done — the charger is fetching it now.');
+      this._status(this._t('sent'));
       this._close();
     } catch (err) {
-      this._status(err?.message || 'Upload failed', true);
+      this._status(err?.message || this._t('failed'), true);
     } finally {
       this._busy = false;
       apply.disabled = false;

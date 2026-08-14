@@ -15,6 +15,7 @@ from .const import CONF_DEBUG_DUMP, CONF_REGION, DEFAULT_LANGUAGE, DEFAULT_REGIO
 from .coordinator import UgreenCoordinator
 from .rtcx import RtcxClient
 from .frontend import async_register_card
+from .image_proxy import async_register_view
 from .services import async_register
 
 _LOGGER = logging.getLogger(__name__)
@@ -64,8 +65,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
     entry.runtime_data = coordinator
     await async_register(hass)
     await async_register_card(hass)
+    async_register_view(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # The poll interval is fixed when the coordinator is built, so a changed
+    # option only takes effect once the entry is set up again.
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     return True
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: UgreenConfigEntry) -> None:
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bool:

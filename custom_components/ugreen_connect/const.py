@@ -27,7 +27,13 @@ CODE_NO_PERMISSION: Final = 100003
 CODE_MISSING_HEADER: Final = 100013
 CODE_NO_SID: Final = 200010
 
+# Every poll is two gateway calls plus a wait for the charger to answer, so this
+# is a trade between a live-looking wattage and how hard someone else's cloud is
+# leaned on. Five seconds suits watching a laptop charge; the options flow lets
+# anyone who would rather be gentle raise it without touching the code.
 DEFAULT_SCAN_INTERVAL: Final = 5
+MIN_SCAN_INTERVAL: Final = 5
+MAX_SCAN_INTERVAL: Final = 900
 
 # --- RTCX/Polaris gateway (live telemetry) ---------------------------------
 # The gateway envelope uses an underscore locale, unlike the account API header.

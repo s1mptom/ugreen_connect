@@ -49,6 +49,36 @@
           "online": "Online",
           "offline": "Offline"
         }
+      },
+      "total_power": {
+        "name": "Total power"
+      },
+      "port_power": {
+        "name": "{port} power"
+      },
+      "port_voltage": {
+        "name": "{port} voltage"
+      },
+      "port_current": {
+        "name": "{port} current"
+      },
+      "port_protocol": {
+        "name": "{port} protocol"
+      }
+    },
+    "number": {
+      "screen_brightness": {
+        "name": "Screen brightness"
+      }
+    },
+    "switch": {
+      "screensaver": {
+        "name": "Screensaver"
+      }
+    },
+    "update": {
+      "firmware": {
+        "name": "Firmware"
       }
     },
     "select": {
@@ -116,6 +146,27 @@
           "description": "The picture itself, base64 encoded, with or without a data: prefix."
         }
       }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "UGREEN Connect options",
+        "data": {
+          "scan_interval": "Poll every",
+          "region": "Region",
+          "debug_dump": "Write a raw cloud snapshot to the config folder"
+        },
+        "data_description": {
+          "scan_interval": "Each poll is two cloud calls plus a wait for the charger to answer. 5 s keeps the wattage live; raise it to lean less on UGREEN's servers.",
+          "region": "Only change this if the account itself was moved to another server. The password is checked against the new region before the change is kept.",
+          "debug_dump": "Saves ugreen_connect_debug.json on every refresh. It is the unedited cloud payload."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the UGREEN cloud.",
+      "invalid_auth": "The account or password was rejected in that region."
     }
   }
 }

@@ -9,6 +9,7 @@ from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -42,7 +43,9 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
+            update_interval=timedelta(
+                seconds=entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+            ),
             config_entry=entry,
         )
         self.api = api
@@ -160,6 +163,26 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ]
         self._wallpaper_cache[key] = (listed, time.time())
         return listed
+
+    async def async_wallpaper_url(self, image_id: str, *, refresh: bool = False) -> str | None:
+        """The signed link for one picture, optionally re-read from the account.
+
+        Links live about ten minutes, so whatever was cached for the card is
+        usually past it by the time a browser asks. `refresh` throws the cached
+        list away and fetches the library again, which is what the image view
+        does before giving up on a picture.
+        """
+        if refresh:
+            self._wallpaper_cache.clear()
+            for device in self.data.get("devices", []):
+                reading = (self.data.get("power") or {}).get(device_key(device) or "")
+                if reading is not None:
+                    reading["wallpaper_list"] = await self._wallpapers(device)
+        for reading in (self.data.get("power") or {}).values():
+            for item in (reading or {}).get("wallpaper_list") or []:
+                if item.get("id") == image_id and item.get("url"):
+                    return item["url"]
+        return None
 
     def _write_dump(self, data: dict[str, Any]) -> None:
         """Write one raw snapshot so the entity layer can be built from real data."""

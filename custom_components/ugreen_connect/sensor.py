@@ -153,7 +153,10 @@ class UgreenPortSensor(UgreenDeviceEntity, SensorEntity):
         self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit
         self._attr_suggested_display_precision = digits
-        self._attr_name = f"{port} {kind}"
+        # Named through a placeholder so a translation only has to give the
+        # word, not one entry per port.
+        self._attr_translation_key = f"port_{kind}"
+        self._attr_translation_placeholders = {"port": port}
         self._attr_unique_id = f"{key}_{port}_{kind}"
 
     @property
@@ -178,7 +181,8 @@ class UgreenPortProtocolSensor(UgreenDeviceEntity, SensorEntity):
     def __init__(self, coordinator: UgreenCoordinator, key: str, port: str) -> None:
         super().__init__(coordinator, key)
         self._port = port
-        self._attr_name = f"{port} protocol"
+        self._attr_translation_key = "port_protocol"
+        self._attr_translation_placeholders = {"port": port}
         self._attr_unique_id = f"{key}_{port}_protocol"
 
     @property
@@ -196,7 +200,7 @@ class UgreenPortProtocolSensor(UgreenDeviceEntity, SensorEntity):
 class UgreenTotalPowerSensor(UgreenDeviceEntity, SensorEntity):
     """Combined output of every port."""
 
-    _attr_name = "Total power"
+    _attr_translation_key = "total_power"
     _attr_device_class = SensorDeviceClass.POWER
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfPower.WATT

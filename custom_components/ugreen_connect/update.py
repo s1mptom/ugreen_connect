@@ -47,7 +47,7 @@ async def async_setup_entry(
 class UgreenFirmware(UgreenDeviceEntity, UpdateEntity):
     """Installed firmware, and whether the cloud is offering a newer one."""
 
-    _attr_name = "Firmware"
+    _attr_translation_key = "firmware"
     _attr_supported_features = UpdateEntityFeature(0)
 
     def __init__(self, coordinator: UgreenCoordinator, key: str) -> None:

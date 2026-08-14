@@ -21,6 +21,7 @@ from .const import (
 )
 from .coordinator import UgreenCoordinator, device_key
 from .entity import UgreenDeviceEntity
+from .image_proxy import wallpaper_path
 
 MODE_VALUE = {name: value for value, name in CHARGING_MODES.items()}
 CLOCK_STYLE_VALUE = {name: value for value, name in CLOCK_STYLES.items()}
@@ -137,8 +138,21 @@ class UgreenWallpaper(UgreenDeviceEntity, SelectEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        # The card renders previews from this; the device only knows ids.
-        return {"wallpapers": (self._reading or {}).get("wallpaper_list") or []}
+        """What the card draws its previews from; the device only knows ids.
+
+        Each picture carries a `preview` address served by this integration
+        alongside the CDN `url` it came from. The CDN link is signed and dies
+        after about ten minutes, far sooner than a dashboard is redrawn, so the
+        card is meant to use `preview` and keep `url` only as a fallback.
+        """
+        entry_id = self.coordinator.config_entry.entry_id
+        return {
+            "wallpapers": [
+                item | {"preview": wallpaper_path(entry_id, item["id"])}
+                for item in (self._reading or {}).get("wallpaper_list") or []
+                if item.get("id")
+            ]
+        }
 
     @property
     def current_option(self) -> str | None:

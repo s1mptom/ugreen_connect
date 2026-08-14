@@ -43,7 +43,7 @@ async def async_setup_entry(
 class UgreenScreensaver(UgreenDeviceEntity, SwitchEntity):
     """Whether the screen shows the screensaver when idle."""
 
-    _attr_name = "Screensaver"
+    _attr_translation_key = "screensaver"
     _attr_icon = "mdi:monitor-shimmer"
 
     def __init__(self, coordinator: UgreenCoordinator, key: str) -> None:

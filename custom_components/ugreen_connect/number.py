@@ -43,7 +43,7 @@ async def async_setup_entry(
 class UgreenBrightness(UgreenDeviceEntity, NumberEntity):
     """Screen brightness, 0-100."""
 
-    _attr_name = "Screen brightness"
+    _attr_translation_key = "screen_brightness"
     _attr_native_min_value = 0
     _attr_native_max_value = 100
     _attr_native_step = 1
