@@ -7,6 +7,7 @@ online state, and -- for chargers that answer the RTCX gateway's binary
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -29,6 +30,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import UgreenConfigEntry
 from .const import DOMAIN, HANDSHAKE_PROTOCOL, X783_PORTS
 from .coordinator import UgreenCoordinator, device_key
+
+_LOGGER = logging.getLogger(__name__)
 
 # extra.onlineStatus / extra.networkStatus are 1 when up, 0 when down.
 ONLINE = 1
@@ -63,6 +66,7 @@ async def async_setup_entry(
         for port in X783_PORTS
         if registry.async_get_entity_id("sensor", DOMAIN, f"{key}_{port}_power")
     }
+    _LOGGER.warning("ugreen: ports already in the registry: %s", sorted(seen_before))
 
     @callback
     def _add_new_devices() -> None:
