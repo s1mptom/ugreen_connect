@@ -25,6 +25,16 @@ get readings into Home Assistant without a Bluetooth proxy next to the device.
 | `sensor.<device>_total_power` | sum across ports; firmware and SSID in attributes |
 | `sensor.<device>_status` | `online` / `offline` |
 | `number.<device>_screen_brightness` | the charger's display, 0-100 |
+| `number.<device>_screen_sleep_timeout` | raw byte; the app never labels its unit |
+| `switch.<device>_screensaver` | screensaver on the idle screen |
+| `select.<device>_charging_mode` | standard, energy saving, DC fast, port priority |
+| `select.<device>_wallpaper` | pictures already stored on the charger, or none |
+
+`custom` is a real charging mode and is reported when the device is in it, but it
+cannot be selected here: it needs the 35 parameter bytes the presets leave at
+zero, which only the app's mode editor fills in. Wallpapers are chosen among
+those already on the device — uploading a new one goes through UGREEN's own
+storage and is out of scope.
 
 Ports are reported in the order `C1 C2 C3 C4 C5 C6 A1 DC`. Slots the hardware
 does not have stay at zero and never get entities; a port keeps its entities
