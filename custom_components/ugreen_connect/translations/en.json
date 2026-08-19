@@ -158,7 +158,7 @@
           "debug_dump": "Write a raw cloud snapshot to the config folder"
         },
         "data_description": {
-          "scan_interval": "Each poll is two cloud calls plus a wait for the charger to answer. 5 s keeps the wattage live; raise it to lean less on UGREEN's servers.",
+          "scan_interval": "How often a reading arrives. Measured start to start, so the wait for the charger to answer comes out of this rather than being added to it. 5 s keeps the wattage live; raise it to lean less on UGREEN's servers.",
           "region": "Only change this if the account itself was moved to another server. The password is checked against the new region before the change is kept.",
           "debug_dump": "Saves ugreen_connect_debug.json on every refresh. It is the unedited cloud payload."
         }

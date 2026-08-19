@@ -19,6 +19,7 @@ from .const import (
     DEBUG_DUMP_FILE,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    MIN_POLL_GAP,
     STATIC_INFO_INTERVAL,
     WALLPAPER_LIST_INTERVAL,
     WALLPAPER_MISS_INTERVAL,
@@ -49,6 +50,12 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ),
             config_entry=entry,
         )
+        # What the option means to the user: one reading every N seconds. The
+        # interval handed to the coordinator is only the gap that is left after
+        # a poll, and `_reschedule` keeps the two in step.
+        self._target_period = float(
+            entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        )
         self.api = api
         self.rtcx = rtcx
         self._debug_dump = debug_dump
@@ -60,6 +67,32 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._products: dict[str, Any] = {}
 
     async def _async_update_data(self) -> dict[str, Any]:
+        started = time.monotonic()
+        try:
+            return await self._async_poll()
+        finally:
+            self._reschedule(time.monotonic() - started)
+
+    def _reschedule(self, elapsed: float) -> None:
+        """Keep a steady poll *period*, not a steady gap between polls.
+
+        The coordinator counts its interval from the moment a poll finishes, so
+        the real period is interval + however long the poll took -- and a poll
+        here is never quick: it writes a query into the charger's ``PT_data``
+        and then waits for the device to answer. Asking every 5 s therefore
+        produced a reading only every ~9 s.
+
+        Subtracting the time already spent makes the configured value mean what
+        it looks like it means: a reading every N seconds. `MIN_POLL_GAP` keeps
+        a slow or silent device from turning that into back-to-back requests,
+        which is the one way this could make things worse rather than better.
+        """
+        gap = max(MIN_POLL_GAP, self._target_period - elapsed)
+        wanted = timedelta(seconds=gap)
+        if self.update_interval != wanted:
+            self.update_interval = wanted
+
+    async def _async_poll(self) -> dict[str, Any]:
         try:
             devices = await self.api.get_devices()
         except UgreenAuthError as err:

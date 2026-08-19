@@ -218,7 +218,7 @@ property, which is what makes it download the file.
 
 | Setting | Default | Notes |
 |---|---|---|
-| Poll every | 5 s | each poll is two cloud calls plus a wait for the charger to answer |
+| Poll every | 5 s | how often a reading arrives, measured start to start; the wait for the charger to answer comes out of it, not on top |
 | Region | as set up | only if the account itself moved servers; the password is re-checked first |
 | Debug snapshot | off | writes the unedited cloud payload to `ugreen_connect_debug.json` |
 

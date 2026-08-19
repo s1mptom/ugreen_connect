@@ -33,6 +33,10 @@ CODE_NO_SID: Final = 200010
 # anyone who would rather be gentle raise it without touching the code.
 DEFAULT_SCAN_INTERVAL: Final = 5
 MIN_SCAN_INTERVAL: Final = 5
+# Smallest pause between a reply and the next request. The poll period is
+# measured start-to-start, so when a poll already overruns the configured
+# period this is what stops it becoming a back-to-back loop against the cloud.
+MIN_POLL_GAP: Final = 1.0
 MAX_SCAN_INTERVAL: Final = 900
 
 # --- RTCX/Polaris gateway (live telemetry) ---------------------------------
