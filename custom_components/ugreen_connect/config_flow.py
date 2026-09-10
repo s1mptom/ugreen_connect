@@ -63,8 +63,6 @@ STEP_USER_SCHEMA = vol.Schema(
                 translation_key="region",
             )
         ),
-        # Off by default: it writes the raw cloud payload, device ids included,
-        # next to configuration.yaml on every refresh.
         vol.Required(
             CONF_NOMINAL_VOLTAGE, default=DEFAULT_NOMINAL_VOLTAGE
         ): NumberSelector(
@@ -85,6 +83,8 @@ STEP_USER_SCHEMA = vol.Schema(
                 mode=NumberSelectorMode.BOX,
             )
         ),
+        # Off by default: it writes the raw cloud payload, device ids included,
+        # next to configuration.yaml on every refresh.
         vol.Required(CONF_DEBUG_DUMP, default=False): bool,
     }
 )
@@ -174,6 +174,18 @@ class UgreenConnectConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_PASSWORD: user_input[CONF_PASSWORD],
                         CONF_REGION: region,
                         CONF_DEBUG_DUMP: user_input[CONF_DEBUG_DUMP],
+                    },
+                    # Home Assistant's own division: `data` is what the
+                    # connection needs, `options` everything else. These three
+                    # tune the session sensors and are read from `options`
+                    # throughout, so collecting them here and writing them to
+                    # neither is how somebody who set 77% silently got 90%.
+                    # Cast as the options dialog casts: a number selector hands
+                    # back floats either way, and these sit beside its writes.
+                    options={
+                        CONF_NOMINAL_VOLTAGE: float(user_input[CONF_NOMINAL_VOLTAGE]),
+                        CONF_EFFICIENCY: int(user_input[CONF_EFFICIENCY]),
+                        CONF_IDLE_END: int(user_input[CONF_IDLE_END]),
                     },
                 )
 
