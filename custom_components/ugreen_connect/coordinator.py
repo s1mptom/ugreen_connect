@@ -152,10 +152,20 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # but only once it has actually arrived. An empty answer used to be
         # cached like any other, which stopped the retry and left the charger
         # numbered for the life of the process.
+        #
+        # Asked for while the payload is missing, not while the model is
+        # unknown. Those are two questions and were one condition: the model is
+        # remembered across restarts and the payload is not, so once the store
+        # had a name in it this loop skipped every time and `detail` stayed
+        # empty for the life of the process -- from the second start onwards,
+        # which is why it took two to appear.
         for device in devices:
             serial = device.get("productSerialNo")
             key = device_key(device)
-            if key is None or key in self._models:
+            if key is None or key in self._products:
+                continue
+            if self._model_tries.get(key, 0) >= MODEL_LOOKUP_ATTEMPTS:
+                # Already given up on this one for this run.
                 continue
             product: Any = None
             if serial:
@@ -174,6 +184,15 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 continue
             tries = self._model_tries[key] = self._model_tries.get(key, 0) + 1
             if tries >= MODEL_LOOKUP_ATTEMPTS or not serial:
+                if remembered := self._models.get(key):
+                    # The payload is lost for this run -- the device page will
+                    # be missing its product ids -- but the model is what
+                    # decides the ports, and that was written down last time.
+                    _LOGGER.debug(
+                        "No product payload for %s after %d attempts; keeping "
+                        "the remembered model %s", key, tries, remembered,
+                    )
+                    continue
                 _LOGGER.warning(
                     "No model for %s after %d attempts; its ports will be "
                     "numbered rather than named",
