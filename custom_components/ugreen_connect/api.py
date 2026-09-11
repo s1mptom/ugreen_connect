@@ -283,6 +283,15 @@ class UgreenApi:
                 return False
             try:
                 await self.login(*self._credentials)
+            except UgreenRateLimited:
+                # Not a rejected password: the cloud is refusing logins. Folded
+                # into the catch below it became `return False`, the caller fell
+                # through with the original CODE_NO_PERMISSION payload and
+                # raised UgreenAuthError, and the owner was asked to sign in
+                # again for a session that was taken rather than expired --
+                # while the reason sat at debug level and the cooldown that
+                # would have fixed it on its own went unused.
+                raise
             except UgreenError as err:
                 _LOGGER.debug("Re-login failed: %s", err)
                 return False
