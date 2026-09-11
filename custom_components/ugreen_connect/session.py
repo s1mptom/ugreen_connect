@@ -276,17 +276,30 @@ class SessionTracker:
         state.last_power = power
 
     def _empty(self, now: float, state: Session) -> None:
-        """An empty reading: note when it started, and end the session if it holds."""
-        # Nothing is plugged in, so nothing is flowing -- no debounce needed for
-        # that half. The bout below still gets one, because a reading can go
-        # missing without the device having left.
-        state.delivering = False
-        if state.empty_since is None:
+        """An empty reading: stop delivering, note when it started, end the bout if it holds."""
+        first = state.empty_since is None
+        if first:
             state.empty_since = now
             if state.started_at is not None and state.ended_at is None:
                 state.ended_at = state.last_draw if state.last_draw is not None else now
         elif now - state.empty_since >= UNPLUG_DEBOUNCE:
             state.active = False
+
+        # One empty reading can be the renegotiation blip the charger produces
+        # mid handshake -- the reason UNPLUG_DEBOUNCE exists -- so a single one
+        # does not by itself mean charge stopped. Two in a row does.
+        #
+        # Unless current has already been absent longer than the settle, which
+        # is the same thing `_quiet` asks next door. That second clause is what
+        # keeps a slow poll honest: the first empty reading arrives one whole
+        # period after the last drawing one, so on a fifteen-minute interval
+        # waiting for a second would hold the sensor on for three quarters of an
+        # hour after the cable was pulled -- and a two-second blip sampled that
+        # rarely is not worth protecting against anyway. Below the settle the
+        # blip is a real share of the samples and the first clause governs;
+        # above it, this behaves exactly as it did before the guard existed.
+        if not first or state.last_draw is None or now - state.last_draw >= DRAW_SETTLE:
+            state.delivering = False
 
     def _finish(self, now: float, state: Session) -> None:
         state.active = False

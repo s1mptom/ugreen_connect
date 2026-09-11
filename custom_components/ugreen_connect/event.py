@@ -114,10 +114,17 @@ class UgreenChargingEvent(UgreenDeviceEntity, EventEntity):
         if not self._primed:
             self._primed = True
         else:
+            # Each one is written as it is raised. `_trigger_event` only
+            # records the type, the time and the attributes -- it writes no
+            # state of its own -- so two raised in one poll would leave only
+            # the second, and the pair this block exists to keep would arrive
+            # as a lone STARTED.
             if self._active and (started or not session.active):
                 self._trigger_event(ENDED, self._last or self._details(session))
+                self.async_write_ha_state()
             if started:
                 self._trigger_event(STARTED, self._details(session))
+                self.async_write_ha_state()
 
         self._started_at = session.started_at
         self._active = session.active

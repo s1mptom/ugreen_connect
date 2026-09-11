@@ -468,3 +468,59 @@ def test_the_two_windows_cannot_meet():
     assert shortest_bout > session_module.DRAW_SETTLE
     assert session_module.IDLE_END > session_module.DRAW_SETTLE
 
+
+
+@pytest.mark.parametrize("step", [5.0, 10.0, 29.0])
+def test_a_renegotiation_blip_does_not_flap_the_charging_sensor(step):
+    """The charger says `none` for one poll in the middle of an unbroken charge.
+
+    That blip is why UNPLUG_DEBOUNCE exists, and the bout is guarded against it.
+    `delivering` was not: it was cleared on the single frame and set again on the
+    next, so a battery_charging sensor went off and back on mid-charge and any
+    automation on `to: "off"` -- a "finished" notification, a lamp, a speaker --
+    fired while the laptop was still charging.
+
+    Only below DRAW_SETTLE. Above it the blip is a vanishing share of the
+    samples and the guard would cost real staleness instead; that half is
+    `test_a_slow_poll_is_not_made_stale_by_the_blip_guard`.
+    """
+    tracker = SessionTracker()
+    now, seen = 1000.0, []
+    for poll in range(20):
+        tracker.update(now, KEY, EMPTY if poll == 10 else reading(20.0))
+        now += step
+        seen.append(tracker.session(KEY, PORT).delivering)
+
+    assert seen[9] is True
+    assert seen[10] is True, "one `none` frame must not say charge stopped"
+    assert seen[11] is True
+    assert sum(1 for a, b in zip(seen, seen[1:]) if a != b) == 0
+
+
+@pytest.mark.parametrize("step", [30.0, 60.0, 900.0])
+def test_a_slow_poll_is_not_made_stale_by_the_blip_guard(step):
+    """At or above the settle the first empty reading still stops delivery.
+
+    The first empty reading arrives one whole poll period after the last
+    drawing one. Holding out for a second on a fifteen-minute interval would
+    leave `battery_charging` on for three quarters of an hour after the cable
+    was pulled -- worse than the flap it was meant to prevent, and certain
+    rather than occasional.
+    """
+    tracker = SessionTracker()
+    now = feed(tracker, 1000.0, 10 * step, reading(20.0), step=step) + step
+
+    tracker.update(now, KEY, EMPTY)
+    assert tracker.session(KEY, PORT).delivering is False
+
+
+@pytest.mark.parametrize("step", [5.0, 10.0])
+def test_a_port_that_stays_empty_does_stop_delivering(step):
+    """The other half of the fast-poll guard: two empty readings is a device gone."""
+    tracker = SessionTracker()
+    now = feed(tracker, 1000.0, 10 * step, reading(20.0), step=step) + step
+
+    tracker.update(now, KEY, EMPTY)
+    assert tracker.session(KEY, PORT).delivering is True, "the first is the blip"
+    tracker.update(now + step, KEY, EMPTY)
+    assert tracker.session(KEY, PORT).delivering is False
