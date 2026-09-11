@@ -52,7 +52,7 @@ def test_every_raised_event_is_written_before_the_next_one():
     unwritten: list[int] = []
     for node in ast.walk(_TREE):
       for body in _statement_lists(node):
-        for statement, following in zip(body, body[1:] + [None]):
+        for statement, following in zip(body, [*body[1:], None], strict=True):
             if not _is_call(statement, "_trigger_event"):
                 continue
             if following is None or not _is_call(following, "async_write_ha_state"):

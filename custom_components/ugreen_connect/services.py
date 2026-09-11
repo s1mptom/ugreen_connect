@@ -13,7 +13,6 @@ import binascii
 import io
 import logging
 import time
-from typing import Any
 
 import voluptuous as vol
 from homeassistant.const import CONF_DEVICE_ID

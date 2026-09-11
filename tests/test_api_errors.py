@@ -9,7 +9,6 @@ meet, because the call it makes is the one the cloud rate-limits.
 import asyncio
 
 import pytest
-
 from conftest import api as api_module
 
 pytestmark = pytest.mark.skipif(

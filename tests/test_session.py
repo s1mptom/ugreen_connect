@@ -1,6 +1,7 @@
 """Charging-session tracking: what starts a session, what ends it, what it accumulates."""
 
 import ast
+import itertools
 from pathlib import Path
 
 import pytest
@@ -549,7 +550,7 @@ def test_a_renegotiation_blip_does_not_flap_the_charging_sensor(step):
     assert seen[9] is True
     assert seen[10] is True, "one `none` frame must not say charge stopped"
     assert seen[11] is True
-    assert sum(1 for a, b in zip(seen, seen[1:]) if a != b) == 0
+    assert sum(1 for a, b in itertools.pairwise(seen) if a != b) == 0
 
 
 @pytest.mark.parametrize("step", [30.0, 60.0, 900.0])

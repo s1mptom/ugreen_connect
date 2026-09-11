@@ -90,7 +90,7 @@ def test_a_model_nobody_has_a_table_for_is_still_read():
 
 def test_a_frame_that_is_not_a_power_report_is_refused():
     # The property holds the last reply to any question, not only this one.
-    state = "aa01003e00376400040000000000000000000000000000000000000000000000000000000000000000000000010100ffffffffffff024231364135353439423636311f91"
+    state = "aa01003e00376400040000000000000000000000000000000000000000000000000000000000000000000000010100ffffffffffff024231364135353439423636311f91"  # noqa: E501 - one frame, one line; splitting it hides what it is
     assert p.parse_power_frame(state, "X783") is None
 
 

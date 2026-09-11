@@ -176,9 +176,12 @@ class UgreenApi:
 
         payload = await self._call(path, body, method, auth, extra_headers)
 
-        if payload.get("code") == CODE_WRONG_METHOD and (
+        if payload.get("code") == CODE_WRONG_METHOD and (  # noqa: SIM102
             wanted := _wanted_method(payload.get("msg", ""))
         ):
+            # Kept nested: the inner test reads the name the outer one binds, so
+            # folding them into one condition would mean calling _wanted_method
+            # twice or repeating the walrus inside an `and`.
             if wanted != method:
                 _LOGGER.debug("%s wants %s, not %s -- retrying", path, wanted, method)
                 method = wanted

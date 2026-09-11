@@ -100,8 +100,8 @@ IOT_ID = "JuSTiZWwzabFoehKLgWT8UojudBS3LQjz7YOnQvH"
 SSID = "PavelHomeWiFi"
 EMAIL = "someone@example.com"
 PASSWORD = "hunter2"
-SSID_FRAME = "AA0800" + "MyWifi123".encode().hex().upper()
-SERIAL_FRAME = "AA0500" + UNIT.encode().hex().upper()
+SSID_FRAME = "AA0800" + b"MyWifi123".hex().upper()
+SERIAL_FRAME = "AA0500" + UNIT.encode("ascii").hex().upper()
 
 
 def _payload():
