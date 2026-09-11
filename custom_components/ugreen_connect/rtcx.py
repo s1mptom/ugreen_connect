@@ -47,6 +47,7 @@ from .const import (
     POWER_SETTLE_SECONDS,
     PT_DATA_MAX_AGE,
     RTCX_TOKEN_MARGIN,
+    SETTING_SETTLE_SECONDS,
 )
 from .protocol import (
     FRAME_QUERY,
@@ -98,6 +99,13 @@ class RtcxClient:
         self._token: str | None = None
         self._expires_at: float = 0.0
         self._lock = asyncio.Lock()
+        # One conversation at a time. The charger has a single PT_data slot
+        # for both what it is asked and what it answers, and nothing in a
+        # frame ties a reply to its question -- so two callers overlapping
+        # do not get slow answers, they get each other's. Separate from the
+        # lock above, which async_login holds while call() waits on a token:
+        # sharing one would deadlock the first ask that has to sign in.
+        self._talk = asyncio.Lock()
         # Last propertyMap seen, so OTA state can be read without another call.
         self.last_properties: dict[str, Any] = {}
         # The last raw frame seen for each question asked, per charger. Keyed
@@ -253,6 +261,12 @@ class RtcxClient:
         The device replies asynchronously: the write only queues the frame, and
         the answer turns up as the property's new value a moment later.
         """
+        async with self._talk:
+            return await self._ask_locked(iot_id, frame_type, cmd, payload)
+
+    async def _ask_locked(self, iot_id: str, frame_type: int, cmd: int,
+                          payload: bytes) -> str | None:
+        """The body of _ask, with the slot already held."""
         await self.call(
             "/client/thing/properties/set",
             {"iotId": iot_id, "items": {"PT_data": build_frame(frame_type, cmd, payload)}},
@@ -399,10 +413,16 @@ class RtcxClient:
         self._state_dirty.discard(iot_id)
 
     async def _setting(self, iot_id: str, cmd: int, payload: bytes) -> None:
-        await self.call(
-            "/client/thing/properties/set",
-            {"iotId": iot_id, "items": {"PT_data": build_frame(FRAME_SETTING, cmd, payload)}},
-        )
+        # Held across the settle as well as the write: releasing the moment the
+        # request returns would let the next frame land in the slot before the
+        # charger has taken this one out of it, and the setting would be lost
+        # with everything reporting success.
+        async with self._talk:
+            await self.call(
+                "/client/thing/properties/set",
+                {"iotId": iot_id, "items": {"PT_data": build_frame(FRAME_SETTING, cmd, payload)}},
+            )
+            await asyncio.sleep(SETTING_SETTLE_SECONDS)
         # Everything set this way shows up in the state reply, so whatever was
         # last read of it is now out of date. Marked here rather than at each of
         # the places that write, so a new one cannot forget to.

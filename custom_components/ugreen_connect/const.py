@@ -91,6 +91,16 @@ RTCX_TOKEN_MARGIN: Final = 300
 POWER_SETTLE_SECONDS: Final = 2.0
 # ...and how many times to look before giving up on that reply.
 POWER_POLL_ATTEMPTS: Final = 3
+
+# How long a setting frame is left alone before anything else may write one.
+#
+# The charger has a single PT_data slot for both directions: a frame written
+# into it while the last one is still unread simply replaces it, and the first
+# is never carried out. Two settings in a row, or a setting and the read that
+# checks it, are exactly that pair. The device consumes a frame in about the
+# time it takes to answer one, so this is POWER_SETTLE_SECONDS by the same
+# measurement.
+SETTING_SETTLE_SECONDS: Final = 2.0
 # PT_data keeps its last value indefinitely, so anything older than this is
 # treated as "no reading" rather than as a live one.
 PT_DATA_MAX_AGE: Final = 300
