@@ -283,6 +283,14 @@ class UgreenApi:
                 return False
             try:
                 await self.login(*self._credentials)
+            except UgreenRateLimited:
+                # Not a credentials problem, and the one path that provokes it
+                # is a re-login: another client unseats this session, the retry
+                # logs in, and `oauth/authorize` answers 770003. Folded into the
+                # catch below it became "your password was rejected" -- a re-auth
+                # the owner cannot satisfy, over a cooldown that would have
+                # cleared on its own.
+                raise
             except UgreenError as err:
                 _LOGGER.debug("Re-login failed: %s", err)
                 return False

@@ -19,11 +19,14 @@ _COMPONENT = (
 )
 
 
-def _load(name: str, file_name: str):
+def _load(name: str, file_name: str, package: str | None = None):
     path = _COMPONENT / file_name
     spec = importlib.util.spec_from_loader(name, loader=None)
     module = importlib.util.module_from_spec(spec)
     module.__file__ = str(path)
+    # A module doing `from .x import y` needs to know which package it is in.
+    if package is not None:
+        module.__package__ = package
     sys.modules[name] = module
     exec(compile(path.read_text(), str(path), "exec"), module.__dict__)
     return module
@@ -31,3 +34,25 @@ def _load(name: str, file_name: str):
 
 session = _load("ugreen_session", "session.py")
 protocol = _load("ugreen_protocol", "protocol.py")
+
+
+# ``api`` is Home-Assistant-free for the same reason and can be exercised the
+# same way, but unlike the two above it imports from ``.const`` -- so it is
+# loaded inside a stand-in package with that module already in it.
+_PKG = "ugreen_pkg"
+_package = importlib.util.module_from_spec(
+    importlib.util.spec_from_loader(_PKG, loader=None)
+)
+_package.__path__ = []
+sys.modules[_PKG] = _package
+
+_load(f"{_PKG}.const", "const.py")
+
+# It does need aiohttp and cryptography, which the other two do not. Where they
+# are absent the module is simply not loaded and the tests over it skip, so the
+# promise this file makes -- that these run without Home Assistant -- still holds
+# for someone with neither installed.
+try:
+    api = _load(f"{_PKG}.api", "api.py", package=_PKG)
+except ModuleNotFoundError:  # pragma: no cover - depends on the environment
+    api = None
