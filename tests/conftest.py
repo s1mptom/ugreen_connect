@@ -52,7 +52,16 @@ _load(f"{_PKG}.const", "const.py")
 # are absent the module is simply not loaded and the tests over it skip, so the
 # promise this file makes -- that these run without Home Assistant -- still holds
 # for someone with neither installed.
+# Only the third-party names may be missing. A ModuleNotFoundError naming
+# anything else is `api.py` itself being broken -- a typo in a relative import,
+# a constant that moved -- and swallowing that made a broken module
+# indistinguishable from an environment without aiohttp: the same
+# "4 skipped" either way, in CI where that is the normal signature.
+_OPTIONAL = {"aiohttp", "cryptography"}
+
 try:
     api = _load(f"{_PKG}.api", "api.py", package=_PKG)
-except ModuleNotFoundError:  # pragma: no cover - depends on the environment
+except ModuleNotFoundError as err:  # pragma: no cover - depends on the environment
+    if (err.name or "").split(".")[0] not in _OPTIONAL:
+        raise
     api = None
