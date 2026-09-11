@@ -155,7 +155,16 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for device in devices:
             serial = device.get("productSerialNo")
             key = device_key(device)
-            if key is None or key in self._models:
+            # Asked for whenever the payload is missing, not whenever the model
+            # is unknown. Those came apart when the model started being
+            # remembered across restarts: `_models` arrives already filled from
+            # the store, so keying this on it meant the lookup was never made
+            # again, `_products` stayed empty, and `detail` -- which the device
+            # page's model and the writable-field checks read -- went with it.
+            if key is None or key in self._products:
+                continue
+            # The attempts are still bounded; a cold store is what resets them.
+            if self._model_tries.get(key, 0) >= MODEL_LOOKUP_ATTEMPTS:
                 continue
             product: Any = None
             if serial:
@@ -173,7 +182,11 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._remember()
                 continue
             tries = self._model_tries[key] = self._model_tries.get(key, 0) + 1
-            if tries >= MODEL_LOOKUP_ATTEMPTS or not serial:
+            # Only ever for a charger nobody has named. One whose model came
+            # back from the store keeps it: a lookup failing now says nothing
+            # about what it was, and renumbering its ports would strand its
+            # history over a bad minute on an endpoint.
+            if (tries >= MODEL_LOOKUP_ATTEMPTS or not serial) and key not in self._models:
                 _LOGGER.warning(
                     "No model for %s after %d attempts; its ports will be "
                     "numbered rather than named",
