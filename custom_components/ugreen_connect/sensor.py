@@ -82,6 +82,14 @@ async def async_setup_entry(
                 known_ports.add((key, "total"))
                 new.append(UgreenTotalPowerSensor(coordinator, key))
                 new.append(UgreenChargerEnergySensor(coordinator, key))
+            # Only once the charger has reported a custom mode: a preset leaves
+            # the block at zero, and there is then nothing to describe.
+            if reading.get("custom") and (key, "custom") not in known_ports:
+                known_ports.add((key, "custom"))
+                new.extend(
+                    UgreenCustomLimitSensor(coordinator, key, group["port"])
+                    for group in reading["custom"]
+                )
             # Every port of the report gets its entities up front, so the
             # dashboard shows the full layout from the start rather than waiting
             # for a port to happen to be drawing power during a poll.
@@ -270,6 +278,58 @@ class UgreenSessionSensor(UgreenDeviceEntity, SensorEntity):
 
 def _as_local(stamp: float | None) -> str | None:
     return dt_util.utc_from_timestamp(stamp).isoformat() if stamp else None
+
+
+class UgreenCustomLimitSensor(UgreenDeviceEntity, SensorEntity):
+    """What one group of ports is allowed in the custom charging mode.
+
+    This is the mode the app calls its own editor, and the charger reports the
+    whole of it on every poll whether or not it is the mode in use. So these
+    say what custom *would* do rather than what is happening now, which is why
+    they are diagnostic rather than sitting beside the live readings.
+
+    C6 and A share a group, exactly as the app's editor does; the protocols the
+    group may negotiate ride along as an attribute rather than as six more
+    entities.
+    """
+
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "custom_limit"
+
+    def __init__(self, coordinator: UgreenCoordinator, key: str, group: str) -> None:
+        super().__init__(coordinator, key)
+        self._group_name = group
+        self._attr_translation_placeholders = {"port": group}
+        self._attr_unique_id = f"{key}_{group}_custom_limit"
+
+    @property
+    def _group(self) -> dict[str, Any] | None:
+        for group in (self._reading or {}).get("custom") or []:
+            if group["port"] == self._group_name:
+                return group
+        return None
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._group is not None
+
+    @property
+    def native_value(self) -> int | None:
+        group = self._group
+        return group["limit"] if group else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        group = self._group or {}
+        return {
+            "protocols": group.get("protocols") or [],
+            # The raw byte as well as the names read out of it: a bit nobody
+            # has put a name to yet would otherwise be invisible here, and this
+            # is the field that would show it.
+            "protocol_mask": group.get("mask"),
+        }
 
 
 class _UgreenEnergyTotal(RestoreEntity, SensorEntity):

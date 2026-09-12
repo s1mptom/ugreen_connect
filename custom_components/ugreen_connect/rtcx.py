@@ -58,8 +58,10 @@ from .protocol import (
     SETTING_SET_CHARGING_MODE,
     SETTING_SET_SCREENSAVER,
     SETTING_SET_SLEEP_TIME,
+    STATE_MODE,
     build_frame,
     frame_body,
+    parse_custom_mode,
     parse_power_frame,
     state_fields,
     state_layout,
@@ -83,7 +85,6 @@ CHARGING_MODE_PARAMS = 35
 # distinctive value and reading it back, not inferred.
 STATE_BRIGHTNESS = 2
 STATE_SLEEP_TIME = 3
-STATE_CHARGING_MODE = 4
 IMAGE_ID_LEN = 6
 
 
@@ -374,7 +375,8 @@ class RtcxClient:
         state = {
             "brightness": body[STATE_BRIGHTNESS],
             "sleep_time": body[STATE_SLEEP_TIME],
-            "charging_mode": CHARGING_MODES.get(body[STATE_CHARGING_MODE]),
+            "charging_mode": CHARGING_MODES.get(body[STATE_MODE]),
+            "custom": parse_custom_mode(body, model),
             "screensaver": bool(body[layout.screensaver]),
             "screensaver_theme": body[layout.screensaver + 1],
             "screensaver_flag": body[layout.screensaver + 2],

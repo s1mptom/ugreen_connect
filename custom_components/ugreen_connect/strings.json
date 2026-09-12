@@ -82,6 +82,9 @@
       },
       "energy_total_charger": {
         "name": "Energy"
+      },
+      "custom_limit": {
+        "name": "{port} custom-mode limit"
       }
     },
     "number": {

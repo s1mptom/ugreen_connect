@@ -127,6 +127,7 @@ STATE_FIELDS_ALL: Final[frozenset[str]] = frozenset(
         "brightness",
         "sleep_time",
         "charging_mode",
+        "custom",
         "screensaver",
         "screensaver_theme",
         "screensaver_flag",
@@ -139,8 +140,10 @@ STATE_FIELDS_BY_MODEL: Final[dict[str, frozenset[str]]] = {
     "X783": STATE_FIELDS_ALL,
     # `wallpapers` is missing on purpose: the byte where the X783 counts its
     # library reads 5 on a 160W whether three ids follow or four, so whatever
-    # it counts, it is not them.
-    "X776": STATE_FIELDS_ALL - {"wallpapers"},
+    # it counts, it is not them. `custom` likewise: five wattages, a shared
+    # pair in steps and six masks is the X783's shape, and the 160W's block
+    # repeats a seven-byte group instead.
+    "X776": STATE_FIELDS_ALL - {"wallpapers", "custom"},
 }
 
 # Reading a byte and writing it are separate permissions, because the commands
@@ -217,6 +220,118 @@ def state_writable(model: str | None) -> frozenset[str]:
 def state_layout(model: str | None) -> StateLayout:
     """Where to read this model's screen settings; the X783's where unknown."""
     return STATE_LAYOUT_BY_MODEL.get(model or "", STATE_LAYOUT_BY_MODEL["X783"])
+
+
+# --- The custom mode's parameter block --------------------------------------
+#
+# The 35 bytes every preset leaves at zero. Settled against the app's own
+# editor on a live X783 by moving one slider at a time and reading the frame
+# back: five ports carry a plain wattage, C6 and A share one setting -- one
+# slider in the app, one byte here -- and each group then has a bitmask of the
+# protocols it may negotiate.
+CUSTOM_PORTS: Final[tuple[str, ...]] = ("C1", "C2", "C3", "C4", "C5", "C6+A")
+# The shared C6+A slider offers 0, 15 and 30 W, and stores the step rather than
+# the watts. The five plain ports store watts outright.
+#
+# Measured rather than remembered, on frames taken with that group at 15 W and
+# then 30 W: the byte reads 1 and 2. Before those it was 0 in everything
+# captured, so the multiplier was unobservable -- zero times anything is zero,
+# and no test could have caught a wrong one.
+#
+# The slider offers exactly 0, 15 and 30, so "steps of 15" and "an index into
+# those three" fit the same bytes. What is pinned is the reachable range; the
+# multiplication is the reading that fits it rather than one the charger has
+# confirmed. A model whose slider went further would tell them apart.
+CUSTOM_SHARED_STEP: Final = 15
+# Bit positions in a group's protocol mask. The app lists exactly these seven,
+# in this order. Bit 1 belongs to something this model has nothing to put in:
+# ticking every box the app offers for the 140 W port sets the mask to 0xFD,
+# which is these seven and not it. The slot is in the protocol; the X783 simply
+# never fills it.
+CUSTOM_PROTOCOLS: Final[dict[int, str]] = {
+    0: "Apple5V/2.4A",
+    2: "AFC",
+    3: "SCP",
+    4: "UFCS",
+    5: "5-11V PPS",
+    6: "5-21V PPS",
+    7: "AVS",
+}
+# Where the block sits in the state reply. The custom parameters run between
+# the mode byte and the screensaver flag, which is why nothing needed them
+# understood before now.
+# Which mode the charger is running. Here rather than beside the reader,
+# because the block below can only be read when this says custom -- one fact,
+# one place.
+STATE_MODE = 4
+# The value that byte means "custom" -- the key of that name in CHARGING_MODES.
+# Repeated rather than imported because this module is compiled on its own by
+# the standalone tests, which is the whole reason it has no imports.
+CUSTOM_MODE = 4
+STATE_CUSTOM = 5
+STATE_CUSTOM_MASKS = 16
+STATE_CUSTOM_END = 40
+CUSTOM_LIMITS = 5
+
+
+def parse_custom_mode(
+    body: bytes, model: str | None = None
+) -> list[dict[str, Any]] | None:
+    """Decode the parameter block only the custom charging mode fills in.
+
+    Layout, established against the app's editor on a live charger by changing
+    one slider at a time and reading the frame back::
+
+         5..14   C1..C5 power limit, U16 big endian, in watts
+        15       C6 and A together, in 15 W steps -- their slider has three
+        16..39   one U32 big-endian protocol bitmask per group, C1 first
+
+    Read only while custom is the active mode, and that gate is the important
+    part. The block was thought to be zero under a preset -- it was, on the one
+    charger this was worked out on, which made "not all zero" look like a safe
+    way to ask whether a custom mode exists. A second X783 that has never had
+    one configured carries `02` at byte 5 while running `priority`, and that
+    reading came out as a 512 W limit on a port rated 140.
+
+    So whatever else the block holds under a preset, it is not this layout, and
+    nothing here can say what it is. `body[4] == 4` can.
+    """
+    if "custom" not in state_fields(model):
+        # Five plain wattages, a shared pair counted in steps, then a mask
+        # each: that shape is the X783's, and another model's ports do not
+        # divide the same way -- the 160W's block repeats a seven-byte group
+        # instead. Guessing would put numbers on a page that mean nothing,
+        # which is worse than showing none.
+        return None
+    if len(body) < STATE_CUSTOM_END:
+        return None
+    if body[STATE_MODE] != CUSTOM_MODE:
+        return None
+    if not any(body[STATE_CUSTOM:STATE_CUSTOM_END]):
+        return None
+
+    limits = [
+        int.from_bytes(body[STATE_CUSTOM + 2 * i : STATE_CUSTOM + 2 * i + 2], "big")
+        for i in range(CUSTOM_LIMITS)
+    ]
+    # The shared group stores its step rather than its wattage.
+    limits.append(body[STATE_CUSTOM + 2 * CUSTOM_LIMITS] * CUSTOM_SHARED_STEP)
+
+    groups = []
+    for index, name in enumerate(CUSTOM_PORTS):
+        at = STATE_CUSTOM_MASKS + 4 * index
+        mask = int.from_bytes(body[at : at + 4], "big")
+        groups.append(
+            {
+                "port": name,
+                "limit": limits[index],
+                "protocols": [
+                    label for bit, label in CUSTOM_PROTOCOLS.items() if mask >> bit & 1
+                ],
+                "mask": mask,
+            }
+        )
+    return groups
 
 
 def crc16_modbus(data: bytes) -> int:
