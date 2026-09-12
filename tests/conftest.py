@@ -63,12 +63,23 @@ protocol = _load(f"{_PKG}.protocol", "protocol.py", package=_PKG)
 # "4 skipped" either way, in CI where that is the normal signature.
 _OPTIONAL = {"aiohttp", "cryptography"}
 
-try:
-    api = _load(f"{_PKG}.api", "api.py", package=_PKG)
-    # ``rtcx`` needs aiohttp for the same reason and rides on the same skip.
-    rtcx = _load(f"{_PKG}.rtcx", "rtcx.py", package=_PKG)
-except ModuleNotFoundError as err:  # pragma: no cover - depends on the environment
-    if (err.name or "").split(".")[0] not in _OPTIONAL:
-        raise
-    api = None
-    rtcx = None
+def _optional(name: str, file_name: str):
+    """Load a module that needs a third-party package, or return None.
+
+    One module at a time, so that a broken ``rtcx`` cannot present itself as an
+    environment without aiohttp and take ``api``'s tests down with it -- the
+    same confusion, one module along.
+    """
+    try:
+        return _load(f"{_PKG}.{name}", file_name, package=_PKG)
+    except ModuleNotFoundError as err:  # pragma: no cover - depends on the env
+        if (err.name or "").split(".")[0] not in _OPTIONAL:
+            raise
+        return None
+
+
+api = _optional("api", "api.py")
+# ``rtcx`` needs aiohttp for the same reason, and reaches ``api`` as ``.api``:
+# with that one absent there is no package for this one to be loaded into, and
+# the error would name the stand-in package rather than the missing dependency.
+rtcx = _optional("rtcx", "rtcx.py") if api is not None else None

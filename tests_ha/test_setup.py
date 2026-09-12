@@ -7,6 +7,8 @@ when they were written and neither had ever been run.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE
@@ -145,3 +147,41 @@ async def test_a_charger_nobody_can_name_gets_numbered_ports(
 async def test_it_unloads_again(hass, started):
     assert await hass.config_entries.async_unload(started.entry_id)
     await hass.async_block_till_done()
+
+
+async def test_a_mode_s_parameters_are_written_down_when_they_move(
+    hass, started, rtcx
+):
+    """And only then.
+
+    The parameters can only be learned while their mode is running, so losing
+    them at a restart means the next mode change goes out empty and resets
+    whatever that mode was configured with. The state is re-read every minute
+    and answers the same nearly every time, so saving on each one would rewrite
+    an unchanged file all day -- often onto a memory card.
+    """
+    coordinator = started.runtime_data
+    saves: list[dict[str, str]] = []
+    coordinator._params_store = SimpleNamespace(
+        async_delay_save=lambda data, _delay: saves.append(data())
+    )
+
+    async def poll_the_charger_again():
+        # The state has its own minute-long timer, and every refresh inside it
+        # answers from the last reply without asking. Emptying that is what
+        # makes these three polls three reads rather than one.
+        coordinator._state.clear()
+        await coordinator.async_refresh()
+
+    rtcx.mode_params = {"device-1:3": "02" + "00" * 34}
+    await poll_the_charger_again()
+    assert saves == [{"device-1:3": "02" + "00" * 34}]
+
+    # The same answer again: nothing new to write down.
+    await poll_the_charger_again()
+    assert len(saves) == 1
+
+    # Somebody moved the setting in the app.
+    rtcx.mode_params = {"device-1:3": "05" + "00" * 34}
+    await poll_the_charger_again()
+    assert [s["device-1:3"][:2] for s in saves] == ["02", "05"]

@@ -115,6 +115,9 @@ class FakeRtcx:
     def __init__(self) -> None:
         self.power_answers = True
         self.last_frames: dict[str, dict[str, str]] = {}
+        # What the real client learns from a state reply and the coordinator
+        # writes down; a test moves it to say the charger was seen in a mode.
+        self.mode_params: dict[str, str] = {}
 
     async def async_login(self) -> None:
         return None
@@ -124,6 +127,9 @@ class FakeRtcx:
 
     async def async_device_state(self, _iot_id: str, _model: str | None = None) -> dict[str, Any]:
         return dict(STATE)
+
+    def mode_params_snapshot(self) -> dict[str, str]:
+        return dict(self.mode_params)
 
     def state_is_stale(self, _iot_id: str) -> bool:
         return False

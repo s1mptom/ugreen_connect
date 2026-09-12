@@ -34,7 +34,7 @@ import json
 import logging
 import time
 import uuid
-from typing import Any
+from typing import Any, Final
 
 import aiohttp
 
@@ -58,14 +58,18 @@ from .protocol import (
     SETTING_SET_CHARGING_MODE,
     SETTING_SET_SCREENSAVER,
     SETTING_SET_SLEEP_TIME,
+    STATE_LAYOUT_BY_MODEL,
     build_frame,
     frame_body,
     parse_power_frame,
     state_fields,
     state_layout,
+    state_layout_measured,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
 
 TIMEOUT = aiohttp.ClientTimeout(total=30)
 
@@ -81,6 +85,14 @@ SIGNED_HEADERS = ("x-ca-key", "x-ca-nonce", "x-ca-timestamp")
 # used to send 35 zeros -- put that byte back to 00 and left it there. So
 # sending zeros does not "leave a preset alone"; it discards what the preset
 # was carrying. Hence the block last seen for a mode goes back out with it.
+#
+# What that one byte means is not known, only that it is `priority`'s and that
+# it survives nothing else writing it. The other 34 have been zero in every
+# frame seen so far, which is not the same as being unused.
+#
+# The copy is as fresh as the state timer: a setting changed in the app and a
+# mode re-selected from here inside the same minute replays the older block.
+# Narrower than losing it outright, and it closes itself on the next read.
 CHARGING_MODE_PARAMS = 35
 
 
@@ -94,10 +106,50 @@ STATE_MODE_PARAMS = 5
 IMAGE_ID_LEN = 6
 
 
+# How long a parameter block is on each model that has been measured: from the
+# mode byte to the screensaver group. Nothing else is a block, and a stored one
+# of any other length is not sent -- the payload goes to a charger, and the
+# store is a file that outlives this code and can be edited, truncated or left
+# behind by a version that wrote something else.
+PARAM_BLOCK_LENGTHS: Final[frozenset[int]] = frozenset(
+    layout.screensaver - STATE_MODE_PARAMS for layout in STATE_LAYOUT_BY_MODEL.values()
+)
+
+
+def _unpack_params(stored: dict[str, str] | None) -> dict[tuple[str, int], bytes]:
+    """Read back what `mode_params_snapshot` wrote, dropping anything odd.
+
+    Dropped rather than raised: the cost of a bad line is one mode change going
+    out with empty parameters, and the alternative is a charger that will not
+    start at all.
+    """
+    unpacked: dict[tuple[str, int], bytes] = {}
+    for name, value in (stored or {}).items():
+        iot_id, _, mode = name.rpartition(":")
+        try:
+            block = bytes.fromhex(value)
+            key = (iot_id, int(mode))
+        except ValueError:
+            _LOGGER.debug("dropping unreadable stored mode parameters: %s", name)
+            continue
+        if len(block) not in PARAM_BLOCK_LENGTHS:
+            _LOGGER.debug(
+                "dropping stored mode parameters of %d bytes for %s", len(block), name
+            )
+            continue
+        unpacked[key] = block
+    return unpacked
+
+
 class RtcxClient:
     """Signed access to ``/client/*`` on the RTCX gateway."""
 
-    def __init__(self, session: aiohttp.ClientSession, api: UgreenApi) -> None:
+    def __init__(
+        self,
+        session: aiohttp.ClientSession,
+        api: UgreenApi,
+        mode_params: dict[str, str] | None = None,
+    ) -> None:
         self._session = session
         self._api = api
         self._app: dict[str, Any] = {}
@@ -118,7 +170,7 @@ class RtcxClient:
         # keyed by charger and mode byte. Setting a mode has to carry its
         # parameters, and the only place they can be learnt is a state reply
         # taken while that mode was running.
-        self._mode_params: dict[tuple[str, int], bytes] = {}
+        self._mode_params: dict[tuple[str, int], bytes] = _unpack_params(mode_params)
         # Chargers written to since their state was last read.
         self._state_dirty: set[str] = set()
         # Stable per-account, so the cloud sees one client rather than a new one
@@ -377,9 +429,15 @@ class RtcxClient:
         # what is meant to be parameters. The body is known to reach past it
         # already: the check above needs `image_id` plus six, and the image sits
         # three bytes after the screensaver.
-        self._mode_params[(iot_id, body[STATE_CHARGING_MODE])] = bytes(
-            body[STATE_MODE_PARAMS : layout.screensaver]
-        )
+        #
+        # Only where the offsets were measured on this model. A charger read at
+        # a borrowed layout still shows its settings, which the next lookup
+        # corrects; bytes kept in order to be written back are not correctable
+        # the same way.
+        if state_layout_measured(model):
+            self._mode_params[(iot_id, body[STATE_CHARGING_MODE])] = bytes(
+                body[STATE_MODE_PARAMS : layout.screensaver]
+            )
 
         image = body[layout.image_id : layout.image_id + IMAGE_ID_LEN]
         # A count byte nobody has watched counting is not read at all.
@@ -411,6 +469,11 @@ class RtcxClient:
         # on this one is dropped here rather than published as a plausible
         # number, and the entities that would have carried it never appear.
         return {name: value for name, value in state.items() if name in fields}
+
+    def mode_params_snapshot(self) -> dict[str, str]:
+        """The learned blocks, in a shape a store can hold."""
+        return {f"{iot_id}:{mode}": block.hex() for (iot_id, mode), block in
+                self._mode_params.items()}
 
     def state_is_stale(self, iot_id: str) -> bool:
         """Whether this charger has been written to since its state was read."""
@@ -479,7 +542,23 @@ class RtcxClient:
         app had set -- the charger keeps no copy of its own, so whatever the
         write carries becomes the setting.
         """
-        params = self._mode_params.get((iot_id, mode)) or bytes(CHARGING_MODE_PARAMS)
+        # `is None` rather than truthiness: a block of 35 zeros is falsy and is
+        # also a real answer -- the presets other than `priority` have looked
+        # exactly like that. Reaching for the fallback on one would be the same
+        # write by a longer road, but logged as if nothing were known.
+        params = self._mode_params.get((iot_id, mode))
+        if params is None:
+            # The one path left that can still overwrite a setting. Said out
+            # loud, because the symptom -- a preference quietly back at its
+            # default -- looks identical to the bug this replaced, and a
+            # downloaded log is where the difference has to be visible.
+            _LOGGER.warning(
+                "charging mode %s has not been seen running on this charger; "
+                "setting it with empty parameters, which resets whatever that "
+                "mode was configured with",
+                mode,
+            )
+            params = bytes(CHARGING_MODE_PARAMS)
         await self._setting(iot_id, SETTING_SET_CHARGING_MODE, bytes([mode]) + params)
 
     async def async_set_screensaver(

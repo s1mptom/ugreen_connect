@@ -75,8 +75,9 @@ The choices match the app's own, and every write is read back from the device on
 the next poll rather than assumed.
 
 `custom` is a real charging mode and is reported when the device is in it, but it
-cannot be selected here: it needs the 35 parameter bytes the presets leave at
-zero, which only the app's mode editor fills in.
+cannot be selected here: setting a mode carries that mode's 35 parameter bytes,
+and only the app's editor can compose a custom one. Home Assistant can replay a
+block it has watched the charger running, never write a new one.
 
 A 300W reports its ports in the order `C1 C2 C3 C4 C5 C6 A1 DC`, and a 160W as
 `C-Cable C1 C2 A`; the order comes from a table keyed on `productNo`, and a
