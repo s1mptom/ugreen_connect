@@ -156,8 +156,9 @@ async def test_a_mode_s_parameters_are_written_down_when_they_move(
     """And only then.
 
     The parameters can only be learned while their mode is running, so losing
-    them at a restart means the next mode change goes out empty and resets
-    whatever that mode was configured with. The state is re-read every minute
+    them at a restart means the next mode change goes out empty, and the charger
+    then either loses that mode's settings or refuses the change outright. The
+    state is re-read every minute
     and answers the same nearly every time, so saving on each one would rewrite
     an unchanged file all day -- often onto a memory card.
     """

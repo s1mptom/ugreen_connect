@@ -82,8 +82,9 @@ SIGNED_HEADERS = ("x-ca-key", "x-ca-nonce", "x-ca-timestamp")
 # X783: a charger left in `priority` by the app reported 02 in the first of
 # them with the other 34 at zero, and selecting `priority` from here -- which
 # used to send 35 zeros -- put that byte back to 00 and left it there. So
-# sending zeros does not "leave a preset alone"; it discards what the preset
-# was carrying. Hence the block last seen for a mode goes back out with it.
+# sending zeros does not "leave a preset alone": the preset either loses what
+# it was carrying or refuses the write, which is what `dc_turbo` does. Hence the
+# block last seen for a mode goes back out with it.
 #
 # That byte is `priority`'s chosen port: set to C2 in the app it reads 0x02.
 # The rest of `priority`'s block has been zero in every frame taken from a
@@ -98,6 +99,9 @@ SIGNED_HEADERS = ("x-ca-key", "x-ca-nonce", "x-ca-timestamp")
 # next read agrees with what was written. Nothing puts it back. Narrower than
 # the previous behaviour, which reset it every time rather than sometimes, but
 # it is a silent revert and not a window that heals.
+# The X783's length, and only its own: the write path asks the model's layout
+# rather than this, and nothing in the integration reads it any more. It stays
+# because the paragraph above is about these bytes and needs somewhere to live.
 CHARGING_MODE_PARAMS = 35
 
 
@@ -605,20 +609,28 @@ class RtcxClient:
         # questions are different ones, and a preset whose parameters really
         # are all zero is an answer rather than an absence.
         elif params is None:
-            # The one path left that can go wrong, and it goes wrong two ways.
-            # Some modes take the empty block and lose whatever they were
-            # configured with; `dc_turbo` refuses it outright -- measured on an
-            # X783, where selecting it with zeros left the charger in the mode
-            # it was already in, three times running, with nothing to show for
-            # it but the entity flicking back. Said out loud either way,
-            # because neither symptom names its own cause and a downloaded log
-            # is where that has to be visible.
+            # The one path left where the block is not this mode's own, and it
+            # goes wrong two ways. Some modes take the empty block and lose
+            # whatever they were configured with; `dc_turbo` refuses it
+            # outright -- measured on an X783, where selecting it with zeros
+            # left the charger in the mode it was already in, three times
+            # running, with nothing to show but the entity flicking back.
+            #
+            # The two want different things of the person reading this. A
+            # refusal loses nothing, so selecting the mode in the app is enough.
+            # A loss is not undone by selecting the mode -- the charger is
+            # already in it, with the setting already gone, and what gets
+            # learned is the zeros. That one has to be set up again. And this
+            # warning will not fire a second time either way, because by then
+            # the mode has been seen: it is the only notice there will be.
             _LOGGER.warning(
                 "charging mode %s has not been seen running on this charger, so "
                 "it is being set with empty parameters: the charger will either "
-                "lose what that mode was configured with or refuse the change. "
-                "Select the mode in the UGREEN app once and it will be "
-                "remembered from then on",
+                "lose what that mode was configured with or refuse the change "
+                "outright. In the UGREEN app, set that mode up again if its "
+                "settings are gone, or simply select it if the change did not "
+                "take; leave the charger in it for a minute and it will be "
+                "remembered from then on. This is said once",
                 mode,
             )
             params = bytes(expected)

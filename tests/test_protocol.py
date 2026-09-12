@@ -145,3 +145,27 @@ def test_reading_a_field_is_not_permission_to_write_it():
     assert "brightness" in p.state_writable("X776")
     assert p.state_writable("X783") == p.STATE_FIELDS_ALL
     assert p.state_writable("X999") == frozenset()
+
+
+def test_a_model_whose_mode_may_be_set_has_had_its_layout_measured():
+    """Otherwise the refusal in `rtcx` becomes the thing the user sees.
+
+    Setting a charging mode sends that mode's parameter block, and how long the
+    block is comes from the model's layout. `state_writable` is the gate people
+    will reach for when a second model's writes are confirmed; if the layout is
+    forgotten there, the entity agrees to the write and the client refuses it,
+    in an untranslated sentence where every sibling guard has a proper message.
+    """
+    for model, fields in p.STATE_WRITABLE_BY_MODEL.items():
+        if "charging_mode" in fields:
+            assert p.state_layout_measured(model), model
+
+
+def test_an_unmeasured_layout_is_the_x783_s_and_says_so():
+    assert p.state_layout_measured("X783")
+    assert p.state_layout_measured("X776")
+    assert not p.state_layout_measured(None)
+    assert not p.state_layout_measured("X999")
+    # And what it hands back meanwhile is the X783's, which is what makes it
+    # safe to read an unknown charger and unsafe to write to one.
+    assert p.state_layout("X999") == p.state_layout("X783")

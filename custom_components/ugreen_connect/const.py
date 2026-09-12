@@ -202,7 +202,8 @@ MODEL_STORE_KEY: Final = f"{DOMAIN}.models"
 # The parameter block each charging mode was last seen running with. Kept
 # across restarts because a mode's parameters can only be learned while that
 # mode is in force: without this, the first mode change after every start goes
-# out with empty parameters and resets whatever that mode was configured with.
+# out with empty parameters, and the charger either loses what that mode was
+# configured with or refuses the change outright.
 # Its own store rather than a field in the models one, which holds a flat
 # name per charger and would need a migration to hold anything else.
 PARAMS_STORE_VERSION: Final = 1
