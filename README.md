@@ -81,16 +81,17 @@ has watched the charger running; the only block it ever composes is an empty one
 for a mode it has not seen.
 
 That applies to the presets too. A mode carries its own settings — `priority`
-keeps its chosen port there, DC Turbo its voltage — and the charger holds no
+keeps its chosen port there, DC Turbo a setting of its own — and the charger holds no
 copy, so the write is what decides them. Once a mode has been seen running it is
 remembered, across restarts, and put back whenever it is selected.
 
 Before it has been seen, selecting it sends empty parameters, and the charger
 either loses what that mode was configured with or refuses the change outright —
 DC Turbo does the latter, so it simply will not switch. The log says so when it
-happens, once. If the settings are gone, set that mode up again in the app; if
-the change did not take, select the mode in the app. Either way leave the charger
-in it for a minute, which is how often its settings are read.
+happens. If the settings are gone, set that mode up again in the app; if the
+change did not take, select the mode in the app. Either way leave the charger in
+it for a minute or so — that is the soonest its settings are read again, and on a
+slow poll interval it is longer.
 
 A 300W reports its ports in the order `C1 C2 C3 C4 C5 C6 A1 DC`, and a 160W as
 `C-Cable C1 C2 A`; the order comes from a table keyed on `productNo`, and a

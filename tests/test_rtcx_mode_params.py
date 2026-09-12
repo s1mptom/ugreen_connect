@@ -293,3 +293,28 @@ def test_an_unmeasured_model_is_not_written_to_at_all():
         with pytest.raises(rtcx_module.UgreenError):
             asyncio.run(c.client.async_set_charging_mode(IOT, 3, unknown))
     assert c.sent == []
+
+
+def test_a_mode_the_charger_refuses_is_warned_about_every_time(caplog):
+    """Because a block is learned from the mode the charger reports being in.
+
+    A charger that took the empty block is then in that mode, so the next read
+    learns it and the warning is over. A charger that refused it never entered
+    the mode -- `dc_turbo` on an X783 -- so there is nothing to learn and the
+    next attempt is in exactly the same position. Saying so again is right: the
+    change really is not taking.
+    """
+    c = _Client()
+    for _ in range(3):
+        c.set_mode(2)
+    assert caplog.text.count("has not been seen running") == 3
+
+    # And the other way: once the charger reports the mode, it goes quiet.
+    body = bytearray(86)
+    body[rtcx_module.STATE_CHARGING_MODE] = 2
+    body[43:49] = b"ABCDEF"
+    c.replies[IOT] = rtcx_module.build_frame(rtcx_module.FRAME_QUERY, 1, bytes(body))
+    c.read()
+    caplog.clear()
+    c.set_mode(2)
+    assert "has not been seen running" not in caplog.text

@@ -101,7 +101,8 @@ SIGNED_HEADERS = ("x-ca-key", "x-ca-nonce", "x-ca-timestamp")
 # it is a silent revert and not a window that heals.
 # The X783's length, and only its own: the write path asks the model's layout
 # rather than this, and nothing in the integration reads it any more. It stays
-# because the paragraph above is about these bytes and needs somewhere to live.
+# because the paragraph above is about these bytes and needs somewhere to live,
+# and because the tests over that path measure their payloads against it.
 CHARGING_MODE_PARAMS = 35
 
 
@@ -620,17 +621,23 @@ class RtcxClient:
             # refusal loses nothing, so selecting the mode in the app is enough.
             # A loss is not undone by selecting the mode -- the charger is
             # already in it, with the setting already gone, and what gets
-            # learned is the zeros. That one has to be set up again. And this
-            # warning will not fire a second time either way, because by then
-            # the mode has been seen: it is the only notice there will be.
+            # learned is the zeros. That one has to be set up again.
+            #
+            # They differ in how often this is said, too, and the difference is
+            # the same fact seen twice: a block is learned from the mode the
+            # charger reports itself to be in. After a loss the charger is in
+            # the mode, so the next read learns it and this never fires again.
+            # After a refusal it never entered the mode, so there is nothing to
+            # learn and every further attempt says this again -- which is the
+            # right behaviour, the change really is not taking.
             _LOGGER.warning(
                 "charging mode %s has not been seen running on this charger, so "
                 "it is being set with empty parameters: the charger will either "
                 "lose what that mode was configured with or refuse the change "
                 "outright. In the UGREEN app, set that mode up again if its "
                 "settings are gone, or simply select it if the change did not "
-                "take; leave the charger in it for a minute and it will be "
-                "remembered from then on. This is said once",
+                "take; leave the charger in it for a minute or so and it will be "
+                "remembered from then on",
                 mode,
             )
             params = bytes(expected)
