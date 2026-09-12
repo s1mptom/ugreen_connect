@@ -278,7 +278,12 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # would invent energy across exactly the gap where none was measured.
         stamp = time.time()
         for key, reading in power.items():
-            if reading and not reading.get("carried_for"):
+            # `is None` rather than truthiness: the age is a rounded number and
+            # a carry fast enough rounds to 0.0, which is false. A reading the
+            # coordinator had to carry would then be handed to the tracker as
+            # if it were a measurement -- the one thing this line exists to
+            # prevent -- and the faster the machine, the likelier it is.
+            if reading and reading.get("carried_for") is None:
                 self.sessions.update(stamp, key, reading["ports"])
 
         data = {
