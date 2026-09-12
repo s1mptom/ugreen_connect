@@ -82,8 +82,10 @@ it has watched the charger running, never write a new one.
 That applies to the presets too. A mode carries its own settings — `priority`
 keeps its chosen port there — and the charger holds no copy, so the write is what
 decides them. Selecting a mode Home Assistant has not yet seen the charger
-running sends it with empty parameters, which clears that mode's own settings;
-the log says so when it happens. Once a mode has been seen, it is remembered
+running sends it with empty parameters, and the charger will either lose what
+that mode was configured with or refuse the change outright — DC Turbo does the
+latter. Selecting the mode once in the UGREEN app is enough; it is remembered
+from then on, across restarts. The log says when this happens. Once a mode has been seen, it is remembered
 across restarts and put back with it.
 
 A 300W reports its ports in the order `C1 C2 C3 C4 C5 C6 A1 DC`, and a 160W as

@@ -605,14 +605,20 @@ class RtcxClient:
         # questions are different ones, and a preset whose parameters really
         # are all zero is an answer rather than an absence.
         elif params is None:
-            # The one path left that can still overwrite a setting. Said out
-            # loud, because the symptom -- a preference quietly back at its
-            # default -- looks identical to the bug this replaced, and a
-            # downloaded log is where the difference has to be visible.
+            # The one path left that can go wrong, and it goes wrong two ways.
+            # Some modes take the empty block and lose whatever they were
+            # configured with; `dc_turbo` refuses it outright -- measured on an
+            # X783, where selecting it with zeros left the charger in the mode
+            # it was already in, three times running, with nothing to show for
+            # it but the entity flicking back. Said out loud either way,
+            # because neither symptom names its own cause and a downloaded log
+            # is where that has to be visible.
             _LOGGER.warning(
-                "charging mode %s has not been seen running on this charger; "
-                "setting it with empty parameters, which resets whatever that "
-                "mode was configured with",
+                "charging mode %s has not been seen running on this charger, so "
+                "it is being set with empty parameters: the charger will either "
+                "lose what that mode was configured with or refuse the change. "
+                "Select the mode in the UGREEN app once and it will be "
+                "remembered from then on",
                 mode,
             )
             params = bytes(expected)
