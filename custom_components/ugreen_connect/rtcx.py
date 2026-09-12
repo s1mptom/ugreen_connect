@@ -74,8 +74,13 @@ TIMEOUT = aiohttp.ClientTimeout(total=30)
 SIGNED_HEADERS = ("x-ca-key", "x-ca-nonce", "x-ca-timestamp")
 
 
-# The mode byte is followed by 35 parameter bytes; every preset leaves them zero
-# and only the app's "custom" mode fills them in.
+# The mode byte is followed by 35 parameter bytes, and they belong to whichever
+# mode is in force rather than to the custom editor alone. Watched on a live
+# X783: a charger left in `priority` by the app reported 02 in the first of
+# them with the other 34 at zero, and selecting `priority` from here -- which
+# used to send 35 zeros -- put that byte back to 00 and left it there. So
+# sending zeros does not "leave a preset alone"; it discards what the preset
+# was carrying. Hence the block last seen for a mode goes back out with it.
 CHARGING_MODE_PARAMS = 35
 
 
@@ -84,6 +89,8 @@ CHARGING_MODE_PARAMS = 35
 STATE_BRIGHTNESS = 2
 STATE_SLEEP_TIME = 3
 STATE_CHARGING_MODE = 4
+# The parameter block, in the same order the setting command takes it.
+STATE_MODE_PARAMS = 5
 IMAGE_ID_LEN = 6
 
 
@@ -107,6 +114,11 @@ class RtcxClient:
         # values are only as good as offsets established on a different one, and
         # these bytes are what someone else can check them against.
         self.last_frames: dict[str, dict[str, str]] = {}
+        # The parameter block last seen while each mode was the one in force,
+        # keyed by charger and mode byte. Setting a mode has to carry its
+        # parameters, and the only place they can be learnt is a state reply
+        # taken while that mode was running.
+        self._mode_params: dict[tuple[str, int], bytes] = {}
         # Chargers written to since their state was last read.
         self._state_dirty: set[str] = set()
         # Stable per-account, so the cloud sees one client rather than a new one
@@ -358,6 +370,17 @@ class RtcxClient:
         if not body or len(body) < layout.image_id + IMAGE_ID_LEN:
             return None
 
+        # Remember this mode's parameters: setting the mode again later has to
+        # send them back, and this reply is the only place they appear. The
+        # block ends where the screensaver group begins, which is nine bytes
+        # earlier on the 160W -- taking a fixed 35 would copy that group into
+        # what is meant to be parameters. The body is known to reach past it
+        # already: the check above needs `image_id` plus six, and the image sits
+        # three bytes after the screensaver.
+        self._mode_params[(iot_id, body[STATE_CHARGING_MODE])] = bytes(
+            body[STATE_MODE_PARAMS : layout.screensaver]
+        )
+
         image = body[layout.image_id : layout.image_id + IMAGE_ID_LEN]
         # A count byte nobody has watched counting is not read at all.
         wallpapers: list[str] = []
@@ -448,10 +471,16 @@ class RtcxClient:
         )
 
     async def async_set_charging_mode(self, iot_id: str, mode: int) -> None:
-        """Mode byte plus 35 parameter bytes, which the presets leave at zero."""
-        await self._setting(
-            iot_id, SETTING_SET_CHARGING_MODE, bytes([mode]) + bytes(CHARGING_MODE_PARAMS)
-        )
+        """Mode byte plus the parameters that mode was last seen carrying.
+
+        Zeros only where this mode has not been watched running, which is the
+        most that can be said then. Sending zeros unconditionally is what made
+        selecting `priority` from Home Assistant reset the priority port the
+        app had set -- the charger keeps no copy of its own, so whatever the
+        write carries becomes the setting.
+        """
+        params = self._mode_params.get((iot_id, mode)) or bytes(CHARGING_MODE_PARAMS)
+        await self._setting(iot_id, SETTING_SET_CHARGING_MODE, bytes([mode]) + params)
 
     async def async_set_screensaver(
         self, iot_id: str, enabled: bool, theme: int, flag: int, wallpaper: str | None

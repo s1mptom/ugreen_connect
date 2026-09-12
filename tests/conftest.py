@@ -33,7 +33,6 @@ def _load(name: str, file_name: str, package: str | None = None):
 
 
 session = _load("ugreen_session", "session.py")
-protocol = _load("ugreen_protocol", "protocol.py")
 
 
 # ``api`` is Home-Assistant-free for the same reason and can be exercised the
@@ -47,6 +46,11 @@ _package.__path__ = []
 sys.modules[_PKG] = _package
 
 _load(f"{_PKG}.const", "const.py")
+# ``protocol`` is free of Home Assistant and of third-party imports alike, so it
+# loads unconditionally -- inside the stand-in package, because ``rtcx`` reaches
+# it as ``.protocol`` and two copies of it under different names would let a test
+# assert against constants the code under test is not using.
+protocol = _load(f"{_PKG}.protocol", "protocol.py", package=_PKG)
 
 # It does need aiohttp and cryptography, which the other two do not. Where they
 # are absent the module is simply not loaded and the tests over it skip, so the
@@ -61,7 +65,10 @@ _OPTIONAL = {"aiohttp", "cryptography"}
 
 try:
     api = _load(f"{_PKG}.api", "api.py", package=_PKG)
+    # ``rtcx`` needs aiohttp for the same reason and rides on the same skip.
+    rtcx = _load(f"{_PKG}.rtcx", "rtcx.py", package=_PKG)
 except ModuleNotFoundError as err:  # pragma: no cover - depends on the environment
     if (err.name or "").split(".")[0] not in _OPTIONAL:
         raise
     api = None
+    rtcx = None
