@@ -86,12 +86,23 @@ SIGNED_HEADERS = ("x-ca-key", "x-ca-nonce", "x-ca-timestamp")
 # it was carrying or refuses the write, which is what `dc_turbo` does. Hence the
 # block last seen for a mode goes back out with it.
 #
-# That byte is `priority`'s chosen port: set to C2 in the app it reads 0x02.
-# The rest of `priority`'s block has been zero in every frame taken from a
-# charger in that mode, which is not the same as being unused -- elsewhere in
-# the block at least one setting moves two bytes at once, the shared C6+A limit
-# at parameter bytes 10 and 34. What the other presets keep there has not been
-# watched closely enough to say.
+# What those bytes hold, read off an X783 by moving one control at a time in
+# the app and taking the frame back:
+#
+#   `priority`    byte 0 is a bitmask of the priority ports, C1 1, C2 2, C3 4.
+#                 A mask and not an index: C3 alone reads 4 rather than 3, and
+#                 C1 with C3 reads 5. The app allows up to three of them.
+#   `dc_turbo`    byte 0 is the DC port voltage -- 1 is 12 V, 2 is 15 V, 3 is
+#                 20 V -- and byte 1 is its Always On switch, 0 or 1. The two
+#                 move independently.
+#   `custom`      fills a good deal of the block: five port limits, a shared
+#                 C6+A limit and a protocol mask per group. `parse_custom_mode`
+#                 has the layout.
+#
+# `adaptive_power` and `thermal_safe` have been zero in every frame seen, which
+# is not the same as being unused. Nothing here reads any of this yet -- the
+# block is copied, not interpreted -- but it is what the bytes are, and the
+# next person to want a control over them should not have to measure it twice.
 #
 # The copy is only as fresh as the state timer. A setting changed in the app
 # and that mode re-selected from here inside the same minute replays the older

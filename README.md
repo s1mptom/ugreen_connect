@@ -81,7 +81,8 @@ has watched the charger running; the only block it ever composes is an empty one
 for a mode it has not seen.
 
 That applies to the presets too. A mode carries its own settings — `priority`
-keeps its chosen port there, DC Turbo a setting of its own — and the charger holds no
+keeps a mask of its priority ports there, DC Turbo its port voltage and its
+Always On switch — and the charger holds no
 copy, so the write is what decides them. Once a mode has been seen running it is
 remembered, across restarts, and put back whenever it is selected.
 
