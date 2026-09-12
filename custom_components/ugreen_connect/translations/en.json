@@ -206,6 +206,9 @@
   "exceptions": {
     "not_writable_on_model": {
       "message": "Setting this has not been verified on the {model}, so it is shown but not written. Its value can be changed in the UGREEN app."
+    },
+    "mode_not_selectable": {
+      "message": "{mode} cannot be set from Home Assistant. It needs the parameters that only the UgreenConnect app's own mode editor fills in, and sending invented ones would overwrite what is configured there."
     }
   }
 }
