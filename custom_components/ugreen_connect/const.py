@@ -126,9 +126,12 @@ WALLPAPER_SIZE: Final[tuple[int, int]] = (560, 170)
 # Firmware version and SSID never change between polls; re-read them rarely.
 STATIC_INFO_INTERVAL: Final = 3600
 
-# Charging presets. "custom" is left out on purpose: it needs the 35 parameter
-# bytes the presets leave at zero, and those are only meaningful alongside the
-# app's own mode editor.
+# Charging presets. "custom" is left out on purpose: setting a mode carries that
+# mode's parameter block, and composing a custom block is the app editor's
+# job -- all this can do is replay one it has watched the charger running. (An
+# earlier note here said the presets leave those bytes at zero. They do not:
+# `priority` was seen carrying a setting in the first of them, which is why
+# sending zeros used to erase it.)
 # Named as the app names them, so the two agree on screen.
 CHARGING_MODES: Final[dict[int, str]] = {
     0: "adaptive_power",
@@ -195,3 +198,12 @@ CONF_DEBUG_DUMP: Final = "debug_dump"
 # reload on writing it is there because those choices only take effect on one.
 MODEL_STORE_VERSION: Final = 1
 MODEL_STORE_KEY: Final = f"{DOMAIN}.models"
+
+# The parameter block each charging mode was last seen running with. Kept
+# across restarts because a mode's parameters can only be learned while that
+# mode is in force: without this, the first mode change after every start goes
+# out with empty parameters and resets whatever that mode was configured with.
+# Its own store rather than a field in the models one, which holds a flat
+# name per charger and would need a migration to hold anything else.
+PARAMS_STORE_VERSION: Final = 1
+PARAMS_STORE_KEY: Final = f"{DOMAIN}.mode_params"

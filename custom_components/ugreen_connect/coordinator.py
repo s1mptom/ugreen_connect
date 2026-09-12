@@ -55,6 +55,8 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         debug_dump: bool = True,
         models: dict[str, str] | None = None,
         model_store: Store[dict[str, str]] | None = None,
+        params_store: Store[dict[str, str]] | None = None,
+        mode_params: dict[str, str] | None = None,
     ) -> None:
         super().__init__(
             hass,
@@ -108,6 +110,9 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._models: dict[str, str | None] = dict(models or {})
         self._model_store = model_store
         self._model_tries: dict[str, int] = {}
+        self._params_store = params_store
+        # What the store already holds, so an unchanged poll writes nothing.
+        self._saved_params: dict[str, str] = dict(mode_params or {})
 
     async def _async_update_data(self) -> dict[str, Any]:
         started = time.monotonic()
@@ -322,6 +327,23 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._model_store.async_delay_save(
             lambda: {key: name for key, name in self._models.items() if name}, 1
         )
+
+    def _remember_params(self) -> None:
+        """Keep the parameter blocks the chargers have been seen running with.
+
+        Only when they have actually moved. The state is re-read every minute
+        and answers the same almost every time, so saving on each one would
+        rewrite an unchanged file all day -- on hardware that is often a
+        memory card.
+        """
+        if self._params_store is None:
+            return
+        snapshot = self.rtcx.mode_params_snapshot()
+        if snapshot == self._saved_params:
+            return
+        self._saved_params = snapshot
+        self._params_store.async_delay_save(lambda: snapshot, 1)
+
     async def _device_state(
         self, key: str, iot_id: str, model: str | None
     ) -> dict[str, Any]:
@@ -340,6 +362,11 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if recent and not self.rtcx.state_is_stale(iot_id):
             return cached
         state = await self.rtcx.async_device_state(iot_id, model)
+        # The read may have learned this mode's parameter block, which has to
+        # outlive the process: a mode's parameters can only be learned while
+        # that mode is running, so a restart that forgets them sends the next
+        # mode change out empty.
+        self._remember_params()
         if state is None:
             # A reply that did not arrive says nothing about what the settings
             # are; the last ones that did are still the best answer.

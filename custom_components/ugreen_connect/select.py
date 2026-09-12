@@ -97,7 +97,9 @@ class UgreenChargingMode(UgreenDeviceEntity, SelectEntity):
             return
         self._require_writable("charging_mode")
         with cloud_errors():
-            await self.coordinator.rtcx.async_set_charging_mode(iot_id, MODE_VALUE[option])
+            await self.coordinator.rtcx.async_set_charging_mode(
+                iot_id, MODE_VALUE[option], self.coordinator.model_for(self._key)
+            )
         if reading := self._reading:
             reading["charging_mode"] = option
         self.async_write_ha_state()

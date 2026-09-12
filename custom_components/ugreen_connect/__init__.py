@@ -19,6 +19,8 @@ from .const import (
     DEFAULT_REGION,
     MODEL_STORE_KEY,
     MODEL_STORE_VERSION,
+    PARAMS_STORE_KEY,
+    PARAMS_STORE_VERSION,
     REGIONS,
 )
 from .coordinator import UgreenCoordinator
@@ -60,9 +62,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
     except UgreenError as err:
         raise ConfigEntryNotReady(str(err)) from err
 
+    # What each charging mode was last seen running with. Read before the
+    # client is built, so the first mode change after a restart carries the
+    # parameters that mode had rather than empty ones.
+    params_store: Store[dict[str, str]] = Store(
+        hass, PARAMS_STORE_VERSION, f"{PARAMS_STORE_KEY}.{entry.entry_id}"
+    )
+    # Shaped here rather than trusted: the file outlives this code and two
+    # things downstream build a dict from it, so a root that is not one has to
+    # stop at the door instead of raising out of the middle of setup.
+    loaded_params = await params_store.async_load()
+    stored_params: dict[str, str] = loaded_params if isinstance(loaded_params, dict) else {}
+
     # Telemetry lives behind a second cloud. Setting it up must not block the
     # entry, since the inventory sensors work without it.
-    rtcx = RtcxClient(session, api)
+    rtcx = RtcxClient(session, api, mode_params=stored_params)
     try:
         await rtcx.async_login()
     except UgreenError as err:
@@ -81,6 +95,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
         debug_dump=entry.data.get(CONF_DEBUG_DUMP, False),
         models=await store.async_load() or {},
         model_store=store,
+        params_store=params_store,
+        mode_params=stored_params,
     )
     await coordinator.async_config_entry_first_refresh()
 
@@ -111,8 +127,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> b
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> None:
-    """Take the remembered models with the account they belong to."""
+    """Take what was remembered with the account it belongs to."""
     store: Store[dict[str, str]] = Store(
         hass, MODEL_STORE_VERSION, f"{MODEL_STORE_KEY}.{entry.entry_id}"
     )
     await store.async_remove()
+    params_store: Store[dict[str, str]] = Store(
+        hass, PARAMS_STORE_VERSION, f"{PARAMS_STORE_KEY}.{entry.entry_id}"
+    )
+    await params_store.async_remove()

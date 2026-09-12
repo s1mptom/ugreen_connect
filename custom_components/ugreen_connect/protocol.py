@@ -219,6 +219,18 @@ def state_layout(model: str | None) -> StateLayout:
     return STATE_LAYOUT_BY_MODEL.get(model or "", STATE_LAYOUT_BY_MODEL["X783"])
 
 
+def state_layout_measured(model: str | None) -> bool:
+    """Whether that layout was measured on this model or borrowed from the X783.
+
+    Reading at borrowed offsets is a wrong number that the next successful
+    lookup corrects. Keeping bytes read at them is different: they are kept in
+    order to be sent back, and a 160W read at the 300W's offsets yields 35
+    bytes with its screensaver group inside -- which is the write
+    `state_writable` refuses, arriving later and from store.
+    """
+    return (model or "") in STATE_LAYOUT_BY_MODEL
+
+
 def crc16_modbus(data: bytes) -> int:
     """CRC-16/MODBUS, the checksum the charger's frames carry."""
     crc = 0xFFFF
