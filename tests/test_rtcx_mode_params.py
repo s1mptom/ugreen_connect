@@ -270,3 +270,26 @@ def test_a_block_of_the_wrong_model_s_length_is_not_sent(caplog):
     c.sent.clear()
     asyncio.run(c.client.async_set_charging_mode(IOT, 3, "X776"))
     assert len(c.sent[-1][2]) == 1 + 26
+
+
+def test_a_mode_never_seen_is_set_with_that_model_s_own_length():
+    # The fallback is as model-specific as the block it stands in for: 35 zeros
+    # into the 160W's 26-byte block would land on its screensaver group.
+    c = _Client()
+    assert len(c.set_mode(1, model="X776")) == 1 + 26
+    assert len(c.set_mode(1, model="X783")) == 1 + 35
+
+
+def test_an_unmeasured_model_is_not_written_to_at_all():
+    """Reading at a borrowed layout is recoverable; writing at one is not.
+
+    `state_layout` answers with the X783's where it has not been told, which is
+    the right guess for a reading and the wrong one for a frame that goes to a
+    charger. `state_writable` refuses the same charger a layer up; this refuses
+    at the layer that touches the hardware.
+    """
+    c = _Client()
+    for unknown in (None, "X999"):
+        with pytest.raises(rtcx_module.UgreenError):
+            asyncio.run(c.client.async_set_charging_mode(IOT, 3, unknown))
+    assert c.sent == []

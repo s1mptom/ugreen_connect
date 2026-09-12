@@ -68,7 +68,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
     params_store: Store[dict[str, str]] = Store(
         hass, PARAMS_STORE_VERSION, f"{PARAMS_STORE_KEY}.{entry.entry_id}"
     )
-    stored_params: dict[str, str] = await params_store.async_load() or {}
+    # Shaped here rather than trusted: the file outlives this code and two
+    # things downstream build a dict from it, so a root that is not one has to
+    # stop at the door instead of raising out of the middle of setup.
+    loaded_params = await params_store.async_load()
+    stored_params: dict[str, str] = loaded_params if isinstance(loaded_params, dict) else {}
 
     # Telemetry lives behind a second cloud. Setting it up must not block the
     # entry, since the inventory sensors work without it.

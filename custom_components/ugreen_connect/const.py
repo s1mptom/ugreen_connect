@@ -127,7 +127,7 @@ WALLPAPER_SIZE: Final[tuple[int, int]] = (560, 170)
 STATIC_INFO_INTERVAL: Final = 3600
 
 # Charging presets. "custom" is left out on purpose: setting a mode carries that
-# mode's 35 parameter bytes, and composing a custom block is the app editor's
+# mode's parameter block, and composing a custom block is the app editor's
 # job -- all this can do is replay one it has watched the charger running. (An
 # earlier note here said the presets leave those bytes at zero. They do not:
 # `priority` was seen carrying a setting in the first of them, which is why

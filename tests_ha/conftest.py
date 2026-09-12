@@ -118,6 +118,7 @@ class FakeRtcx:
         # What the real client learns from a state reply and the coordinator
         # writes down; a test moves it to say the charger was seen in a mode.
         self.mode_params: dict[str, str] = {}
+        self.mode_writes: list[tuple[str, int, str | None]] = []
 
     async def async_login(self) -> None:
         return None
@@ -127,6 +128,14 @@ class FakeRtcx:
 
     async def async_device_state(self, _iot_id: str, _model: str | None = None) -> dict[str, Any]:
         return dict(STATE)
+
+    async def async_set_charging_mode(
+        self, iot_id: str, mode: int, model: str | None = None
+    ) -> None:
+        # Recorded rather than ignored: the real one needs the model to know
+        # how long the parameter block is, and nothing else would notice if
+        # the entity stopped passing it.
+        self.mode_writes.append((iot_id, mode, model))
 
     def mode_params_snapshot(self) -> dict[str, str]:
         return dict(self.mode_params)

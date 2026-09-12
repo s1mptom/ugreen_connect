@@ -87,9 +87,10 @@ SIGNED_HEADERS = ("x-ca-key", "x-ca-nonce", "x-ca-timestamp")
 #
 # That byte is `priority`'s chosen port: set to C2 in the app it reads 0x02.
 # The rest of `priority`'s block has been zero in every frame taken from a
-# charger in that mode, which is not the same as being unused. `custom` fills
-# a good deal of the block; the other presets have not been watched closely
-# enough to say.
+# charger in that mode, which is not the same as being unused -- elsewhere in
+# the block at least one setting moves two bytes at once, the shared C6+A limit
+# at parameter bytes 10 and 34. What the other presets keep there has not been
+# watched closely enough to say.
 #
 # The copy is only as fresh as the state timer. A setting changed in the app
 # and that mode re-selected from here inside the same minute replays the older
@@ -570,32 +571,40 @@ class RtcxClient:
         `priority` -> `adaptive_power` -> `priority` driven from Home
         Assistant, where before this it came back as 0.
         """
-        # `is None` says "never seen" and nothing else. Truthiness would read
-        # the same today -- `bytes` are falsy only when empty, and an empty
-        # block cannot get this far past `_unpack_params` -- but the two
-        # questions are different ones, and a preset whose parameters really
-        # are all zero is an answer rather than an absence.
-        # How long this model's block is. `CHARGING_MODE_PARAMS` is the X783's
-        # and is only the right answer for the X783: the 160W's is nine bytes
-        # shorter, and sending the longer one into it lands on the screensaver
-        # group -- the write `state_writable` refuses today, which is exactly
-        # the reason this does not assume.
+        # A model whose offsets nobody has measured gets nothing written to it.
+        # `state_layout` answers with the X783's where it does not know, which
+        # is the right shape of guess for *reading* -- a wrong number, corrected
+        # by the next lookup -- and the wrong one for a write: 35 bytes into the
+        # 160W's 26-byte block land on its screensaver group. `state_writable`
+        # refuses the same charger one layer up; this is the layer that touches
+        # the hardware, so it refuses too rather than rely on that.
+        if not state_layout_measured(model):
+            raise UgreenError(
+                f"refusing to set a charging mode on an unrecognised model: "
+                f"the parameter block's length is not known for {model or 'it'}"
+            )
         expected = state_layout(model).screensaver - STATE_MODE_PARAMS
         params = self._mode_params.get((iot_id, mode))
         if params is not None and len(params) != expected:
             # Remembered for one model and sent for another. Unreachable while
             # the key carries the charger, and refused here rather than left
-            # to be reachable later.
+            # to be reachable later. Said instead of the warning below, which
+            # would claim this mode has never been seen -- it has.
             _LOGGER.warning(
                 "remembered parameters for mode %s are %d bytes where %s takes "
                 "%d; setting it with empty parameters instead",
                 mode,
                 len(params),
-                model or "this charger",
+                model,
                 expected,
             )
-            params = None
-        if params is None:
+            params = bytes(expected)
+        # `is None` says "never seen" and nothing else. Truthiness would read
+        # the same today -- `bytes` are falsy only when empty, and an empty
+        # block cannot get this far past `_unpack_params` -- but the two
+        # questions are different ones, and a preset whose parameters really
+        # are all zero is an answer rather than an absence.
+        elif params is None:
             # The one path left that can still overwrite a setting. Said out
             # loud, because the symptom -- a preference quietly back at its
             # default -- looks identical to the bug this replaced, and a
