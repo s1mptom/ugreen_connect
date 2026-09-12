@@ -82,6 +82,9 @@
       },
       "energy_total_charger": {
         "name": "Energie"
+      },
+      "custom_limit": {
+        "name": "{port} Grenze der Port-Anpassung"
       }
     },
     "number": {

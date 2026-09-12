@@ -28,6 +28,30 @@ X776_FRAME = (
 )
 
 
+# Two `GET_DEVICE_STATE` replies from one X783, custom mode active, taken with
+# the shared C6+A slider at 15 W and then at 30 W in the UgreenConnect app.
+# Nothing else was touched between them, and exactly two bytes differ:
+#
+#   [15]  0x01 -> 0x02   the shared limit, counted in steps
+#   [39]  0x01 -> 0x25   the low byte of that group's protocol mask
+#
+# The wattage each was taken at is written here because it cannot be read out
+# of the bytes -- it is the thing they are evidence for. Before these, [15] was
+# zero in every frame anyone had, which is why the multiplier could not be
+# checked at all.
+SHARED_15 = (
+    "aa0100560037640004000f000f008c003c000f0100000001000000010000006500000065"
+    "000000010000000101010033314632303706423136413535343942363631433431303733"
+    "31443435314533314632303746434134424437ae"
+)
+
+SHARED_30 = (
+    "aa0100560037640004000f000f008c003c000f0200000001000000010000006500000065"
+    "000000010000002501010033314632303706423136413535343942363631433431303733"
+    "3144343531453331463230374643413442445a17"
+)
+
+
 def test_the_300w_sends_one_protocol_byte_short():
     body = p.frame_body(X783_FRAME, p.FRAME_QUERY, p.QUERY_GET_POWER_INFO)
     assert body is not None and len(body) == 63
@@ -145,3 +169,108 @@ def test_reading_a_field_is_not_permission_to_write_it():
     assert "brightness" in p.state_writable("X776")
     assert p.state_writable("X783") == p.STATE_FIELDS_ALL
     assert p.state_writable("X999") == frozenset()
+
+
+# --- the custom charging mode ----------------------------------------------
+#
+# The 35 bytes a preset leaves at zero, read off a live X783 while its owner
+# moved one slider at a time in the app. The frame below is that charger with
+# a configuration the app calls "Laptop Prio".
+
+CUSTOM_STATE = bytes.fromhex(
+    "0037640004000f000f008c003c003c000000000100000001000000650000006500"
+    "0000650000000001010033314632303706"
+)
+
+
+def test_the_custom_block_reads_as_the_app_shows_it():
+    groups = p.parse_custom_mode(CUSTOM_STATE, "X783")
+    assert groups is not None
+    assert [g["limit"] for g in groups] == [15, 15, 140, 60, 60, 0]
+    assert [g["port"] for g in groups] == ["C1", "C2", "C3", "C4", "C5", "C6+A"]
+
+
+def test_the_protocols_come_out_of_the_mask():
+    groups = p.parse_custom_mode(CUSTOM_STATE, "X783")
+    c3 = next(g for g in groups if g["port"] == "C3")
+    assert c3["mask"] == 0x65
+    assert c3["protocols"] == ["Apple5V/2.4A", "AFC", "5-11V PPS", "5-21V PPS"]
+
+
+def test_a_preset_has_no_custom_mode_to_describe():
+    # Switching to a preset zeroes the whole block -- watched happening -- and
+    # that is how "no custom mode configured" is told from one that is merely
+    # idle.
+    assert p.parse_custom_mode(bytes(60), "X783") is None
+
+
+def test_another_model_is_not_measured_with_this_ruler():
+    # Five wattages, a shared pair in steps and six masks is the X783's shape.
+    # The 160W's block repeats a seven-byte group instead.
+    assert p.parse_custom_mode(CUSTOM_STATE, "X776") is None
+    assert "custom" not in p.state_fields("X776")
+
+
+def test_a_preset_is_not_read_as_a_custom_configuration():
+    """A second X783, never configured, carries 02 at byte 5 while in `priority`.
+
+    The block was thought to be zero under a preset. It was on the charger this
+    layout was worked out on, so "not all zero" looked like a safe way to ask
+    whether a custom mode exists -- and on that second charger it read `0200`
+    as a 512 W limit for a port rated 140.
+
+    Built from the fixture rather than typed out, so the only differences from a
+    frame known to parse are the two bytes under test.
+    """
+    body = bytearray(CUSTOM_STATE)
+    body[4] = 3          # priority
+    body[5] = 0x02       # what that charger actually carries
+    for offset in range(6, p.STATE_CUSTOM_END):
+        body[offset] = 0
+
+    assert p.parse_custom_mode(bytes(body), "X783") is None
+
+    # And the same bytes with custom active still decode, so the gate is the
+    # mode and not the zeroing.
+    body[4] = p.CUSTOM_MODE
+    assert p.parse_custom_mode(bytes(body), "X783") is not None
+
+
+def test_the_shared_slider_counts_steps_rather_than_watts():
+    """Two frames off a charger, differing only in that slider.
+
+    `body[15]` is 0 in every frame captured before these, so the multiplier was
+    unobservable -- zero times anything is zero, and no mutation of the constant
+    could be caught. Setting the shared group to 15 W and then 30 W gives the
+    two readings that make it a scale.
+
+    What this does not settle: the slider offers exactly 0, 15 and 30, so
+    "steps of 15 W" and "an index into those three" produce identical bytes.
+    The reachable range is pinned; the multiplication is still the reading that
+    fits it, not one the charger has confirmed.
+    """
+    for frame, expected in ((SHARED_15, 15), (SHARED_30, 30)):
+        body = p.frame_body(frame, p.FRAME_QUERY, p.QUERY_GET_DEVICE_STATE)
+        assert body is not None, "the fixture has to survive its own CRC"
+        groups = p.parse_custom_mode(body, "X783")
+        shared = next(g for g in groups if g["port"] == "C6+A")
+        assert shared["limit"] == expected
+
+
+def test_the_shared_group_changes_its_protocols_with_its_limit():
+    """The only other byte that moved between those two frames.
+
+    Raising the shared limit from 15 W to 30 W also widened what that group may
+    negotiate -- `0x01` to `0x25`. Recorded because it was not expected: the
+    wattage and the protocol mask are separate fields in the layout, and the app
+    writes both from one slider.
+    """
+    masks = {}
+    for frame, label in ((SHARED_15, 15), (SHARED_30, 30)):
+        body = p.frame_body(frame, p.FRAME_QUERY, p.QUERY_GET_DEVICE_STATE)
+        groups = p.parse_custom_mode(body, "X783")
+        masks[label] = next(g for g in groups if g["port"] == "C6+A")["protocols"]
+
+    assert masks[15] == ["Apple5V/2.4A"]
+    assert masks[30] == ["Apple5V/2.4A", "AFC", "5-11V PPS"]
+

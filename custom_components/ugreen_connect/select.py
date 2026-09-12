@@ -98,9 +98,7 @@ class UgreenChargingMode(UgreenDeviceEntity, SelectEntity):
         self._require_writable("charging_mode")
         with cloud_errors():
             await self.coordinator.rtcx.async_set_charging_mode(iot_id, MODE_VALUE[option])
-        if reading := self._reading:
-            reading["charging_mode"] = option
-        self.async_write_ha_state()
+        await self.coordinator.async_read_back(self._key, iot_id)
 
 
 class UgreenWallpaper(UgreenDeviceEntity, SelectEntity):
@@ -193,8 +191,7 @@ class UgreenWallpaper(UgreenDeviceEntity, SelectEntity):
                 reading.get("screensaver_flag", 0),
                 wallpaper,
             )
-        reading["wallpaper"] = wallpaper
-        self.async_write_ha_state()
+        await self.coordinator.async_read_back(self._key, iot_id)
 
 
 class _UgreenScreensaverOption(UgreenDeviceEntity, SelectEntity):
@@ -221,11 +218,7 @@ class _UgreenScreensaverOption(UgreenDeviceEntity, SelectEntity):
                 reading.get("screensaver_flag", 0) if flag is None else flag,
                 reading.get("wallpaper"),
             )
-        if theme is not None:
-            reading["screensaver_theme"] = theme
-        if flag is not None:
-            reading["screensaver_flag"] = flag
-        self.async_write_ha_state()
+        await self.coordinator.async_read_back(self._key, iot_id)
 
 
 class UgreenClockStyle(_UgreenScreensaverOption):
@@ -309,6 +302,4 @@ class UgreenSleepTime(UgreenDeviceEntity, SelectEntity):
         self._require_writable("sleep_time")
         with cloud_errors():
             await self.coordinator.rtcx.async_set_sleep_time(iot_id, SLEEP_OPTIONS[option])
-        if reading := self._reading:
-            reading["sleep_time"] = SLEEP_OPTIONS[option]
-        self.async_write_ha_state()
+        await self.coordinator.async_read_back(self._key, iot_id)
