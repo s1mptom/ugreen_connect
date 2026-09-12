@@ -90,9 +90,12 @@ SIGNED_HEADERS = ("x-ca-key", "x-ca-nonce", "x-ca-timestamp")
 # it survives nothing else writing it. The other 34 have been zero in every
 # frame seen so far, which is not the same as being unused.
 #
-# The copy is as fresh as the state timer: a setting changed in the app and a
-# mode re-selected from here inside the same minute replays the older block.
-# Narrower than losing it outright, and it closes itself on the next read.
+# The copy is only as fresh as the state timer. A setting changed in the app
+# and that mode re-selected from here inside the same minute replays the older
+# block -- and replaying it *writes* it, so the app's change is gone and the
+# next read agrees with what was written. Nothing puts it back. Narrower than
+# the previous behaviour, which reset it every time rather than sometimes, but
+# it is a silent revert and not a window that heals.
 CHARGING_MODE_PARAMS = 35
 
 
@@ -541,6 +544,20 @@ class RtcxClient:
         selecting `priority` from Home Assistant reset the priority port the
         app had set -- the charger keeps no copy of its own, so whatever the
         write carries becomes the setting.
+
+        Replaying the bytes rather than rebuilding them, because the two are
+        not equivalent: on this model moving the shared C6+A slider one step
+        moves both its limit at 15 and the low byte of its protocol mask at 39,
+        so a block assembled from decoded values can hold a pair no setting in
+        the app produces. Copying cannot.
+
+        Both halves are measured. Sending a `GET_DEVICE_STATE` reply's 36 bytes
+        straight back changed nothing on a live X783 -- no limit, no mask, not
+        the screensaver bytes after them -- and a port charging at 30 W carried
+        on; moving one field landed on that field alone. And the round trip
+        this exists for: a priority port set to C2 in the app survived
+        `priority` -> `adaptive_power` -> `priority` driven from Home
+        Assistant, where before this it came back as 0.
         """
         # `is None` rather than truthiness: a block of 35 zeros is falsy and is
         # also a real answer -- the presets other than `priority` have looked
