@@ -36,8 +36,7 @@ from .const import (
 )
 from .protocol import QUERY_GET_WIFI_SSID
 from .rtcx import RtcxClient
-from .session import MAX_GAP, SessionTracker
-from .session import _drawing as port_drawing
+from .session import MAX_GAP, SessionTracker, drawing
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -265,7 +264,7 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             reading is None
             or reading.get("carried_for")
             or any(
-                port_drawing(values)
+                drawing(values)
                 for values in (reading.get("ports") or {}).values()
             )
             for reading in power.values()
