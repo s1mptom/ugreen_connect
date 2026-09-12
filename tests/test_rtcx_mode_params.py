@@ -64,8 +64,8 @@ class _Client:
     def read(self, iot_id=IOT, model="X783"):
         return asyncio.run(self.client.async_device_state(iot_id, model))
 
-    def set_mode(self, mode, iot_id=IOT):
-        asyncio.run(self.client.async_set_charging_mode(iot_id, mode))
+    def set_mode(self, mode, iot_id=IOT, model="X783"):
+        asyncio.run(self.client.async_set_charging_mode(iot_id, mode, model))
         return self.sent[-1][2]
 
 
@@ -163,9 +163,11 @@ def test_a_charger_read_at_a_borrowed_layout_is_not_remembered():
 def test_all_zeros_is_an_answer_and_not_an_absence(caplog):
     """A preset whose parameters really are zero must not read as never-seen.
 
-    The two produce the same frame, so the difference only shows in the log --
-    but a warning that cries wolf on every ordinary mode change is a warning
-    nobody reads when the real one arrives.
+    Both send the same frame, so the difference only shows in the log -- and a
+    warning that cries wolf on every ordinary mode change is one nobody reads
+    when the real one arrives. (This does not discriminate `is None` from
+    truthiness: `bytes` are falsy only when empty. It pins the behaviour, not
+    the spelling.)
     """
     body = bytearray(86)
     body[rtcx_module.STATE_CHARGING_MODE] = 0
@@ -215,6 +217,10 @@ def test_a_store_written_by_something_else_does_not_stop_the_charger():
             f"{IOT}:3": "02" + "00" * 34,
             f"{IOT}:notanumber": "00" * 35,
             f"{IOT}:1": "not hex at all",
+            # Not a string at all: `bytes.fromhex` raises TypeError here, and
+            # letting that out would fail the config entry on every retry.
+            f"{IOT}:6": None,
+            f"{IOT}:7": ["00" * 35],
             # Lengths that are not a block on any model measured. The empty one
             # is the dangerous shape: `bytes.fromhex("")` raises nothing, and a
             # block of no bytes would put a one-byte payload on the wire.
@@ -226,6 +232,14 @@ def test_a_store_written_by_something_else_does_not_stop_the_charger():
     assert set(client._mode_params) == {(IOT, 3)}
 
 
+def test_a_store_of_the_wrong_shape_is_ignored_rather_than_fatal():
+    # Read at startup, so raising here fails the config entry, which retries
+    # into the same crash. The cache is relearned in a minute; the integration
+    # is not.
+    for wrong in ([{"a": "b"}], "a string", 7):
+        assert rtcx_module.RtcxClient(None, _Api(), mode_params=wrong)._mode_params == {}
+
+
 def test_a_dropped_entry_does_not_shorten_the_payload():
     # The point of refusing them: whatever survives is a whole block, so the
     # frame that reaches the charger is the length the command takes.
@@ -233,3 +247,26 @@ def test_a_dropped_entry_does_not_shorten_the_payload():
     c.client = rtcx_module.RtcxClient(None, _Api(), mode_params={f"{IOT}:3": ""})
     c.client._setting = _recorder(c.sent)
     assert len(c.set_mode(3)) == 1 + rtcx_module.CHARGING_MODE_PARAMS
+
+
+def test_a_block_of_the_wrong_model_s_length_is_not_sent(caplog):
+    """26 bytes into a 35-byte command, or the reverse, is a write gone astray.
+
+    Unreachable while the cache is keyed by the charger -- one charger is one
+    model -- so this guards the direction the code could be taken later, which
+    is the direction `protocol.py` spends a paragraph warning about.
+    """
+    c = _Client()
+    c.client = rtcx_module.RtcxClient(
+        None, _Api(), mode_params={f"{IOT}:3": "00" * 26}
+    )
+    c.client._setting = _recorder(c.sent)
+
+    payload = c.set_mode(3)
+    assert len(payload) == 1 + 35, "a 160W block was sent to a 300W"
+    assert "26 bytes where" in caplog.text
+
+    # And the same block is the right length for the model it came from.
+    c.sent.clear()
+    asyncio.run(c.client.async_set_charging_mode(IOT, 3, "X776"))
+    assert len(c.sent[-1][2]) == 1 + 26

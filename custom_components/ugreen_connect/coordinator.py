@@ -327,6 +327,7 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._model_store.async_delay_save(
             lambda: {key: name for key, name in self._models.items() if name}, 1
         )
+
     def _remember_params(self) -> None:
         """Keep the parameter blocks the chargers have been seen running with.
 

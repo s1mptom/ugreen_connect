@@ -14,9 +14,10 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from pytest_homeassistant_custom_component.common import flush_store
 
 from custom_components.ugreen_connect.const import DOMAIN, MODEL_LOOKUP_ATTEMPTS
-from tests_ha.conftest import DEVICE_CODE
+from tests_ha.conftest import DEVICE_CODE, IOT_ID
 
 PORT_NAMES = ("C1", "C2", "C3", "C4", "C5", "C6", "A1", "DC")
 
@@ -173,15 +174,70 @@ async def test_a_mode_s_parameters_are_written_down_when_they_move(
         coordinator._state.clear()
         await coordinator.async_refresh()
 
-    rtcx.mode_params = {"device-1:3": "02" + "00" * 34}
+    rtcx.mode_params = {f"{IOT_ID}:3": "02" + "00" * 34}
     await poll_the_charger_again()
-    assert saves == [{"device-1:3": "02" + "00" * 34}]
+    assert saves == [{f"{IOT_ID}:3": "02" + "00" * 34}]
 
     # The same answer again: nothing new to write down.
     await poll_the_charger_again()
     assert len(saves) == 1
 
     # Somebody moved the setting in the app.
-    rtcx.mode_params = {"device-1:3": "05" + "00" * 34}
+    rtcx.mode_params = {f"{IOT_ID}:3": "05" + "00" * 34}
     await poll_the_charger_again()
-    assert [s["device-1:3"][:2] for s in saves] == ["02", "05"]
+    assert [s[f"{IOT_ID}:3"][:2] for s in saves] == ["02", "05"]
+
+
+async def test_the_blocks_live_in_a_store_of_their_own_and_go_with_the_entry(
+    hass, entry, api, rtcx, hass_storage
+):
+    """The wiring, not the logic: a real Store, its own key, loaded and removed.
+
+    The promise this branch makes is that what was learned outlives the
+    process. Everything under it can be right while the entry hands the client
+    nothing, or writes into the models store, or leaves the file behind -- all
+    of which the rest of the suite would report as passing.
+    """
+    from unittest.mock import patch
+
+    params_key = f"{DOMAIN}.mode_params.{entry.entry_id}"
+    models_key = f"{DOMAIN}.models.{entry.entry_id}"
+    stored = {f"{IOT_ID}:3": "02" + "00" * 34}
+    hass_storage[params_key] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": params_key,
+        "data": dict(stored),
+    }
+
+    entry.add_to_hass(hass)
+    with (
+        patch("custom_components.ugreen_connect.async_get_clientsession"),
+        patch("custom_components.ugreen_connect.UgreenApi", return_value=api),
+        patch("custom_components.ugreen_connect.RtcxClient") as client_class,
+    ):
+        client_class.return_value = rtcx
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    # What the file held was handed to the client, not merely loaded.
+    assert client_class.call_args.kwargs["mode_params"] == stored
+
+    # A block learned since is written back, under its own key -- the models
+    # store is a different file and still holds what it holds.
+    rtcx.mode_params = {f"{IOT_ID}:3": "05" + "00" * 34}
+    entry.runtime_data._state.clear()
+    await entry.runtime_data.async_refresh()
+    # The save is delayed by a second; nothing reaches the file until it runs.
+    await flush_store(entry.runtime_data._params_store)
+    assert hass_storage[params_key]["data"] == {f"{IOT_ID}:3": "05" + "00" * 34}
+    # The models store is a separate file, and writing one must not be writing
+    # the other -- the same key for both would have them clobbering each other.
+    await flush_store(entry.runtime_data._model_store)
+    assert models_key in hass_storage
+    assert hass_storage[models_key]["data"] != hass_storage[params_key]["data"]
+
+    # And it goes when the account does.
+    assert await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    assert params_key not in hass_storage

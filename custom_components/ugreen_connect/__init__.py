@@ -62,8 +62,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
     except UgreenError as err:
         raise ConfigEntryNotReady(str(err)) from err
 
-    # Telemetry lives behind a second cloud. Setting it up must not block the
-    # entry, since the inventory sensors work without it.
     # What each charging mode was last seen running with. Read before the
     # client is built, so the first mode change after a restart carries the
     # parameters that mode had rather than empty ones.
@@ -71,6 +69,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
         hass, PARAMS_STORE_VERSION, f"{PARAMS_STORE_KEY}.{entry.entry_id}"
     )
     stored_params: dict[str, str] = await params_store.async_load() or {}
+
+    # Telemetry lives behind a second cloud. Setting it up must not block the
+    # entry, since the inventory sensors work without it.
     rtcx = RtcxClient(session, api, mode_params=stored_params)
     try:
         await rtcx.async_login()

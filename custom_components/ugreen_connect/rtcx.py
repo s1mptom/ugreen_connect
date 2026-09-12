@@ -70,7 +70,6 @@ from .protocol import (
 _LOGGER = logging.getLogger(__name__)
 
 
-
 TIMEOUT = aiohttp.ClientTimeout(total=30)
 
 # Only these three are folded into the signature, and they are also what the
@@ -86,9 +85,11 @@ SIGNED_HEADERS = ("x-ca-key", "x-ca-nonce", "x-ca-timestamp")
 # sending zeros does not "leave a preset alone"; it discards what the preset
 # was carrying. Hence the block last seen for a mode goes back out with it.
 #
-# What that one byte means is not known, only that it is `priority`'s and that
-# it survives nothing else writing it. The other 34 have been zero in every
-# frame seen so far, which is not the same as being unused.
+# That byte is `priority`'s chosen port: set to C2 in the app it reads 0x02.
+# The rest of `priority`'s block has been zero in every frame taken from a
+# charger in that mode, which is not the same as being unused. `custom` fills
+# a good deal of the block; the other presets have not been watched closely
+# enough to say.
 #
 # The copy is only as fresh as the state timer. A setting changed in the app
 # and that mode re-selected from here inside the same minute replays the older
@@ -127,12 +128,17 @@ def _unpack_params(stored: dict[str, str] | None) -> dict[tuple[str, int], bytes
     start at all.
     """
     unpacked: dict[tuple[str, int], bytes] = {}
-    for name, value in (stored or {}).items():
+    if not isinstance(stored, dict):
+        # Not the shape this writes. A file of the wrong shape raising here
+        # would take the whole integration down on every retry, for the sake
+        # of a cache that can be relearned in a minute.
+        return unpacked
+    for name, value in stored.items():
         iot_id, _, mode = name.rpartition(":")
         try:
             block = bytes.fromhex(value)
             key = (iot_id, int(mode))
-        except ValueError:
+        except (TypeError, ValueError):
             _LOGGER.debug("dropping unreadable stored mode parameters: %s", name)
             continue
         if len(block) not in PARAM_BLOCK_LENGTHS:
@@ -475,8 +481,10 @@ class RtcxClient:
 
     def mode_params_snapshot(self) -> dict[str, str]:
         """The learned blocks, in a shape a store can hold."""
-        return {f"{iot_id}:{mode}": block.hex() for (iot_id, mode), block in
-                self._mode_params.items()}
+        return {
+            f"{iot_id}:{mode}": block.hex()
+            for (iot_id, mode), block in self._mode_params.items()
+        }
 
     def state_is_stale(self, iot_id: str) -> bool:
         """Whether this charger has been written to since its state was read."""
@@ -536,7 +544,9 @@ class RtcxClient:
             iot_id, SETTING_SET_SLEEP_TIME, bytes([max(0, min(255, int(value)))])
         )
 
-    async def async_set_charging_mode(self, iot_id: str, mode: int) -> None:
+    async def async_set_charging_mode(
+        self, iot_id: str, mode: int, model: str | None = None
+    ) -> None:
         """Mode byte plus the parameters that mode was last seen carrying.
 
         Zeros only where this mode has not been watched running, which is the
@@ -547,9 +557,10 @@ class RtcxClient:
 
         Replaying the bytes rather than rebuilding them, because the two are
         not equivalent: on this model moving the shared C6+A slider one step
-        moves both its limit at 15 and the low byte of its protocol mask at 39,
-        so a block assembled from decoded values can hold a pair no setting in
-        the app produces. Copying cannot.
+        moves two bytes at once -- its limit at body offset 15 and the low byte
+        of its protocol mask at 39, parameter bytes 10 and 34 -- so a block
+        assembled from decoded values can hold a pair no setting in the app
+        produces. Copying cannot.
 
         Both halves are measured. Sending a `GET_DEVICE_STATE` reply's 36 bytes
         straight back changed nothing on a live X783 -- no limit, no mask, not
@@ -559,11 +570,31 @@ class RtcxClient:
         `priority` -> `adaptive_power` -> `priority` driven from Home
         Assistant, where before this it came back as 0.
         """
-        # `is None` rather than truthiness: a block of 35 zeros is falsy and is
-        # also a real answer -- the presets other than `priority` have looked
-        # exactly like that. Reaching for the fallback on one would be the same
-        # write by a longer road, but logged as if nothing were known.
+        # `is None` says "never seen" and nothing else. Truthiness would read
+        # the same today -- `bytes` are falsy only when empty, and an empty
+        # block cannot get this far past `_unpack_params` -- but the two
+        # questions are different ones, and a preset whose parameters really
+        # are all zero is an answer rather than an absence.
+        # How long this model's block is. `CHARGING_MODE_PARAMS` is the X783's
+        # and is only the right answer for the X783: the 160W's is nine bytes
+        # shorter, and sending the longer one into it lands on the screensaver
+        # group -- the write `state_writable` refuses today, which is exactly
+        # the reason this does not assume.
+        expected = state_layout(model).screensaver - STATE_MODE_PARAMS
         params = self._mode_params.get((iot_id, mode))
+        if params is not None and len(params) != expected:
+            # Remembered for one model and sent for another. Unreachable while
+            # the key carries the charger, and refused here rather than left
+            # to be reachable later.
+            _LOGGER.warning(
+                "remembered parameters for mode %s are %d bytes where %s takes "
+                "%d; setting it with empty parameters instead",
+                mode,
+                len(params),
+                model or "this charger",
+                expected,
+            )
+            params = None
         if params is None:
             # The one path left that can still overwrite a setting. Said out
             # loud, because the symptom -- a preference quietly back at its
@@ -575,7 +606,7 @@ class RtcxClient:
                 "mode was configured with",
                 mode,
             )
-            params = bytes(CHARGING_MODE_PARAMS)
+            params = bytes(expected)
         await self._setting(iot_id, SETTING_SET_CHARGING_MODE, bytes([mode]) + params)
 
     async def async_set_screensaver(
