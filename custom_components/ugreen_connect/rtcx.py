@@ -584,19 +584,21 @@ class RtcxClient:
         Replaying the bytes as they were reported, and never changing one
         field of them. Rebuilding an unchanged block from its decoded values is
         harmless -- on five custom frames from two chargers the rebuild matched
-        the reported bytes exactly. The hazard is an edit: the app moves a
-        group's protocol mask together with its limit -- the shared C6+A slider
+        the reported bytes exactly. The hazard is an edit: the app can change
+        a group's protocol mask along with its limit -- the shared C6+A slider
         moved its limit at body offset 15 and the low byte of its mask at 39 in
         one step, and C5's mask narrowed as C5 was lowered -- and which mask
         goes with which limit is not mapped. So a write that sets one limit on
         its own can leave a limit and a mask the app never sends. Nothing here
         does that; the block goes back whole.
 
-        Both halves are measured. Sending a `GET_DEVICE_STATE` reply's 36 bytes
+        Replaying is measured. Sending a `GET_DEVICE_STATE` reply's 36 bytes
         straight back changed nothing on a live X783 -- no limit, no mask, not
         the screensaver bytes after them -- and a port charging at 30 W carried
-        on; moving one field landed on that field alone. And the round trip
-        this exists for: a priority port set to C2 in the app survived
+        on. The charger also takes a one-field edit: C4 moved from 60 W to 55 W
+        landed alone. That it accepts one is not the question; whether the app
+        would ever send the pair it leaves is. And the round trip this exists
+        for: a priority port set to C2 in the app survived
         `priority` -> `adaptive_power` -> `priority` driven from Home
         Assistant, where before this it came back as 0.
         """
