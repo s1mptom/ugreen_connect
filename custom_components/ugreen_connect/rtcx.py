@@ -103,9 +103,9 @@ SIGNED_HEADERS = ("x-ca-key", "x-ca-nonce", "x-ca-timestamp")
 #                 C6+A setting at parameter byte 10, which reads 1 at 15 W and
 #                 2 at 30 W. The app's C6+A slider stops only at 0, 15 and
 #                 30 W, so that fits 15 W steps and an index into those three
-#                 stops alike, and nothing the app can set tells them apart. Changing a limit in the app can change that
-#                 group's protocols too -- seen on C6+A and on C5 as each slider
-#                 moved.
+#                 stops alike, and nothing the app can set tells them apart.
+#                 Changing a limit in the app can change that group's
+#                 protocols too -- seen on C6+A and on C5 as each slider moved.
 #
 # `adaptive_power` has been zero in every frame read in that mode, which is not
 # the same as being unused. `thermal_safe` has not been read at all. Nothing
