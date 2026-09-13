@@ -108,10 +108,10 @@ SIGNED_HEADERS = ("x-ca-key", "x-ca-nonce", "x-ca-timestamp")
 #                 protocols too -- seen on C6+A and on C5 as each slider moved.
 #
 # `adaptive_power` has been zero in every frame read in that mode, which is not
-# the same as being unused. `thermal_safe` has not been read at all. Nothing
-# here interprets any of this -- the block is copied, not decoded -- but it is
-# what the bytes are, and the next person to want a control over them should
-# not have to measure it twice.
+# the same as being unused. `thermal_safe` has not been read at all. The copy
+# kept for writing back interprets none of it -- it is stored and sent exactly
+# as the bytes arrived -- but this is what they are, and the next person to want
+# a control over them should not have to measure it twice.
 #
 # The copy is only as fresh as the state timer. A setting changed in the app
 # and that mode re-selected from here inside the same minute replays the older
