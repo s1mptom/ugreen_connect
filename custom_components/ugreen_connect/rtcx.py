@@ -95,14 +95,16 @@ SIGNED_HEADERS = ("x-ca-key", "x-ca-nonce", "x-ca-timestamp")
 #   `dc_turbo`    byte 0 is the DC port voltage -- 1 is 12 V, 2 is 15 V, 3 is
 #                 20 V -- and byte 1 is its Always On switch, 0 or 1. The two
 #                 move independently.
-#   `custom`      fills a good deal of the block: five port limits, a shared
-#                 C6+A limit and a protocol mask per group. `parse_custom_mode`
-#                 has the layout.
+#   `custom`      fills most of the block: a limit for each of C1..C5, the
+#                 shared C6+A limit counted in 15 W steps, and a protocol mask
+#                 per group. Setting one of those limits in the app can move its
+#                 mask too.
 #
-# `adaptive_power` and `thermal_safe` have been zero in every frame seen, which
-# is not the same as being unused. Nothing here reads any of this yet -- the
-# block is copied, not interpreted -- but it is what the bytes are, and the
-# next person to want a control over them should not have to measure it twice.
+# `adaptive_power` has been zero in every frame read in that mode, which is not
+# the same as being unused. `thermal_safe` has not been read at all. Nothing
+# here interprets any of this -- the block is copied, not decoded -- but it is
+# what the bytes are, and the next person to want a control over them should
+# not have to measure it twice.
 #
 # The copy is only as fresh as the state timer. A setting changed in the app
 # and that mode re-selected from here inside the same minute replays the older
