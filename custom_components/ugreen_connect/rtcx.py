@@ -101,9 +101,9 @@ SIGNED_HEADERS = ("x-ca-key", "x-ca-nonce", "x-ca-timestamp")
 #   `custom`      carries values right up to the block's last byte: a limit
 #                 for each of C1..C5, a protocol mask per group, and the shared
 #                 C6+A setting at parameter byte 10, which reads 1 at 15 W and
-#                 2 at 30 W. That fits 15 W steps and an index into the
-#                 slider's three positions equally, and nothing the app can set
-#                 tells them apart. Changing a limit in the app can change that
+#                 2 at 30 W. The app's C6+A slider stops only at 0, 15 and
+#                 30 W, so that fits 15 W steps and an index into those three
+#                 stops alike, and nothing the app can set tells them apart. Changing a limit in the app can change that
 #                 group's protocols too -- seen on C6+A and on C5 as each slider
 #                 moved.
 #
