@@ -86,19 +86,26 @@ SIGNED_HEADERS = ("x-ca-key", "x-ca-nonce", "x-ca-timestamp")
 # it was carrying or refuses the write, which is what `dc_turbo` does. Hence the
 # block last seen for a mode goes back out with it.
 #
-# What those bytes hold, read off an X783 by moving one control at a time in
-# the app and taking the frame back:
+# What those bytes hold, read off an X783 by changing controls in the app and
+# taking the frame back. For `priority` and `dc_turbo` one control changed per
+# frame; the two `custom` frames differ in two sliders, C5 and C6+A.
 #
-#   `priority`    byte 0 is a bitmask of the priority ports, C1 1, C2 2, C3 4.
-#                 A mask and not an index: C3 alone reads 4 rather than 3, and
-#                 C1 with C3 reads 5. The app allows up to three of them.
+#   `priority`    byte 0 is a bitmask of the priority ports: C2 alone reads 2,
+#                 C3 alone reads 4, and C1 with C3 reads 5. A mask and not an
+#                 index, then, and C1 is 1 -- though that is what the 5 leaves
+#                 rather than something read on its own. The app allows up to
+#                 three ports.
 #   `dc_turbo`    byte 0 is the DC port voltage -- 1 is 12 V, 2 is 15 V, 3 is
 #                 20 V -- and byte 1 is its Always On switch, 0 or 1. The two
 #                 move independently.
-#   `custom`      fills most of the block: a limit for each of C1..C5, the
-#                 shared C6+A limit counted in 15 W steps, and a protocol mask
-#                 per group. Setting one of those limits in the app can move its
-#                 mask too.
+#   `custom`      carries values right up to the block's last byte: a limit
+#                 for each of C1..C5, a protocol mask per group, and the shared
+#                 C6+A setting at parameter byte 10, which reads 1 at 15 W and
+#                 2 at 30 W. That fits 15 W steps and an index into the
+#                 slider's three positions equally, and nothing the app can set
+#                 tells them apart. Changing a limit in the app can change that
+#                 group's protocols too -- seen on C6+A and on C5 as each slider
+#                 moved.
 #
 # `adaptive_power` has been zero in every frame read in that mode, which is not
 # the same as being unused. `thermal_safe` has not been read at all. Nothing
