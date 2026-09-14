@@ -73,9 +73,9 @@ def test_the_frame_this_rests_on_says_what_it_claims():
     # If the fixture stops being a priority reply with a non-zero first
     # parameter, every assertion below passes for the wrong reason.
     body = rtcx_module.frame_body(STATE_PRIORITY, rtcx_module.FRAME_QUERY, 1)
-    assert body[rtcx_module.STATE_CHARGING_MODE] == 3
-    assert body[rtcx_module.STATE_MODE_PARAMS] == 2
-    assert not any(body[rtcx_module.STATE_MODE_PARAMS + 1 : 40])
+    assert body[4] == 3
+    assert body[5] == 2
+    assert not any(body[6:40])
 
 
 def test_a_preset_is_set_with_the_parameters_it_was_carrying():
@@ -120,9 +120,9 @@ def test_the_160w_block_stops_where_its_screensaver_begins():
     the layout itself. That is measured in `test_the_tail_moves_with_the_parameter_block`.
     """
     body = bytearray(59)
-    body[rtcx_module.STATE_CHARGING_MODE] = 1
+    body[4] = 1
     params = bytes(range(0xA0, 0xA0 + 26))
-    body[rtcx_module.STATE_MODE_PARAMS : 31] = params
+    body[5:31] = params
     # Distinctive, so copying too much is visible rather than plausible.
     body[31:34] = b"\xee\xee\xee"
     body[34:40] = b"ABCDEF"
@@ -146,8 +146,8 @@ def test_a_charger_read_at_a_borrowed_layout_is_not_remembered():
     a remembered block would be a way for it to arrive tomorrow.
     """
     body = bytearray(59)
-    body[rtcx_module.STATE_CHARGING_MODE] = 1
-    body[rtcx_module.STATE_MODE_PARAMS : 31] = bytes(range(0xA0, 0xA0 + 26))
+    body[4] = 1
+    body[5:31] = bytes(range(0xA0, 0xA0 + 26))
     body[31:34] = b"\xee\xee\xee"
     body[34:40] = b"ABCDEF"
 
@@ -170,7 +170,7 @@ def test_all_zeros_is_an_answer_and_not_an_absence(caplog):
     the spelling.)
     """
     body = bytearray(86)
-    body[rtcx_module.STATE_CHARGING_MODE] = 0
+    body[4] = 0
     body[43:49] = b"ABCDEF"
     frame = rtcx_module.build_frame(rtcx_module.FRAME_QUERY, 1, bytes(body))
     c = _Client({IOT: frame})
@@ -311,7 +311,7 @@ def test_a_mode_the_charger_refuses_is_warned_about_every_time(caplog):
 
     # And the other way: once the charger reports the mode, it goes quiet.
     body = bytearray(86)
-    body[rtcx_module.STATE_CHARGING_MODE] = 2
+    body[4] = 2
     body[43:49] = b"ABCDEF"
     c.replies[IOT] = rtcx_module.build_frame(rtcx_module.FRAME_QUERY, 1, bytes(body))
     c.read()
@@ -335,7 +335,7 @@ def test_a_custom_mode_reaches_the_reading():
     not the layout -- the layout has real frames of its own, two files over.
     """
     body = bytearray(86)
-    body[rtcx_module.STATE_CHARGING_MODE] = 4
+    body[4] = 4
     body[5:16] = bytes([0, 60, 0, 140, 0, 30, 0, 20, 0, 30, 1])
     for index, mask in enumerate((0xFD, 0xFD, 0x25, 0x0D, 0x25, 0x01)):
         body[16 + 4 * index : 20 + 4 * index] = mask.to_bytes(4, "big")

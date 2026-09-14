@@ -138,7 +138,7 @@ IMAGE_ID_LEN = 6
 
 
 # How long a parameter block is on each model that has been measured: from the
-# mode byte to the screensaver group. Nothing else is a block, and a stored one
+# byte after the mode byte up to the screensaver group. Nothing else is a block, and a stored one
 # of any other length is not sent -- the payload goes to a charger, and the
 # store is a file that outlives this code and can be edited, truncated or left
 # behind by a version that wrote something else.

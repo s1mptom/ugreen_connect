@@ -296,12 +296,16 @@ CUSTOM_PROTOCOLS: Final[dict[int, str]] = {
     6: "5-21V PPS",
     7: "AVS",
 }
-# Which mode the charger is running, and where that mode's parameter block
-# starts. Both kept here, once: `rtcx` reads the mode and replays the block, the
-# custom decoder below reads the block, and the two had each held their own copy
-# of these numbers under different names.
+# Where a state reply keeps the charging mode, and where that mode's parameter
+# block starts -- at 4 and 5 on both models seen. The block runs from there up to
+# the model's screensaver group, `StateLayout.screensaver`: 35 bytes ending
+# before byte 40 on the X783, 26 ending before byte 31 on the 160W. On the X783
+# its bytes are in the order the setting command takes them, which is what lets
+# a block read back be sent back as it is.
 STATE_CHARGING_MODE = 4
-# The value that byte means "custom" -- the key of that name in CHARGING_MODES.
+STATE_MODE_PARAMS = 5
+# The value the mode byte takes for "custom" -- the key of that name in
+# CHARGING_MODES.
 # Repeated rather than imported: `tests/conftest.py` loads this module inside a
 # stand-in package that has `const` in it, so `from .const import` would
 # resolve there, but `tests/test_diagnostics_privacy.py` builds a package
@@ -309,9 +313,9 @@ STATE_CHARGING_MODE = 4
 # cheaper of the two, and the two are held together by a test named
 # test_the_custom_mode_byte_is_the_one_the_mode_table_names.
 CUSTOM_MODE = 4
-# Body bytes 5..39, after the mode byte and before the screensaver on/off
-# byte at 40 -- the block of whichever mode is in force.
-STATE_MODE_PARAMS = 5
+# What the custom decoder needs about the X783's block, in body bytes: where
+# the masks start, where the block ends, and how many plain limits come
+# before the shared C6+A byte.
 STATE_CUSTOM_MASKS = 16
 STATE_CUSTOM_END = 40
 CUSTOM_LIMITS = 5
