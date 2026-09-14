@@ -58,7 +58,9 @@ from .protocol import (
     SETTING_SET_CHARGING_MODE,
     SETTING_SET_SCREENSAVER,
     SETTING_SET_SLEEP_TIME,
+    STATE_CHARGING_MODE,
     STATE_LAYOUT_BY_MODEL,
+    STATE_MODE_PARAMS,
     build_frame,
     frame_body,
     parse_custom_mode,
@@ -89,7 +91,8 @@ SIGNED_HEADERS = ("x-ca-key", "x-ca-nonce", "x-ca-timestamp")
 #
 # What those bytes hold, read off an X783 by changing controls in the app and
 # taking the frame back. For `priority` and `dc_turbo` one control changed per
-# frame; the two `custom` frames differ in two sliders, C5 and C6+A.
+# frame; the two `custom` frames from the second X783 differ in two sliders,
+# C5 and C6+A -- the one at C6+A 30 W is `SECOND_X783_CUSTOM` in the tests.
 #
 #   `priority`    byte 0 is a bitmask of the priority ports: C2 alone reads 2,
 #                 C3 alone reads 4, and C1 with C3 reads 5. A mask and not an
@@ -131,9 +134,6 @@ CHARGING_MODE_PARAMS = 35
 # distinctive value and reading it back, not inferred.
 STATE_BRIGHTNESS = 2
 STATE_SLEEP_TIME = 3
-STATE_CHARGING_MODE = 4
-# The parameter block, in the same order the setting command takes it.
-STATE_MODE_PARAMS = 5
 IMAGE_ID_LEN = 6
 
 

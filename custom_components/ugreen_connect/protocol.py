@@ -296,10 +296,11 @@ CUSTOM_PROTOCOLS: Final[dict[int, str]] = {
     6: "5-21V PPS",
     7: "AVS",
 }
-# Which mode the charger is running. Here rather than beside the reader,
-# because the block below can only be read when this says custom. `rtcx` holds
-# the same offset as STATE_CHARGING_MODE; one of the two goes after this lands.
-STATE_MODE = 4
+# Which mode the charger is running, and where that mode's parameter block
+# starts. Both kept here, once: `rtcx` reads the mode and replays the block, the
+# custom decoder below reads the block, and the two had each held their own copy
+# of these numbers under different names.
+STATE_CHARGING_MODE = 4
 # The value that byte means "custom" -- the key of that name in CHARGING_MODES.
 # Repeated rather than imported: `tests/conftest.py` loads this module inside a
 # stand-in package that has `const` in it, so `from .const import` would
@@ -309,8 +310,8 @@ STATE_MODE = 4
 # test_the_custom_mode_byte_is_the_one_the_mode_table_names.
 CUSTOM_MODE = 4
 # Body bytes 5..39, after the mode byte and before the screensaver on/off
-# byte at 40.
-STATE_CUSTOM = 5
+# byte at 40 -- the block of whichever mode is in force.
+STATE_MODE_PARAMS = 5
 STATE_CUSTOM_MASKS = 16
 STATE_CUSTOM_END = 40
 CUSTOM_LIMITS = 5
@@ -361,15 +362,15 @@ def parse_custom_mode(
         return None
     if len(body) < STATE_CUSTOM_END:
         return None
-    if body[STATE_MODE] != CUSTOM_MODE:
+    if body[STATE_CHARGING_MODE] != CUSTOM_MODE:
         return None
 
     limits = [
-        int.from_bytes(body[STATE_CUSTOM + 2 * i : STATE_CUSTOM + 2 * i + 2], "big")
+        int.from_bytes(body[STATE_MODE_PARAMS + 2 * i : STATE_MODE_PARAMS + 2 * i + 2], "big")
         for i in range(CUSTOM_LIMITS)
     ]
     # The shared group stores its step rather than its wattage.
-    limits.append(body[STATE_CUSTOM + 2 * CUSTOM_LIMITS] * CUSTOM_SHARED_STEP)
+    limits.append(body[STATE_MODE_PARAMS + 2 * CUSTOM_LIMITS] * CUSTOM_SHARED_STEP)
 
     groups = []
     for index, name in enumerate(CUSTOM_PORTS):

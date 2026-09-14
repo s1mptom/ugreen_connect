@@ -297,8 +297,8 @@ def test_a_preset_has_no_custom_mode_to_describe():
 
     # The same body with something in the block, still a preset: also nothing.
     body = bytearray(60)
-    body[p.STATE_MODE] = 3
-    body[p.STATE_CUSTOM] = 0x02
+    body[p.STATE_CHARGING_MODE] = 3
+    body[p.STATE_MODE_PARAMS] = 0x02
     assert p.parse_custom_mode(bytes(body), "X783") is None
 
 
@@ -385,7 +385,7 @@ def test_a_frame_that_stops_inside_the_block_is_not_decoded():
     """
     def block(length: int) -> bytes:
         body = bytearray(length)
-        body[p.STATE_MODE] = p.CUSTOM_MODE
+        body[p.STATE_CHARGING_MODE] = p.CUSTOM_MODE
         body[5:16] = bytes([0, 60, 0, 140, 0, 30, 0, 20, 0, 30, 1])
         return bytes(body)
 
