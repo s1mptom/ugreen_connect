@@ -277,9 +277,9 @@ def test_the_custom_mode_byte_is_the_one_the_mode_table_names():
     Three test loaders compile that module, and one builds a package without
     `const` in it, so `from .const import CHARGING_MODES` cannot go there. The
     value is repeated instead, and only one direction of that was covered: the
-    frames pin `protocol`'s side, so changing the literal breaks six to eight
-    tests depending on the value, while renumbering `CHARGING_MODES` broke
-    none. This is the other direction.
+    frames pin `protocol`'s side, so changing the literal fails tests whatever
+    value it is changed to, while renumbering `CHARGING_MODES` broke none. This
+    is the other direction.
     """
     assert const.CHARGING_MODES[p.CUSTOM_MODE] == "custom"
     assert "custom" not in const.SELECTABLE_MODES, "read-only, so never offered"
