@@ -331,7 +331,7 @@ def test_a_preset_is_not_read_as_a_custom_configuration():
 
     # And the same bytes with custom active still decode, so the gate is the
     # mode and not the zeroing.
-    body[4] = p.CUSTOM_MODE
+    body[4] = 4
     assert p.parse_custom_mode(bytes(body), "X783") is not None
 
 
