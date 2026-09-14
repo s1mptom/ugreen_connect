@@ -82,8 +82,7 @@ class UgreenScreensaver(UgreenDeviceEntity, SwitchEntity):
                 reading.get("screensaver_flag", 0),
                 reading.get("wallpaper"),
             )
-        reading["screensaver"] = enabled
-        self.async_write_ha_state()
+        await self.coordinator.async_read_back(self._key, iot_id)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self._async_set(True)

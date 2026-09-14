@@ -242,7 +242,10 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
                     # Only a reading with everything in it is worth carrying
                     # into a poll that comes back empty.
-                    self._good[key] = (power[key], time.time())
+                    # A copy, not the dict itself: this is meant to be the
+                    # last thing the charger actually said, and the one in
+                    # data is written to from elsewhere.
+                    self._good[key] = (dict(power[key]), time.time())
                     self._misses[key] = 0
             except UgreenError as err:
                 # Warn rather than debug: without this the entities simply never
@@ -395,6 +398,78 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # this: the session tracker refuses to integrate it, and diagnostics
         # say how old it is.
         return reading | {"carried_for": round(age, 1)}
+
+    async def async_read_back(self, key: str, iot_id: str) -> None:
+        """Publish what the charger did with a write, not what it was asked.
+
+        A setting can be declined without anything saying so: the frame is
+        accepted, and the state simply does not change. DC turbo is declined on
+        an X783 unless the DC port has something on it -- watched happening,
+        not supposed. An entity that wrote its own request into the reading and
+        called it current would then show a value the charger never held, until
+        a state read next came round.
+
+        Never raises. The write this follows has already succeeded or said why
+        it did not, and somebody who has just moved a control should not be told
+        their change failed because the confirmation of it did.
+        """
+        try:
+            # The write marked the cached state stale, so this asks the device
+            # rather than answering from the cache -- and a poll that got here
+            # first has already done the asking, which is why this goes through
+            # the cache instead of around it.
+            state = await self._device_state(key, iot_id, self._models.get(key))
+            if not state or self.rtcx.state_is_stale(iot_id):
+                # Still dirty means no reply came. The next poll will say what
+                # the setting is; publishing the cached value would report the
+                # old one as confirmed, which is worse than not confirming.
+                _LOGGER.debug("no read-back for %s; leaving it to the poll", key)
+                return
+            listed = await self._wallpaper_list_for(key, state.get("wallpaper"))
+        except UgreenError as err:
+            _LOGGER.debug("read-back for %s failed: %s", key, err)
+            return
+
+        # Read after those awaits, never before them: a poll finishing in that
+        # window builds a new reading, and one fetched earlier is then an orphan
+        # -- updated, republished, and carrying whatever the poll saw. The
+        # control visibly snapping back to its old value is exactly the failure
+        # a read-back exists to prevent.
+        reading = ((self.data or {}).get("power") or {}).get(key)
+        if reading is None:
+            return
+        reading.update(state)
+        if listed is not None:
+            reading["wallpaper_list"] = listed
+        # carried_for stays if it is there. It is the age of the power figures,
+        # which nothing here has touched -- dropping it would hand diagnostics a
+        # reading that never arrived and call it current.
+        self.async_update_listeners()
+
+    async def _wallpaper_list_for(
+        self, key: str, current: str | None
+    ) -> list[dict[str, Any]] | None:
+        """The library again, if the charger now shows a picture it did not list.
+
+        Picking a newly uploaded one changes what the charger shows to an id the
+        list in hand does not have, and the preview has nowhere to point until
+        the next poll looks again. Unchanged in the ordinary case: _name_current
+        only re-reads when the id is missing, and rate limits even then.
+        """
+        device = next(
+            (
+                entry
+                for entry in (self.data or {}).get("devices") or []
+                if device_key(entry) == key
+            ),
+            None,
+        )
+        if device is None:
+            return None
+        reading = ((self.data or {}).get("power") or {}).get(key) or {}
+        return await self._name_current(
+            device, key, reading.get("wallpaper_list") or [], current
+        )
 
     async def _static_info(self, key: str, iot_id: str) -> dict[str, Any]:
         """Firmware version and SSID -- cached, since each costs a round trip to
