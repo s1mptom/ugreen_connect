@@ -65,8 +65,12 @@ def _plugged(values: dict) -> bool:
     return values.get("protocol", "none") != "none" or (values.get("voltage") or 0.0) > 0.5
 
 
-def _drawing(values: dict) -> bool:
-    """Whether charge is actually flowing, as opposed to the port merely being live."""
+def drawing(values: dict) -> bool:
+    """Whether charge is actually flowing, as opposed to the port merely being live.
+
+    Public, and deliberately so: the coordinator asks this too, to decide how
+    often to poll. Changing what it means now changes more than sessions.
+    """
     return (values.get("current") or 0.0) >= IDLE_CURRENT and (
         values.get("power") or 0.0
     ) >= IDLE_POWER
@@ -199,7 +203,7 @@ class SessionTracker:
             before = state.energy_wh
             if not _plugged(values):
                 self._empty(now, state)
-            elif not _drawing(values):
+            elif not drawing(values):
                 self._quiet(now, state)
             else:
                 # Charge is flowing. It belongs to the running bout unless that bout is
