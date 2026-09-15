@@ -7,12 +7,14 @@ from typing import Any
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import UgreenConfigEntry
 from .const import (
     CHARGING_MODES,
     CLOCK_STYLES,
+    DOMAIN,
     PICTURE_SETTLE_SECONDS,
     SELECTABLE_MODES,
     SLEEP_OPTIONS,
@@ -74,11 +76,34 @@ class UgreenChargingMode(UgreenDeviceEntity, SelectEntity):
 
     _attr_translation_key = "charging_mode"
     _attr_icon = "mdi:ev-station"
-    _attr_options = list(SELECTABLE_MODES)
 
     def __init__(self, coordinator: UgreenCoordinator, key: str) -> None:
         super().__init__(coordinator, key)
         self._attr_unique_id = f"{key}_charging_mode"
+
+    @property
+    def options(self) -> list[str]:
+        """The presets, and whatever else the charger says it is running.
+
+        Only the presets can be set from here. But a select whose current option
+        is missing from its own list reads as `unknown`, which says nothing at
+        all about a charger that is perfectly happy in a mode the app gave it --
+        and a charger set up in the app's editor stays in `custom` until another
+        mode is picked. Reporting the mode and refusing to set it is the lesser
+        of the two.
+
+        `options` is a capability attribute, so a change to it rewrites the
+        entity-registry entry rather than only the state. That happens when the
+        charger moves between a preset and custom, and when a charger left in
+        custom drops out of the readings and comes back: once the coordinator
+        stops carrying the last reading (see `_carry`), this is unavailable and
+        the options fall back to the presets. Rare either way, but it is a
+        registry write, not a free one.
+        """
+        mode = (self._reading or {}).get("charging_mode")
+        if mode and mode not in SELECTABLE_MODES:
+            return [*SELECTABLE_MODES, mode]
+        return list(SELECTABLE_MODES)
 
     @property
     def available(self) -> bool:
@@ -86,12 +111,29 @@ class UgreenChargingMode(UgreenDeviceEntity, SelectEntity):
 
     @property
     def current_option(self) -> str | None:
-        mode = (self._reading or {}).get("charging_mode")
-        # "custom" is a real device state but not something this can set, so it
-        # is reported and simply absent from the options.
-        return mode if mode in self._attr_options else None
+        return (self._reading or {}).get("charging_mode")
 
     async def async_select_option(self, option: str) -> None:
+        if option not in SELECTABLE_MODES:
+            # Reported above, refused here. Home Assistant sets presets only:
+            # a custom block is composed in the app's editor, and the client
+            # can only replay one it has watched running, or send an empty one
+            # for a mode it has not.
+            #
+            # While the charger reports `custom`, nothing ahead of this stops
+            # it: it is then one of the options, so Home Assistant's own check
+            # lets `select_option` through, and `select_last`, and `select_next`
+            # without cycling, skip that check and land on it.
+            #
+            # The message has no placeholder. Home Assistant would put the key
+            # in as it is, untranslated, and drops any localized string whose
+            # placeholders differ from English's. So each language names the
+            # mode itself, which holds while `custom` is the only name in
+            # CHARGING_MODES outside SELECTABLE_MODES -- a test pins that.
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="mode_not_selectable",
+            )
         iot_id = self._iot_id
         if not iot_id or option not in MODE_VALUE:
             return

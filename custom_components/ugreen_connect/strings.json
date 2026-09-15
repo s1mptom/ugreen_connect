@@ -209,6 +209,9 @@
   "exceptions": {
     "not_writable_on_model": {
       "message": "Setting this has not been verified on the {model}, so it is shown but not written. Its value can be changed in the UGREEN app."
+    },
+    "mode_not_selectable": {
+      "message": "Custom can only be set in the UgreenConnect app. Home Assistant sets the presets; the Custom mode is configured and chosen in the app's own editor."
     }
   }
 }

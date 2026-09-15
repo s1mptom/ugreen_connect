@@ -12,11 +12,17 @@ from types import SimpleNamespace
 import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import flush_store
 
-from custom_components.ugreen_connect.const import DOMAIN, MODEL_LOOKUP_ATTEMPTS
+from custom_components.ugreen_connect.const import (
+    CHARGING_MODES,
+    DOMAIN,
+    MODEL_LOOKUP_ATTEMPTS,
+    SELECTABLE_MODES,
+)
 from tests_ha.conftest import DEVICE_CODE, IOT_ID
 
 PORT_NAMES = ("C1", "C2", "C3", "C4", "C5", "C6", "A1", "DC")
@@ -275,6 +281,9 @@ async def test_a_store_of_the_wrong_shape_does_not_stop_the_entry(
     assert entry.state is ConfigEntryState.LOADED
 
 
+CHARGING_MODE_SELECT = "select.ugreen_nexode_pro_x783_charging_mode"
+
+
 async def test_selecting_a_mode_tells_the_client_which_charger_it_is(hass, started):
     """The model decides how long the parameter block is.
 
@@ -288,12 +297,90 @@ async def test_selecting_a_mode_tells_the_client_which_charger_it_is(hass, start
         "select",
         "select_option",
         {
-            "entity_id": "select.ugreen_nexode_pro_x783_charging_mode",
+            "entity_id": CHARGING_MODE_SELECT,
             "option": "thermal_safe",
         },
         blocking=True,
     )
     assert rtcx.mode_writes == [(IOT_ID, 1, "X783")]
+
+
+async def test_a_mode_that_cannot_be_set_is_still_reported(hass, started):
+    """`unknown` said nothing about a charger happily running custom.
+
+    A select whose current option is absent from its own list renders as
+    `unknown`, which reads as a broken entity rather than as a mode the app
+    put the charger in. The mode joins the options so it can be reported.
+    """
+    state = hass.states.get(CHARGING_MODE_SELECT)
+    assert state.state == "custom"
+    assert state.attributes["options"] == [*SELECTABLE_MODES, "custom"]
+
+
+async def test_reporting_custom_does_not_make_it_settable(hass, started, rtcx):
+    """Reported is not settable, and the refusal has to reach the caller.
+
+    Returning quietly would tell a script its call worked when nothing was
+    sent. Nothing may reach the charger either, which is what the empty write
+    list says. The text is pinned as well as the key: the key alone would pass
+    a message that names the mode by its raw key `custom` rather than by what
+    the select shows.
+    """
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            "select",
+            "select_option",
+            {"entity_id": CHARGING_MODE_SELECT, "option": "custom"},
+            blocking=True,
+        )
+    assert err.value.translation_key == "mode_not_selectable"
+    assert str(err.value).startswith("Custom can only be set")
+    assert rtcx.mode_writes == []
+
+
+def test_custom_is_the_only_mode_the_refusal_can_mean():
+    """The refusal names `custom` outright, in every language.
+
+    A second mode outside the presets would be refused with a message about
+    the wrong one, so adding it has to come back here.
+    """
+    assert set(CHARGING_MODES.values()) - set(SELECTABLE_MODES) == {"custom"}
+
+
+@pytest.mark.parametrize(
+    ("service", "data"),
+    [("select_last", {}), ("select_next", {"cycle": False})],
+    ids=["select_last", "select_next_without_cycle"],
+)
+async def test_stepping_onto_custom_is_refused_too(
+    hass, started, rtcx, service, data
+):
+    """`select_last`, and `select_next` without cycling, land on `custom`.
+
+    Both call `async_select_option` directly, and with the charger in custom
+    the last option is `custom`. An automation using either to leave custom
+    for a preset gets this refusal and no write. `select_next` with its
+    default `cycle: true` wraps round to the first preset, and `select_first`
+    and `select_previous` reach a preset too, so those still write.
+    """
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            "select", service, {"entity_id": CHARGING_MODE_SELECT, **data}, blocking=True
+        )
+    assert err.value.translation_key == "mode_not_selectable"
+    assert rtcx.mode_writes == []
+
+
+async def test_under_a_preset_the_options_are_the_presets(hass, started, rtcx):
+    """The extra option belongs to the mode in force, and leaves with it."""
+    rtcx.state = {**rtcx.state, "charging_mode": "priority", "custom": None}
+    rtcx.stale = True          # as a write would, so the cached copy is re-read
+    await started.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    state = hass.states.get(CHARGING_MODE_SELECT)
+    assert state.state == "priority"
+    assert state.attributes["options"] == list(SELECTABLE_MODES)
 
 
 CUSTOM_GROUPS = ("C1", "C2", "C3", "C4", "C5", "C6+A")

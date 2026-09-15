@@ -209,6 +209,9 @@
   "exceptions": {
     "not_writable_on_model": {
       "message": "Das Setzen wurde am {model} nie überprüft, deshalb wird der Wert angezeigt, aber nicht geschrieben. Ändern lässt er sich in der UGREEN-App."
+    },
+    "mode_not_selectable": {
+      "message": "Port-Anpassung lässt sich nur in der UgreenConnect-App setzen. Home Assistant setzt die Voreinstellungen; die Port-Anpassung wird im Editor der App eingerichtet und dort ausgewählt."
     }
   }
 }
