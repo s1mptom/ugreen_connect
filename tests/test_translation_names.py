@@ -3,14 +3,18 @@
 The message for `mode_not_selectable` spells the mode out instead of taking it
 as a placeholder, because Home Assistant fills a placeholder in with the raw
 key and drops any language whose placeholders differ from English's. Spelled
-out, each language carries its own copy of the name -- and a copy drifts: the
-Russian select said «Свой», its six limit sensors said «настраиваемого режима»
-and its refusal said «Пользовательский», three names for one mode in one file.
+out, each language carries a second copy of its select's name for the mode --
+and a copy drifts: the Russian select said «Свой» while its own refusal said
+«Пользовательский».
 
 Nothing catches that at runtime. Home Assistant shows the select's name and the
-message from the same file without ever comparing them, and a reader of one
-language cannot see the other. So it is checked here, on the files themselves,
-which needs no Home Assistant install.
+message from the same file without ever comparing them. So the pair is checked
+here, on the files themselves, which needs no Home Assistant install.
+
+The limit sensors' names are not compared. They name the mode inside a phrase
+of their own -- in Russian, in the genitive, «пользовательского режима» -- so
+no rule a test could state holds in every language without an exception for
+the one it would exist to catch.
 """
 
 import json
@@ -21,7 +25,9 @@ _FILES = [_COMPONENT / "strings.json", *sorted((_COMPONENT / "translations").glo
 
 
 def _loaded() -> list[tuple[str, dict]]:
-    files = [(path.name, json.loads(path.read_text())) for path in _FILES]
+    # UTF-8 said outright: the default is the locale's encoding, which on
+    # Windows is not UTF-8 and cannot decode the Russian file at all.
+    files = [(path.name, json.loads(path.read_text(encoding="utf-8"))) for path in _FILES]
     assert len(files) >= 2, "translations are gone -- this test is reading the wrong path"
     return files
 
