@@ -313,10 +313,12 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # read of the state clears it.
         #
         # The cache holds whichever read landed last, this poll's or the
-        # read-back's, so taking the settings from it again cannot go
-        # backwards, and `data["power"]` is this same dict, so the update
-        # reaches what is published. A dump written just above can be a
-        # settings tick behind it -- it records what the poll read.
+        # read-back's -- `_device_state` writes it in the same step as the read
+        # that returned, which is what keeps "last" meaning last -- so taking
+        # the settings from it again cannot go backwards. `data["power"]` is
+        # this same dict, so the update reaches what is published; a dump
+        # written just above can be a settings tick behind it, and records what
+        # the poll read.
         for key, reading in power.items():
             if reading is None:
                 continue
@@ -362,6 +364,14 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         and answers the same almost every time, so saving on each one would
         rewrite an unchanged file all day -- on hardware that is often a
         memory card.
+
+        Synchronous, and that is load-bearing rather than incidental. This runs
+        between a state read returning and `_device_state` caching what it
+        returned, so an await here would let an older read overtake a newer one
+        into the cache -- and the poll's correction, which takes the settings
+        from that cache last thing, would then publish the older one. A Store
+        save is exactly the thing that grows an await later, so it is pinned by
+        a test rather than left to be noticed.
         """
         if self._params_store is None:
             return
