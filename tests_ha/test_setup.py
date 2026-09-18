@@ -600,3 +600,59 @@ async def test_the_settings_are_taken_after_the_debug_dump_as_well(hass, started
     await asyncio.wait_for(poll, 10)
     await hass.async_block_till_done()
     assert hass.states.get(CHARGING_MODE_SELECT).state == "dc_turbo"
+
+
+async def test_a_picture_the_poll_did_not_list_is_still_offered(hass, started, rtcx):
+    """The wallpaper list is built before the correction, and stays as it was.
+
+    `wallpaper_list` comes from the account's library, fetched during the poll
+    from the wallpaper the poll read; the correction moves `wallpaper` under it
+    without rebuilding it. What keeps that from reading as a broken entity is
+    that the ids on the device are a state key too, so they are corrected in
+    the same breath: the picture is an option, and the select shows it. Only
+    the previews in the attributes are a poll behind, and the next poll fetches
+    the library again for an id it cannot name.
+    """
+    coordinator = started.runtime_data
+    reached, release = asyncio.Event(), asyncio.Event()
+    static_info = coordinator._static_info
+
+    async def held(key, iot_id):
+        reached.set()
+        await release.wait()
+        return await static_info(key, iot_id)
+
+    coordinator._static_info = held
+    poll = asyncio.get_running_loop().create_task(coordinator.async_refresh())
+    await asyncio.wait_for(reached.wait(), 10)
+
+    # A control is written while the poll waits, and the charger comes back
+    # showing a picture chosen in the app meanwhile.
+    async def moved_on(*_args, **_kwargs):
+        rtcx.state = {
+            **rtcx.state,
+            "screensaver": True,
+            "wallpaper": "ABCDEF",
+            "wallpapers": ["31F207", "ABCDEF"],
+        }
+        rtcx.stale = True
+
+    rtcx.async_set_screensaver = moved_on
+    await asyncio.wait_for(
+        hass.services.async_call(
+            "switch",
+            "turn_on",
+            {"entity_id": "switch.ugreen_nexode_pro_x783_screensaver"},
+            blocking=True,
+        ),
+        10,
+    )
+
+    coordinator._static_info = static_info
+    release.set()
+    await asyncio.wait_for(poll, 10)
+    await hass.async_block_till_done()
+
+    wallpaper = hass.states.get("select.ugreen_nexode_pro_x783_wallpaper")
+    assert wallpaper.state == "ABCDEF"
+    assert "ABCDEF" in wallpaper.attributes["options"]
