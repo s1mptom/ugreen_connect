@@ -303,6 +303,31 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._debug_dump:
             await self.hass.async_add_executor_job(self._write_dump, data)
 
+        # The settings are taken from the cache once more, after every await
+        # this poll makes -- the debug dump above included, which is why this
+        # sits here rather than beside the reading it corrects. Everything was
+        # assembled across those awaits, and a control written during one of
+        # them has already published what the charger answered, through its
+        # read-back; this reading, built before that write, would put the old
+        # value back for a poll. The stale flag is no help: the read-back's own
+        # read of the state clears it.
+        #
+        # The cache holds whichever read landed last, this poll's or the
+        # read-back's, so taking the settings from it again cannot go
+        # backwards, and `data["power"]` is this same dict, so the update
+        # reaches what is published. A dump written just above can be a
+        # settings tick behind it -- it records what the poll read.
+        for key, reading in power.items():
+            if reading is None:
+                continue
+            settled, _ = self._state.get(key, ({}, 0.0))
+            if settled:
+                reading.update(settled)
+                # And the retained reading, for the same reason async_read_back
+                # updates it: it is what a missed reply carries.
+                if (retained := self._good.get(key)) is not None:
+                    retained[0].update(settled)
+
         return data
 
     def model_for(self, key: str) -> str | None:

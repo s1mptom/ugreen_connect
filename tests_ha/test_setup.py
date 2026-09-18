@@ -7,6 +7,8 @@ when they were written and neither had ever been run.
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -472,5 +474,129 @@ async def test_a_missed_poll_after_a_confirmed_write_keeps_the_new_value(
 
     rtcx.power_answers = False
     await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get(CHARGING_MODE_SELECT).state == "dc_turbo"
+
+
+async def test_a_poll_that_began_before_a_write_does_not_republish_the_old_state(
+    hass, started, rtcx
+):
+    """A poll holds a reading built across its awaits, and a write lands in one.
+
+    The poll reads the charger's settings early and then goes on asking about
+    other things. A control written in that window publishes what the charger
+    answered, through its read-back -- and the poll, finishing afterwards with
+    the settings it read before the write, would put the old value back for a
+    poll. That is the same wrong value on screen this read-back exists to
+    prevent, arriving from the other side.
+
+    The stale flag cannot be the guard here: the read-back's own state read
+    clears it, so by the time the poll finishes there is nothing left to see.
+    """
+    coordinator = started.runtime_data
+    rtcx.state = {**rtcx.state, "charging_mode": "priority", "custom": None}
+    rtcx.stale = True
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get(CHARGING_MODE_SELECT).state == "priority"
+
+    # Hold the next poll after it has read the state, on an await of the kind
+    # that does not queue behind the charger's one conversation.
+    reached, release = asyncio.Event(), asyncio.Event()
+    static_info = coordinator._static_info
+
+    async def held(key, iot_id):
+        reached.set()
+        await release.wait()
+        return await static_info(key, iot_id)
+
+    coordinator._static_info = held
+    poll = asyncio.get_running_loop().create_task(coordinator.async_refresh())
+    await asyncio.wait_for(reached.wait(), 10)
+
+    write = rtcx.async_set_charging_mode
+
+    async def taken(iot_id, mode, model=None):
+        await write(iot_id, mode, model)
+        rtcx.state = {**rtcx.state, "charging_mode": "dc_turbo"}
+        rtcx.stale = True
+
+    rtcx.async_set_charging_mode = taken
+    await asyncio.wait_for(
+        hass.services.async_call(
+            "select",
+            "select_option",
+            {"entity_id": CHARGING_MODE_SELECT, "option": "dc_turbo"},
+            blocking=True,
+        ),
+        10,
+    )
+    assert hass.states.get(CHARGING_MODE_SELECT).state == "dc_turbo"
+
+    coordinator._static_info = static_info
+    release.set()
+    await asyncio.wait_for(poll, 10)
+    await hass.async_block_till_done()
+    assert hass.states.get(CHARGING_MODE_SELECT).state == "dc_turbo"
+
+    # And the retained reading with it: a reply going missing next must not
+    # carry the settings from before the write either.
+    rtcx.power_answers = False
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get(CHARGING_MODE_SELECT).state == "dc_turbo"
+
+
+async def test_the_settings_are_taken_after_the_debug_dump_as_well(hass, started, rtcx):
+    """The dump is an await like any other, and it runs after the reading is built.
+
+    With the debug dump switched on, `_async_poll` hands the assembled reading
+    to a thread and waits for it. A write finishing in that window publishes
+    what the charger said, and the poll would then return the reading it built
+    before -- so the settings are taken from the cache below the dump, not
+    above it.
+    """
+    coordinator = started.runtime_data
+    rtcx.state = {**rtcx.state, "charging_mode": "priority", "custom": None}
+    rtcx.stale = True
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get(CHARGING_MODE_SELECT).state == "priority"
+
+    writing, release = threading.Event(), threading.Event()
+
+    def dump(_data):
+        writing.set()
+        assert release.wait(10), "the test never let the dump finish"
+
+    coordinator._debug_dump = True
+    coordinator._write_dump = dump
+    poll = asyncio.get_running_loop().create_task(coordinator.async_refresh())
+    async with asyncio.timeout(10):
+        while not writing.is_set():
+            await asyncio.sleep(0)
+
+    write = rtcx.async_set_charging_mode
+
+    async def taken(iot_id, mode, model=None):
+        await write(iot_id, mode, model)
+        rtcx.state = {**rtcx.state, "charging_mode": "dc_turbo"}
+        rtcx.stale = True
+
+    rtcx.async_set_charging_mode = taken
+    await asyncio.wait_for(
+        hass.services.async_call(
+            "select",
+            "select_option",
+            {"entity_id": CHARGING_MODE_SELECT, "option": "dc_turbo"},
+            blocking=True,
+        ),
+        10,
+    )
+    assert hass.states.get(CHARGING_MODE_SELECT).state == "dc_turbo"
+
+    coordinator._debug_dump = False
+    release.set()
+    await asyncio.wait_for(poll, 10)
     await hass.async_block_till_done()
     assert hass.states.get(CHARGING_MODE_SELECT).state == "dc_turbo"
