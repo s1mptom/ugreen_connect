@@ -70,6 +70,23 @@ async def _register_resource(hass: HomeAssistant, url: str) -> None:
             resources.loaded = True
         # async_items() may not exist on the YAML collection.
         items = resources.async_items() if hasattr(resources, "async_items") else []
+        # An earlier release registered this same file under a different query
+        # string, and matching the url whole left both entries in the list. The
+        # browser then loads the module twice, and the second definition of the
+        # element throws -- a red error in the console, with the card drawn by
+        # whichever copy won. Anything pointing at this file that is not the url
+        # wanted goes.
+        stale = [
+            item
+            for item in items
+            if item.get("url") != url
+            and (item.get("url") or "").split("?", 1)[0] == url.split("?", 1)[0]
+        ]
+        for item in stale:
+            if not hasattr(resources, "async_delete_item"):
+                break
+            await resources.async_delete_item(item["id"])
+            _LOGGER.debug("Removed stale Lovelace resource %s", item.get("url"))
         if any(item.get("url") == url for item in items):
             return
         if not hasattr(resources, "async_create_item"):

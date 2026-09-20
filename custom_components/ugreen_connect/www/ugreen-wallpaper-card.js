@@ -623,10 +623,17 @@ class UgreenWallpaperCard extends HTMLElement {
   }
 }
 
-customElements.define('ugreen-wallpaper-card', UgreenWallpaperCard);
-window.customCards = window.customCards || [];
-window.customCards.push({
-  type: 'ugreen-wallpaper-card',
-  name: 'UGREEN Screensaver',
-  description: "Screensaver settings and wallpaper, with a crop editor",
-});
+// Defining an element twice throws, and this module can be loaded twice: a
+// resource list left holding an older url for this same file is one way, a
+// dashboard adding it by hand beside the integration's own is another. The
+// first copy in wins and the rest do nothing, which is what a second <script>
+// for one card should do.
+if (!customElements.get('ugreen-wallpaper-card')) {
+  customElements.define('ugreen-wallpaper-card', UgreenWallpaperCard);
+  window.customCards = window.customCards || [];
+  window.customCards.push({
+    type: 'ugreen-wallpaper-card',
+    name: 'UGREEN Screensaver',
+    description: "Screensaver settings and wallpaper, with a crop editor",
+  });
+}
