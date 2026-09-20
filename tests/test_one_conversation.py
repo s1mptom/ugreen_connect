@@ -212,3 +212,56 @@ def test_the_device_state_is_asked_for_once_and_told_the_model():
             f"_device_state called with {len(call.args)} arguments at line "
             f"{call.lineno}, but it takes {wanted}"
         )
+
+
+def test_the_state_cache_is_written_without_yielding_after_the_read():
+    """What makes the cache hold the newest read, rather than the last to land.
+
+    The poll corrects its reading from `self._state` at the end, and a
+    read-back can write that cache while the poll is still working. Which of
+    the two ends up in it is decided here: `_device_state` writes the cache in
+    the same step as the read that returned, so an older read cannot win. The
+    lock in rtcx orders the conversations; it does not order what happens after
+    one returns.
+
+    So `_remember_params`, which sits in that gap, has to stay synchronous. It
+    writes through a Store, and a Store save is exactly the thing that grows an
+    await later -- at which point the poll starts publishing the older state
+    and the tests that hold a poll open still pass, because the interleaving
+    they hold is a different one.
+    """
+    tree = _tree("coordinator.py")
+    functions = {
+        node.name: node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    state_read = [
+        node.lineno
+        for node in ast.walk(functions["_device_state"])
+        if isinstance(node, ast.Await)
+        and isinstance(node.value, ast.Call)
+        and getattr(node.value.func, "attr", None) == "async_device_state"
+    ]
+    assert len(state_read) == 1, "_device_state no longer reads the state once"
+    written = [
+        node.lineno
+        for node in ast.walk(functions["_device_state"])
+        for target in getattr(node, "targets", [])
+        if isinstance(target, ast.Subscript)
+        and getattr(target.value, "attr", None) == "_state"
+    ]
+    assert len(written) == 1, "_device_state no longer writes the cache once"
+    between = [
+        node.lineno
+        for node in ast.walk(functions["_device_state"])
+        if isinstance(node, ast.Await) and state_read[0] < node.lineno <= written[0]
+    ]
+    assert not between, (
+        f"_device_state waits at line {between[0]} between reading the state "
+        "and caching it, so a later read can be overtaken"
+    )
+    remember = functions["_remember_params"]
+    assert not isinstance(remember, ast.AsyncFunctionDef) and not [
+        node for node in ast.walk(remember) if isinstance(node, ast.Await)
+    ], "_remember_params awaits now, and it runs in that gap"
