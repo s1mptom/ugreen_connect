@@ -656,3 +656,55 @@ async def test_a_picture_the_poll_did_not_list_is_still_offered(hass, started, r
     wallpaper = hass.states.get("select.ugreen_nexode_pro_x783_wallpaper")
     assert wallpaper.state == "ABCDEF"
     assert "ABCDEF" in wallpaper.attributes["options"]
+
+
+class _Resources:
+    """Lovelace's resource collection, as much of it as frontend.py touches."""
+
+    def __init__(self, items):
+        self.loaded = True
+        self._items = list(items)
+        self.deleted: list[str] = []
+
+    def async_items(self):
+        return list(self._items)
+
+    async def async_create_item(self, item):
+        self._items.append({"id": f"id{len(self._items)}", **item})
+
+    async def async_delete_item(self, item_id):
+        self.deleted.append(item_id)
+        self._items = [item for item in self._items if item["id"] != item_id]
+
+
+async def test_one_resource_per_card_even_after_the_url_changes(hass):
+    """Two resources for one file load the module twice, and the second throws.
+
+    An earlier release registered this card under a url carrying its version.
+    Matching the url whole left that entry beside the current one, so the
+    browser fetched both and the second `customElements.define` failed -- the
+    card still drawn, by whichever copy won, and a red error beside it.
+    """
+    from custom_components.ugreen_connect.frontend import CARD_URL, _register_resource
+
+    resources = _Resources(
+        [
+            {"id": "old", "url": f"{CARD_URL}?v=0.10.0", "type": "module"},
+            {"id": "other", "url": "/local/somebody-elses-card.js", "type": "module"},
+        ]
+    )
+    hass.data["lovelace"] = SimpleNamespace(resources=resources)
+
+    await _register_resource(hass, CARD_URL)
+
+    urls = [item["url"] for item in resources.async_items()]
+    assert urls == ["/local/somebody-elses-card.js", CARD_URL]
+    assert resources.deleted == ["old"]
+
+    # Run again, as every restart does: still one, and nothing deleted twice.
+    await _register_resource(hass, CARD_URL)
+    assert [item["url"] for item in resources.async_items()] == [
+        "/local/somebody-elses-card.js",
+        CARD_URL,
+    ]
+    assert resources.deleted == ["old"]
