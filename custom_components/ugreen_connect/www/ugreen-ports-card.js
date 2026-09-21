@@ -22,6 +22,7 @@ import {
 const TEXT = {
   en: {
     title: 'Ports',
+    hint: 'tap a row for history and session detail',
     port: 'Port',
     power: 'Power',
     volts: 'Volts',
@@ -43,6 +44,7 @@ const TEXT = {
   },
   de: {
     title: 'Anschlüsse',
+    hint: 'Zeile antippen für Verlauf und Ladedetails',
     port: 'Anschluss',
     power: 'Leistung',
     volts: 'Volt',
@@ -64,6 +66,7 @@ const TEXT = {
   },
   ru: {
     title: 'Порты',
+    hint: 'строка открывает историю и детали зарядки',
     port: 'Порт',
     power: 'Мощность',
     volts: 'Вольты',
@@ -87,19 +90,44 @@ const TEXT = {
 
 const STYLE = `
   ${SHARED_CSS}
-  .body { padding: 12px 16px 12px; display: flex; flex-direction: column; gap: 6px; }
+  ha-card { height: 100%; box-sizing: border-box; }
+  .body { padding: 14px 16px 10px; display: flex; flex-direction: column; gap: 8px;
+          height: 100%; box-sizing: border-box; }
   .head { display: flex; align-items: baseline; gap: 10px; }
-  .head h2 { margin: 0; font-size: 1.05em; font-weight: 500; flex-grow: 1; }
-  .name { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
-  .u-on .name { font-weight: 500; }
+  .head h2 { margin: 0; font-size: 11px; font-weight: 400; text-transform: uppercase;
+             letter-spacing: .10em; color: var(--secondary-text-color); flex-grow: 1; }
+  .head .hint { font-size: 11px; color: var(--disabled-text-color); }
+  /* Fixed, so eight rows of numbers line up in columns of their own width
+   * rather than in whatever the widest reading of the moment asks for --
+   * a table that reflows every poll is unreadable while it is charging. */
+  table.u-table { table-layout: fixed; font-size: 13px; }
+  table.u-table th { font-size: 11px; letter-spacing: .06em; padding: 0 10px 6px 0; }
+  table.u-table td { padding: 7px 10px 7px 0; }
+  table.u-table th:last-child, table.u-table td:last-child { padding-right: 0; }
+  .name { display: flex; align-items: center; gap: 7px; white-space: nowrap;
+          font-size: 14px; font-weight: 500; }
+  .u-dot { width: 7px; height: 7px; }
   tr.idle td { color: var(--secondary-text-color); }
-  .watts { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
-  .watts .u-meter { width: 40px; height: 5px; }
-  .watts b { font-weight: 500; min-width: 54px; display: inline-block; text-align: right; }
-  table.sessions td, table.sessions th { padding-right: 14px; }
-  table.sessions td:last-child, table.sessions th:last-child { padding-right: 0; }
-  h3 { margin: 8px 0 0; font-size: .82em; font-weight: 500; text-transform: uppercase;
-       letter-spacing: .04em; color: var(--secondary-text-color); }
+  tr.idle .name { font-weight: 400; }
+  td.watts { font-size: 15px; }
+  td.volts, td.amps { font-size: 13px; }
+  td.protocol { font-size: 12px; }
+  td.since { font-size: 12px; }
+  /* The bar belongs beside what it measures, not beside the number it repeats:
+   * against the session text it reads as how much of the charger this port is
+   * taking, which is the question a row of eight ports is asked. */
+  .session { display: flex; align-items: center; gap: 8px; }
+  .session .u-meter { flex-grow: 1; height: 6px; }
+  .session .text { font-size: 12px; width: 104px; flex: none; white-space: nowrap;
+                   overflow: hidden; text-overflow: ellipsis; }
+  h3 { margin: 8px 0 0; font-size: 11px; font-weight: 400; text-transform: uppercase;
+       letter-spacing: .10em; color: var(--secondary-text-color); }
+  table.sessions { font-size: 13px; }
+  table.sessions thead { display: none; }
+  table.sessions .port { font-size: 13px; font-weight: 500; }
+  table.sessions .energy { color: var(--state-icon-active-color, var(--primary-color)); }
+  table.sessions .peak, table.sessions .lasted, table.sessions .when { font-size: 12px; }
+  table.sessions .when { text-align: right; color: var(--disabled-text-color); }
 `;
 
 class UgreenPortsCard extends HTMLElement {
@@ -128,11 +156,18 @@ class UgreenPortsCard extends HTMLElement {
       <ha-card>
         <style>${STYLE}</style>
         <div class="body">
-          <div class="head"><h2>${
-            this._config.title
-            ?? (this._config.ports === false ? this._t('sessions') : this._t('title'))
-          }</h2></div>
+          <div class="head">
+            <h2>${
+              this._config.title
+              ?? (this._config.ports === false ? this._t('sessions') : this._t('title'))
+            }</h2>
+            <span class="hint ports-hint">${this._t('hint')}</span>
+          </div>
           <table class="u-table ports">
+            <colgroup>
+              <col style="width: 58px"><col style="width: 74px"><col style="width: 66px">
+              <col style="width: 66px"><col style="width: 96px"><col><col style="width: 96px">
+            </colgroup>
             <thead>
               <tr>
                 <th>${this._t('port')}</th>
@@ -148,6 +183,10 @@ class UgreenPortsCard extends HTMLElement {
           </table>
           <h3 class="sessions-head">${this._t('sessions')}</h3>
           <table class="u-table sessions">
+            <colgroup>
+              <col style="width: 44px"><col style="width: 84px"><col style="width: 76px">
+              <col><col style="width: 120px">
+            </colgroup>
             <thead>
               <tr>
                 <th>${this._t('port')}</th>
@@ -164,6 +203,7 @@ class UgreenPortsCard extends HTMLElement {
       </ha-card>
     `);
     this._els = {
+      hint: this._root.querySelector('.ports-hint'),
       portsTable: this._root.querySelector('table.ports'),
       ports: this._root.querySelector('table.ports tbody'),
       sessionsHead: this._root.querySelector('.sessions-head'),
@@ -182,6 +222,7 @@ class UgreenPortsCard extends HTMLElement {
     this._els.empty.hidden = found.length > 0;
     this._els.empty.textContent = found.length ? '' : this._t('noPorts');
     this._els.portsTable.hidden = !showPorts;
+    this._els.hint.hidden = !showPorts;
     this._els.sessionsHead.hidden = !showSessions || !showPorts;
     this._els.sessions.hidden = !showSessions;
     if (!found.length) {
@@ -217,18 +258,18 @@ class UgreenPortsCard extends HTMLElement {
     row.innerHTML = `
       <td><span class="name"><span class="u-dot" style="${
         drawing ? `background: ${colour}` : ''}"></span>${port.name}</span></td>
-      <td class="num"><span class="watts">
-        <span class="u-meter"><i style="width: ${
-          Math.min(100, (watts / scale) * 100).toFixed(0)}%; background: ${colour}"></i></span>
-        <b style="${drawing ? `color: ${colour}` : ''}">${watts.toFixed(1)} W</b>
-      </span></td>
-      <td class="num u-narrow-hide u-muted">${volts.toFixed(1)} V</td>
-      <td class="num u-narrow-hide u-muted">${amps.toFixed(2)} A</td>
-      <td class="u-narrow-hide">${
+      <td class="num watts" style="${drawing ? `color: ${colour}` : ''}">${watts.toFixed(1)} W</td>
+      <td class="num volts u-narrow-hide u-muted">${volts.toFixed(1)} V</td>
+      <td class="num amps u-narrow-hide u-muted">${amps.toFixed(2)} A</td>
+      <td class="protocol u-narrow-hide">${
         protocol && protocol !== 'none' ? protocol : `<span class="u-muted">${this._t('none')}</span>`
       }</td>
-      <td class="u-sub">${this._sessionText(port, volts)}</td>
-      <td class="num u-sub u-narrow-hide">${this._sinceText(port)}</td>
+      <td><span class="session">
+        <span class="u-meter"><i style="width: ${
+          Math.min(100, (watts / scale) * 100).toFixed(0)}%; background: ${colour}"></i></span>
+        <span class="text u-muted">${this._sessionText(port, volts)}</span>
+      </span></td>
+      <td class="num since u-narrow-hide u-muted">${this._sinceText(port)}</td>
     `;
     row.addEventListener('click', () => this._moreInfo(port.id));
     return row;
@@ -286,12 +327,12 @@ class UgreenPortsCard extends HTMLElement {
       const peak = Number(event.attributes.peak_power) || 0;
       const protocol = event.attributes.protocol;
       row.innerHTML = `
-        <td><span class="name">${port.name}</span></td>
-        <td class="num" style="color: var(--primary-text-color)">${wh.toFixed(1)} Wh</td>
-        <td class="num u-narrow-hide u-muted">${peak.toFixed(1)} W</td>
-        <td class="u-narrow-hide u-muted">${duration(Number(event.attributes.duration) || 0)}${
+        <td class="port">${port.name}</td>
+        <td class="num energy">${wh.toFixed(1)} Wh</td>
+        <td class="num peak u-narrow-hide u-muted">${peak.toFixed(1)} W</td>
+        <td class="lasted u-narrow-hide u-muted">${duration(Number(event.attributes.duration) || 0)}${
           protocol && protocol !== 'none' ? ` · ${protocol}` : ''}</td>
-        <td class="u-sub">${since(this._hass, at, this._t('justNow'))}</td>
+        <td class="when">${since(this._hass, at, this._t('justNow'))}</td>
       `;
       row.addEventListener('click', () => this._moreInfo(`${port.base}_session_energy`));
       return row;

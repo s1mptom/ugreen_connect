@@ -14,6 +14,9 @@
  *                                   # largest total this card has seen
  *   screen: true                    # brightness and screen-off; default true
  *   today: true                     # today's energy, from statistics
+ *   part: both                      # both | summary | controls -- which half
+ *                                   # to draw, for a layout that wants them as
+ *                                   # two cards side by side
  */
 
 import {
@@ -26,7 +29,7 @@ const TEXT = {
     of: 'of {max} W',
     today: 'Today',
     allTime: 'All time',
-    ports: 'Ports drawing',
+    ports: 'Ports live',
     mode: 'Charging mode',
     screen: 'Screen',
     screenOff: 'Off after',
@@ -42,7 +45,7 @@ const TEXT = {
     of: 'von {max} W',
     today: 'Heute',
     allTime: 'Gesamt',
-    ports: 'Anschlüsse laden',
+    ports: 'Aktiv',
     mode: 'Lademodus',
     screen: 'Bildschirm',
     screenOff: 'Aus nach',
@@ -58,7 +61,7 @@ const TEXT = {
     of: 'из {max} Вт',
     today: 'Сегодня',
     allTime: 'За всё время',
-    ports: 'Портов заряжает',
+    ports: 'Портов',
     mode: 'Режим зарядки',
     screen: 'Экран',
     screenOff: 'Гаснет через',
@@ -74,22 +77,26 @@ const TEXT = {
 const STYLE = `
   ${SHARED_CSS}
   ha-card { overflow: hidden; height: 100%; box-sizing: border-box; }
-  .body { padding: 12px 16px; display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap;
+  .body { padding: 14px 16px; display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap;
           height: 100%; box-sizing: border-box; }
-  .left { min-width: 190px; max-width: 260px; display: flex; flex-direction: column; gap: 5px; }
-  .label { font-size: .78em; text-transform: uppercase; letter-spacing: .06em;
+  .left { flex: 1 1 260px; display: flex; flex-direction: column; gap: 6px; }
+  .label { font-size: 11px; text-transform: uppercase; letter-spacing: .10em;
            color: var(--secondary-text-color); }
-  .total { display: flex; align-items: baseline; gap: 6px; }
-  .total .w { font-size: 2.3em; line-height: 1; font-weight: 400; }
-  .total .unit { color: var(--secondary-text-color); }
-  .total .of { margin-left: auto; font-size: .82em; color: var(--secondary-text-color); }
-  .meter { height: 7px; border-radius: 4px; background: var(--divider-color); overflow: hidden; }
-  .meter > i { display: block; height: 7px; background: var(--state-icon-active-color, var(--primary-color)); }
-  .figures { display: flex; gap: 14px; padding-top: 2px; }
-  .figures .n { font-size: 1.05em; }
-  .right { flex: 1 1 320px; display: flex; flex-direction: column; gap: 8px; min-width: 260px; }
-  .modes { display: flex; gap: 6px; flex-wrap: wrap; }
-  .modes button { flex: 1 1 88px; padding: 7px 8px; font: inherit; font-size: .86em;
+  .total { display: flex; align-items: baseline; gap: 8px; }
+  .total .w { font-size: 46px; line-height: 1; font-weight: 500;
+              color: var(--state-icon-active-color, var(--primary-color)); cursor: pointer; }
+  .total .unit { font-size: 20px; color: var(--secondary-text-color); }
+  .total .of { margin-left: auto; font-size: 13px; color: var(--secondary-text-color); }
+  .meter { height: 8px; border-radius: 4px; background: var(--divider-color); overflow: hidden; }
+  .meter > i { display: block; height: 8px; background: var(--state-icon-active-color, var(--primary-color)); }
+  .figures { display: flex; gap: 18px; padding-top: 4px; }
+  .figures > div { white-space: nowrap; }
+  .figures .n { font-size: 17px; }
+  .right { flex: 1 1 420px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .head { display: flex; align-items: center; gap: 10px; }
+  .head .note { margin-left: auto; font-size: 11px; }
+  .modes { display: flex; gap: 8px; flex-wrap: wrap; }
+  .modes button { flex: 1 1 88px; padding: 10px 8px; font: inherit; font-size: 13px;
                   color: var(--primary-text-color); background: var(--secondary-background-color);
                   border: 1px solid var(--divider-color); border-radius: 10px; cursor: pointer; }
   .modes button:hover { border-color: var(--state-icon-active-color, var(--primary-color)); }
@@ -98,22 +105,31 @@ const STYLE = `
                   color: var(--text-primary-color, #fff); font-weight: 500; }
   .modes button[disabled] { cursor: default; opacity: .75; border-style: dashed; }
   .modes button[disabled]:hover { border-color: var(--divider-color); }
-  .chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; font-size: .82em;
-          background: var(--secondary-background-color); border-radius: 999px;
-          color: var(--secondary-text-color); }
+  .strip { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+           margin-top: auto; }
+  .chips { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; font: inherit;
+          font-size: 12px; background: var(--secondary-background-color); border: none;
+          border-radius: 999px; color: var(--secondary-text-color); cursor: pointer; }
   .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--disabled-text-color); }
   .chip.ok .dot { background: var(--success-color, #4caf50); }
   .chip.warn { color: var(--primary-text-color); }
   .chip.warn .dot { background: var(--warning-color, #ff9800); }
-  .screen { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .screen ha-slider, .screen input[type="range"] { flex: 1 1 120px; min-width: 110px; accent-color: var(--state-icon-active-color, var(--primary-color)); }
-  .screen .val { font-size: .85em; color: var(--secondary-text-color); min-width: 40px; }
-  .screen select { font: inherit; font-size: .85em; padding: 5px 8px; border-radius: 8px;
+  /* Pushed to the end of the row it shares with the chips, the way the design
+   * has it -- and no wider than the design draws it, because a slider given a
+   * flexible width takes the whole row and reads as the loudest control on the
+   * card, which it is not. */
+  .screen { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+  .screen input[type="range"] { flex: none; width: 130px; margin: 0;
+                   accent-color: var(--state-icon-active-color, var(--primary-color)); }
+  .screen .val { font-size: 12px; color: var(--secondary-text-color); width: 34px; }
+  .screen select { font: inherit; font-size: 12px; padding: 6px 10px; border-radius: 999px;
                    color: var(--primary-text-color); background: var(--secondary-background-color);
-                   border: 1px solid var(--divider-color); }
-  .note { font-size: .8em; color: var(--secondary-text-color); min-height: 1.1em; }
+                   border: 1px solid var(--divider-color); max-width: 140px; }
+  .note { font-size: 11px; color: var(--secondary-text-color); }
   .empty { padding: 14px 16px; color: var(--secondary-text-color); }
+  :host([data-part="summary"]) .body,
+  :host([data-part="controls"]) .body { gap: 0; }
 `;
 
 class UgreenChargerCard extends HTMLElement {
@@ -121,6 +137,11 @@ class UgreenChargerCard extends HTMLElement {
 
   setConfig(config) {
     this._config = config || {};
+    // A layout that wants the summary and the controls as two cards asks for
+    // one half each; on its own the card draws both, which is what a single
+    // card on a dashboard should be.
+    const part = ['summary', 'controls'].includes(config?.part) ? config.part : 'both';
+    this.setAttribute('data-part', part);
     this._built = false;
     this._peak = 0;
     this._today = null;
@@ -177,17 +198,20 @@ class UgreenChargerCard extends HTMLElement {
             </div>
           </div>
           <div class="right">
-            <div class="label">${this._t('mode')}</div>
-            <div class="modes"></div>
-            <div class="chips"></div>
-            <div class="screen" hidden>
-              <span class="label">${this._t('screen')}</span>
-              <input class="bright" type="range" min="0" max="100" step="1" aria-label="${this._t('screen')}">
-              <span class="val"></span>
-              <span class="label">${this._t('screenOff')}</span>
-              <select class="off" aria-label="${this._t('screenOff')}"></select>
+            <div class="head">
+              <div class="label">${this._t('mode')}</div>
+              <div class="note"></div>
             </div>
-            <div class="note"></div>
+            <div class="modes"></div>
+            <div class="strip">
+              <div class="chips"></div>
+              <div class="screen" hidden>
+                <span class="label">${this._t('screen')}</span>
+                <input class="bright" type="range" min="0" max="100" step="1" aria-label="${this._t('screen')}">
+                <span class="val"></span>
+                <select class="off" aria-label="${this._t('screenOff')}"></select>
+              </div>
+            </div>
           </div>
         </div>
         <div class="empty">${this._t('noDevice')}</div>
@@ -195,6 +219,8 @@ class UgreenChargerCard extends HTMLElement {
     `);
     this._els = {
       body: this._root.querySelector('.body'),
+      left: this._root.querySelector('.left'),
+      right: this._root.querySelector('.right'),
       empty: this._root.querySelector('.empty'),
       watts: this._root.querySelector('.total .w'),
       of: this._root.querySelector('.total .of'),
@@ -237,6 +263,9 @@ class UgreenChargerCard extends HTMLElement {
     this._els.body.hidden = !found;
     this._els.empty.hidden = found;
     if (!found) return;
+    const part = this.getAttribute('data-part');
+    this._els.left.hidden = part === 'controls';
+    this._els.right.hidden = part === 'summary';
 
     const watts = num(this._hass, ent.total);
     this._peak = Math.max(this._peak, watts, 1);

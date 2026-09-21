@@ -204,6 +204,10 @@ export function pending(timeout = 15000) {
  * theme is a card that looks like the rest of somebody's dashboard, whatever
  * they have chosen. */
 export const SHARED_CSS = `
+  /* The hidden attribute loses to any display a rule sets, and most of what
+   * these cards hide is a flex row or a grid. Said once here rather than
+   * remembered in every card that hides something. */
+  [hidden] { display: none !important; }
   .u-label { font-size: .78em; text-transform: uppercase; letter-spacing: .06em;
              color: var(--secondary-text-color); }
   .u-muted { color: var(--secondary-text-color); }

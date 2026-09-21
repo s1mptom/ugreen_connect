@@ -22,24 +22,24 @@ const TEXT = {
   en: {
     title: 'Power',
     total: 'Total',
-    hour: '{n} h',
-    day: '24 h',
+    hour: '{n}H',
+    day: '24H',
     noData: 'No history yet — the recorder has nothing for this range.',
     noDevice: 'No charger entities found. Set device_id in the card config.',
   },
   de: {
     title: 'Leistung',
     total: 'Gesamt',
-    hour: '{n} h',
-    day: '24 h',
+    hour: '{n}H',
+    day: '24H',
     noData: 'Noch kein Verlauf — der Recorder hat für diesen Zeitraum nichts.',
     noDevice: 'Keine Entitäten gefunden. device_id in der Kartenkonfiguration setzen.',
   },
   ru: {
     title: 'Мощность',
     total: 'Всего',
-    hour: '{n} ч',
-    day: '24 ч',
+    hour: '{n}ч',
+    day: '24ч',
     noData: 'Истории пока нет — за этот период рекордер ничего не отдал.',
     noDevice: 'Сущности не найдены. Укажите device_id в настройках карточки.',
   },
@@ -47,19 +47,26 @@ const TEXT = {
 
 const STYLE = `
   ${SHARED_CSS}
-  .body { padding: 12px 16px 14px; display: flex; flex-direction: column; gap: 8px; }
+  ha-card { height: 100%; box-sizing: border-box; }
+  .body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; height: 100%;
+          box-sizing: border-box; }
   .head { display: flex; align-items: center; gap: 10px; }
-  .head h2 { margin: 0; font-size: 1.05em; font-weight: 500; flex-grow: 1; }
-  .ranges { display: flex; gap: 4px; }
-  .ranges button { font: inherit; font-size: .8em; padding: 4px 9px; cursor: pointer;
-                   color: var(--secondary-text-color); background: none;
-                   border: 1px solid var(--divider-color); border-radius: 999px; }
-  .ranges button[aria-pressed="true"] { color: var(--text-primary-color, #fff);
-                   background: var(--state-icon-active-color, var(--primary-color));
-                   border-color: var(--state-icon-active-color, var(--primary-color)); }
-  .chart { min-height: 150px; }
-  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .84em; }
-  .legend button { font: inherit; font-size: 1em; display: inline-flex; align-items: center; gap: 6px;
+  .head h2 { margin: 0; font-size: 11px; font-weight: 400; text-transform: uppercase;
+             letter-spacing: .10em; color: var(--secondary-text-color); flex-grow: 1; }
+  /* Small and quiet: the range is a thing you set once and then read the chart,
+   * so it sits where the design puts it -- a line of text in the corner, not a
+   * row of buttons competing with the title. */
+  .ranges { display: flex; gap: 2px; align-items: center; }
+  .ranges button { font: inherit; font-size: 11px; padding: 2px 6px; cursor: pointer;
+                   color: var(--disabled-text-color); background: none; border: none;
+                   border-radius: 6px; letter-spacing: .04em; }
+  .ranges button:hover { color: var(--primary-text-color); }
+  .ranges button[aria-pressed="true"] { color: var(--state-icon-active-color, var(--primary-color));
+                   font-weight: 500; }
+  .chart { flex-grow: 1; min-height: 210px; display: flex; }
+  .chart svg { width: 100%; height: 100%; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; }
+  .legend button { font: inherit; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;
                    background: none; border: none; padding: 0; cursor: pointer;
                    color: var(--secondary-text-color); }
   .legend .swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
@@ -216,7 +223,7 @@ class UgreenPowerCard extends HTMLElement {
     this._els.empty.hidden = drawn.length > 0;
     this._els.empty.textContent = drawn.length ? '' : this._t('noData');
     this._els.chart.replaceChildren(
-      areaChart(drawn, { width: 620, height: 170, unit: ' W' }),
+      areaChart(drawn, { width: 620, height: 210, unit: ' W' }),
     );
     this._els.legend.replaceChildren(...drawn.map((one) => {
       const button = document.createElement('button');

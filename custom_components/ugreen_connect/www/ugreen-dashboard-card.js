@@ -51,27 +51,31 @@ const TEXT = {
 
 const STYLE = `
   ${SHARED_CSS}
-  :host { display: block; padding: 12px; box-sizing: border-box; }
-  .screen { display: grid; gap: 12px; align-items: start;
-            grid-template-columns: minmax(520px, 1.25fr) minmax(420px, 1fr);
-            grid-template-areas: "top top" "ports power" "ports sessions" "screen energy"; }
-  .top { grid-area: top; }
-  .ports { grid-area: ports; }
-  .power { grid-area: power; }
-  .sessions { grid-area: sessions; }
-  .screen-block { grid-area: screen; }
-  .energy { grid-area: energy; display: flex; flex-direction: column; gap: 12px; }
-  .limits ha-card { padding: 12px 16px; }
-  .limits h3 { margin: 0 0 4px; font-size: .82em; font-weight: 500; text-transform: uppercase;
-               letter-spacing: .04em; color: var(--state-icon-active-color, var(--primary-color)); }
-  .limits .why { font-size: .82em; color: var(--secondary-text-color); margin-bottom: 8px; }
+  :host { display: block; padding: 20px; box-sizing: border-box; }
+  /* Three rows, each with its own columns, rather than one grid for the lot:
+   * the rows share nothing but their gutter, and a single grid would have had
+   * the ports table and the screen card lining up on a column edge neither of
+   * them wants. Widths are the design's, in pixels, because the tables and the
+   * chart were drawn against them; everything else takes the space left. */
+  .screen { display: flex; flex-direction: column; gap: 14px; min-height: 100%; }
+  .row { display: grid; gap: 14px; align-items: stretch; }
+  .row1 { grid-template-columns: 300px minmax(0, 1fr); }
+  .row2 { grid-template-columns: minmax(0, 720px) minmax(0, 1fr); flex-grow: 1; }
+  .row3 { grid-template-columns: 340px minmax(0, 1fr); }
+  .row3.with-limits { grid-template-columns: 340px minmax(0, 1fr) 300px; }
+  .col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .col .power { flex-grow: 1; }
+  .limits ha-card { padding: 14px 16px; height: 100%; box-sizing: border-box; }
+  .limits h3 { margin: 0 0 4px; font-size: 11px; font-weight: 400; text-transform: uppercase;
+               letter-spacing: .10em; color: var(--state-icon-active-color, var(--primary-color)); }
+  .limits .why { font-size: 12px; color: var(--secondary-text-color); margin-bottom: 8px; }
   .limits .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
   .limits .cell { background: var(--secondary-background-color); border-radius: 8px; padding: 6px 8px; }
-  .limits .cell .name { font-size: .78em; color: var(--secondary-text-color); }
-  .limits .cell .value { font-size: 1.05em; }
+  .limits .cell .name { font-size: 11px; color: var(--secondary-text-color); }
+  .limits .cell .value { font-size: 14px; }
   @media (max-width: 1100px) {
-    .screen { grid-template-columns: minmax(0, 1fr);
-              grid-template-areas: "top" "ports" "power" "sessions" "energy" "screen"; }
+    :host { padding: 12px; }
+    .row1, .row2, .row3, .row3.with-limits { grid-template-columns: minmax(0, 1fr); }
   }
 `;
 
@@ -122,19 +126,34 @@ class UgreenDashboardCard extends HTMLElement {
   _build() {
     if (this._built) return;
     this._built = true;
-    this._root = mount(this, `<style>${STYLE}</style><div class="screen"></div>`);
-    const screen = this._root.querySelector('.screen');
+    this._root = mount(this, `
+      <style>${STYLE}</style>
+      <div class="screen">
+        <div class="row row1"></div>
+        <div class="row row2"></div>
+        <div class="row row3"></div>
+      </div>
+    `);
+    const row1 = this._root.querySelector('.row1');
+    const row2 = this._root.querySelector('.row2');
+    this._row3 = this._root.querySelector('.row3');
 
-    const top = this._card('ugreen-charger-card', {});
-    top.classList.add('top');
+    const summary = this._card('ugreen-charger-card', { part: 'summary' });
+    const controls = this._card('ugreen-charger-card', { part: 'controls' });
+    row1.append(summary, controls);
+
     const ports = this._card('ugreen-ports-card', { sessions: false });
     ports.classList.add('ports');
     const power = this._card('ugreen-power-card', { hours: this._config.hours ?? 3 });
     power.classList.add('power');
     const sessions = this._card('ugreen-ports-card', { ports: false });
     sessions.classList.add('sessions');
+    const column = document.createElement('div');
+    column.className = 'col';
+    column.append(power, sessions);
+    row2.append(ports, column);
+
     const wallpaper = this._card('ugreen-wallpaper-card', {});
-    wallpaper.classList.add('screen-block');
     const energy = this._card('ugreen-energy-card', { period: this._config.period ?? 'week' });
 
     const limits = document.createElement('div');
@@ -147,12 +166,9 @@ class UgreenDashboardCard extends HTMLElement {
         <div class="grid"></div>
       </ha-card>
     `;
-    const column = document.createElement('div');
-    column.className = 'energy';
-    column.append(energy, limits);
+    this._row3.append(wallpaper, energy, limits);
 
-    screen.append(top, ports, power, sessions, wallpaper, column);
-    this._cards = [top, ports, power, sessions, wallpaper, energy];
+    this._cards = [summary, controls, ports, power, sessions, wallpaper, energy];
     this._limits = limits;
   }
 
@@ -170,6 +186,7 @@ class UgreenDashboardCard extends HTMLElement {
       .sort();
     const live = groups.filter((id) => !['unavailable', 'unknown'].includes(this._hass.states[id].state));
     this._limits.hidden = live.length === 0;
+    this._row3.classList.toggle('with-limits', live.length > 0);
     if (!live.length) return;
     this._limits.querySelector('.grid').replaceChildren(...live.map((id) => {
       const state = this._hass.states[id];

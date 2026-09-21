@@ -23,7 +23,7 @@ const TEXT = {
     week: 'this week',
     month: 'this month',
     all: 'all time',
-    feeds: 'Feed the Energy dashboard the ports or the charger, never both.',
+    feeds: 'feeds the Energy dashboard',
     nothing: 'Nothing recorded for this period yet.',
     noDevice: 'No charger entities found. Set device_id in the card config.',
   },
@@ -33,7 +33,7 @@ const TEXT = {
     week: 'diese Woche',
     month: 'diesen Monat',
     all: 'gesamt',
-    feeds: 'Dem Energie-Dashboard entweder die Anschlüsse oder das Ladegerät geben, nie beides.',
+    feeds: 'speist das Energie-Dashboard',
     nothing: 'Für diesen Zeitraum ist noch nichts aufgezeichnet.',
     noDevice: 'Keine Entitäten gefunden. device_id in der Kartenkonfiguration setzen.',
   },
@@ -43,7 +43,7 @@ const TEXT = {
     week: 'за неделю',
     month: 'за месяц',
     all: 'за всё время',
-    feeds: 'В панель «Энергия» отдавайте либо порты, либо зарядку целиком, но не оба сразу.',
+    feeds: 'питает панель «Энергия»',
     nothing: 'За этот период пока ничего не записано.',
     noDevice: 'Сущности не найдены. Укажите device_id в настройках карточки.',
   },
@@ -51,17 +51,20 @@ const TEXT = {
 
 const STYLE = `
   ${SHARED_CSS}
-  .body { padding: 12px 16px 14px; display: flex; flex-direction: column; gap: 10px; }
+  ha-card { height: 100%; box-sizing: border-box; }
+  .body { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; height: 100%;
+          box-sizing: border-box; }
   .head { display: flex; align-items: baseline; gap: 10px; }
-  .head h2 { margin: 0; font-size: 1.05em; font-weight: 500; flex-grow: 1; }
-  .bars { display: flex; align-items: flex-end; gap: 8px; height: 118px; }
+  .head h2 { margin: 0; font-size: 11px; font-weight: 400; text-transform: uppercase;
+             letter-spacing: .10em; color: var(--secondary-text-color); flex-grow: 1; }
+  .head .period { font-size: 11px; }
+  .head .feeds { font-size: 11px; color: var(--disabled-text-color); }
+  .bars { display: flex; align-items: flex-end; gap: 10px; height: 84px; flex: none; }
   .bar { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 5px;
          justify-content: flex-end; height: 100%; cursor: pointer;
          background: none; border: none; padding: 0; font: inherit; }
-  .bar .fill { width: 100%; border-radius: 4px 4px 0 0; min-height: 3px; }
-  .bar .name { font-size: .8em; color: var(--secondary-text-color); }
-  .bar .value { font-size: .78em; color: var(--primary-text-color); }
-  .bar.zero .value { color: var(--secondary-text-color); }
+  .bar .fill { width: 100%; border-radius: 4px 4px 0 0; min-height: 4px; }
+  .bar .name { font-size: 11px; color: var(--secondary-text-color); }
 `;
 
 class UgreenEnergyCard extends HTMLElement {
@@ -97,11 +100,10 @@ class UgreenEnergyCard extends HTMLElement {
         <style>${STYLE}</style>
         <div class="body">
           <div class="head">
-            <h2>${this._config.title || this._t('title')}</h2>
-            <span class="u-sub period">${this._t(this._period())}</span>
+            <h2>${this._config.title || this._t('title')}, ${this._t(this._period())}</h2>
+            <span class="feeds">${this._t('feeds')}</span>
           </div>
           <div class="bars"></div>
-          <div class="u-sub feeds">${this._t('feeds')}</div>
           <div class="u-empty" hidden></div>
         </div>
       </ha-card>
@@ -184,10 +186,11 @@ class UgreenEnergyCard extends HTMLElement {
       const bar = document.createElement('button');
       bar.type = 'button';
       bar.className = value > 0 ? 'bar' : 'bar zero';
-      const height = top > 0 ? Math.max(3, (value / top) * 86) : 3;
+      const height = top > 0 ? Math.max(4, (value / top) * 100) : 4;
+      const reading = value >= 0.995 ? value.toFixed(2) : value.toFixed(3);
+      bar.title = `${port.name}: ${reading} kWh`;
       bar.innerHTML = `
-        <span class="value">${value >= 0.995 ? value.toFixed(2) : value.toFixed(3)}</span>
-        <span class="fill" style="height: ${height.toFixed(0)}px; background: ${
+        <span class="fill" style="height: ${height.toFixed(0)}%; background: ${
           value > 0 ? colour : 'var(--divider-color)'}"></span>
         <span class="name">${port.name}</span>
       `;
