@@ -55,6 +55,9 @@ e.g. `sensor.ugreen_nexode_pro_x783_c1_power`.
 | `sensor.<device>_c1_protocol` | negotiated fast-charge protocol: PD, PPS, QC, AFC, FCP, UFCS, AVS |
 | `sensor.<device>_c1_session_energy` | watt-hours delivered to whatever is plugged into that port now |
 | `sensor.<device>_c1_session_charge` | the same session read as milliamp-hours into a battery |
+| `sensor.<device>_c1_energy`, `sensor.<device>_energy` | kilowatt-hours since the counter began, per port and for the charger. Integrated here, since the device keeps no total of its own; feed the Energy dashboard one or the other, never both |
+| `binary_sensor.<device>_c1_charging` | whether charge is flowing on that port right now, which is a different question from whether a session is open -- seconds apart when the cable is pulled, and close to two hours apart when a full device is left plugged in |
+| `event.<device>_c1_charging` | `started` and `ended`, with `energy_wh`, `duration`, `peak_power` and `protocol` on the event |
 | `sensor.<device>_total_power` | sum across ports; firmware and Wi-Fi SSID in its attributes |
 | `sensor.<device>_cloud_status` | `online` / `offline`; MAC in its attributes |
 | `sensor.<device>_c1_custom_mode_limit` … | six of them -- C1–C5 and C6+A, which share one -- reading the watt limit that group is set to. Diagnostic; created the first time the charger is seen in the `custom` charging mode, and unavailable while any other one runs. The protocols the group may negotiate and the raw mask are attributes |
@@ -72,8 +75,10 @@ e.g. `sensor.ugreen_nexode_pro_x783_c1_power`.
 | `select.<device>_clock_style` | the two faces the charger draws |
 | `select.<device>_wallpaper` | any picture in your UGREEN library, or none |
 
-The choices match the app's own, and every write is read back from the device on
-the next poll rather than assumed.
+The choices match the app's own, and nothing here shows a value because it was
+asked for: a write is followed by a read of the charger, and what comes back is
+what the entity publishes. A setting the charger declines -- and it does decline
+some -- leaves the control where it was rather than moving and springing back.
 
 `custom` is a real charging mode and is reported when the device is in it, but it
 cannot be selected here: setting a mode carries that mode's parameter block, and
@@ -300,16 +305,29 @@ gentle — nothing else depends on the rate.
 
 ## Tests
 
-The session rules -- what starts one, what ends it, what a dropout means -- are the
-one part of this with enough edge cases to be worth pinning down, so they live in
-`session.py` with no Home Assistant imports and are tested on their own:
+Two suites, split by what they need.
+
+`tests/` needs no Home Assistant at all. It holds the session rules -- what starts
+a bout, what ends it, what a dropout means -- the frame parsing and rebuilding,
+and a set of checks that read the source rather than run it, for the properties
+that fail silently: that a field the setup form asks for is a field something
+uses, that a frame is never written without holding the charger's one slot, that
+each language's refusal names the mode its own select shows.
 
 ```
 pip install pytest && pytest tests -q
 ```
 
-Everything else needs a real charger and a real cloud account to say anything, and
-is checked against both rather than mocked.
+`tests_ha/` starts Home Assistant with the integration, a fake cloud account and a
+fake charger, and checks the wiring: entities appearing and disappearing, a write
+reaching the client and the reading that comes back, a poll racing a write. It
+needs `pytest-homeassistant-custom-component`, which pins one exact Home Assistant
+version, so CI runs it inside that release's own container.
+
+What neither can say anything about is the charger. Every frame decoded here was
+read off one, and the byte offsets in `protocol.py` were settled by changing a
+setting in the app and watching which byte moved -- so a change to them is
+checked against hardware before it lands, not against a fixture.
 
 ## Translating
 
@@ -342,6 +360,21 @@ fine.
   because an id the library cannot account for sends the integration to read it
   again. The reverse is not true — **the app caches**, and keeps showing its old
   value until it is force-stopped and reopened.
+
+## Credits
+
+Eighteen of the changes here are [@lukislp](https://github.com/lukislp)'s: the
+German translation, the port count read from the report rather than assumed, the
+model remembered across restarts, the per-field writability that lets a second
+model be understood a byte at a time, the charging sensors and events that
+publish the session tracker's verdict rather than its ingredients, the Energy
+counters, the `custom` mode decoded and reported, and the read-back that made
+every control publish what the charger did rather than what it was asked. Also
+the reviews, which caught rather more of mine than the other way round.
+
+The 160W's field offsets came from its owner in
+[#2](https://github.com/s1mptom/ugreen_connect/issues/2), mapped one setting at a
+time on hardware nobody here has.
 
 ## Contributing
 
