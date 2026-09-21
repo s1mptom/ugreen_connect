@@ -15,7 +15,7 @@
  */
 
 import {
-  SERIES, SHARED_CSS, areaChart, bucket, defineCard, findOne, num, ports, translator,
+  mount, SERIES, SHARED_CSS, areaChart, bucket, defineCard, findOne, num, ports, translator,
 } from './ugreen-ui.js';
 
 const TEXT = {
@@ -75,7 +75,7 @@ class UgreenPowerCard extends HTMLElement {
     this._hours = Number(config?.hours) || 3;
     this._history = null;
     this._asked = 0;
-    this.innerHTML = '';
+    if (this.shadowRoot) this.shadowRoot.innerHTML = '';
   }
 
   set hass(hass) {
@@ -90,7 +90,7 @@ class UgreenPowerCard extends HTMLElement {
   _build() {
     if (this._built) return;
     this._built = true;
-    this.innerHTML = `
+    this._root = mount(this, `
       <ha-card>
         <style>${STYLE}</style>
         <div class="body">
@@ -103,12 +103,12 @@ class UgreenPowerCard extends HTMLElement {
           <div class="u-empty" hidden></div>
         </div>
       </ha-card>
-    `;
+    `);
     this._els = {
-      ranges: this.querySelector('.ranges'),
-      chart: this.querySelector('.chart'),
-      legend: this.querySelector('.legend'),
-      empty: this.querySelector('.u-empty'),
+      ranges: this._root.querySelector('.ranges'),
+      chart: this._root.querySelector('.chart'),
+      legend: this._root.querySelector('.legend'),
+      empty: this._root.querySelector('.u-empty'),
     };
     this._buildRanges();
   }

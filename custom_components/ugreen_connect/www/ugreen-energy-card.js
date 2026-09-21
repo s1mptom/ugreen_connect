@@ -13,7 +13,7 @@
  */
 
 import {
-  SERIES, SHARED_CSS, defineCard, ports, translator,
+  mount, SERIES, SHARED_CSS, defineCard, ports, translator,
 } from './ugreen-ui.js';
 
 const TEXT = {
@@ -72,7 +72,7 @@ class UgreenEnergyCard extends HTMLElement {
     this._built = false;
     this._totals = null;
     this._asked = 0;
-    this.innerHTML = '';
+    if (this.shadowRoot) this.shadowRoot.innerHTML = '';
   }
 
   set hass(hass) {
@@ -92,7 +92,7 @@ class UgreenEnergyCard extends HTMLElement {
   _build() {
     if (this._built) return;
     this._built = true;
-    this.innerHTML = `
+    this._root = mount(this, `
       <ha-card>
         <style>${STYLE}</style>
         <div class="body">
@@ -105,11 +105,11 @@ class UgreenEnergyCard extends HTMLElement {
           <div class="u-empty" hidden></div>
         </div>
       </ha-card>
-    `;
+    `);
     this._els = {
-      bars: this.querySelector('.bars'),
-      feeds: this.querySelector('.feeds'),
-      empty: this.querySelector('.u-empty'),
+      bars: this._root.querySelector('.bars'),
+      feeds: this._root.querySelector('.feeds'),
+      empty: this._root.querySelector('.u-empty'),
     };
   }
 

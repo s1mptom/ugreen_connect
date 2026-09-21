@@ -241,6 +241,21 @@ export const SERIES = [
   'var(--graph-color-8, #97bbf5)',
 ];
 
+/* A card's own root, so its stylesheet cannot reach anything else.
+ *
+ * These cards are plain elements with plain class names -- `.head`, `.screen`,
+ * `.grid` -- and their `<style>` blocks used to sit in the page, where they
+ * styled each other: the dashboard's own `.screen` grid was quietly turned
+ * into a flex row by the charger card's `.screen` rule. A shadow root per card
+ * keeps each one's CSS to itself, and lets the markup keep the names that read
+ * well inside it.
+ */
+export function mount(element, markup) {
+  const root = element.shadowRoot || element.attachShadow({ mode: 'open' });
+  root.innerHTML = markup;
+  return root;
+}
+
 export function html(markup) {
   const template = document.createElement('template');
   template.innerHTML = markup.trim();

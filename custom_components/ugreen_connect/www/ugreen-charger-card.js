@@ -17,7 +17,7 @@
  */
 
 import {
-  SHARED_CSS, chargerEntity, defineCard, findOne, num, optionLabel, pending, translator,
+  mount, SHARED_CSS, chargerEntity, defineCard, findOne, num, optionLabel, pending, translator,
 } from './ugreen-ui.js';
 
 const TEXT = {
@@ -127,7 +127,7 @@ class UgreenChargerCard extends HTMLElement {
     this._askedToday = 0;
     // What has been asked for and not yet confirmed; see `pending`.
     this._asked = pending();
-    this.innerHTML = '';
+    if (this.shadowRoot) this.shadowRoot.innerHTML = '';
   }
 
   set hass(hass) {
@@ -162,7 +162,7 @@ class UgreenChargerCard extends HTMLElement {
   _build() {
     if (this._built) return;
     this._built = true;
-    this.innerHTML = `
+    this._root = mount(this, `
       <ha-card>
         <style>${STYLE}</style>
         <div class="body" hidden>
@@ -192,24 +192,24 @@ class UgreenChargerCard extends HTMLElement {
         </div>
         <div class="empty">${this._t('noDevice')}</div>
       </ha-card>
-    `;
+    `);
     this._els = {
-      body: this.querySelector('.body'),
-      empty: this.querySelector('.empty'),
-      watts: this.querySelector('.total .w'),
-      of: this.querySelector('.total .of'),
-      meter: this.querySelector('.meter > i'),
-      today: this.querySelector('.today'),
-      todayValue: this.querySelector('.today-n'),
-      all: this.querySelector('.all-n'),
-      ports: this.querySelector('.ports-n'),
-      modes: this.querySelector('.modes'),
-      chips: this.querySelector('.chips'),
-      screen: this.querySelector('.screen'),
-      bright: this.querySelector('.bright'),
-      brightValue: this.querySelector('.val'),
-      off: this.querySelector('.off'),
-      note: this.querySelector('.note'),
+      body: this._root.querySelector('.body'),
+      empty: this._root.querySelector('.empty'),
+      watts: this._root.querySelector('.total .w'),
+      of: this._root.querySelector('.total .of'),
+      meter: this._root.querySelector('.meter > i'),
+      today: this._root.querySelector('.today'),
+      todayValue: this._root.querySelector('.today-n'),
+      all: this._root.querySelector('.all-n'),
+      ports: this._root.querySelector('.ports-n'),
+      modes: this._root.querySelector('.modes'),
+      chips: this._root.querySelector('.chips'),
+      screen: this._root.querySelector('.screen'),
+      bright: this._root.querySelector('.bright'),
+      brightValue: this._root.querySelector('.val'),
+      off: this._root.querySelector('.off'),
+      note: this._root.querySelector('.note'),
     };
 
     this._els.bright.addEventListener('change', (event) => {
@@ -365,7 +365,7 @@ class UgreenChargerCard extends HTMLElement {
     if (!wanted) return;
 
     const brightness = ent.brightness ? this._hass.states[ent.brightness] : undefined;
-    if (brightness && document.activeElement !== this._els.bright) {
+    if (brightness && this._root.activeElement !== this._els.bright) {
       const shown = this._asked.read('brightness', brightness.state);
       this._els.bright.value = shown;
       this._els.brightValue.textContent = `${Math.round(Number(shown))}%`;

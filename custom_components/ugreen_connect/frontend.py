@@ -39,6 +39,7 @@ _LOGGER = logging.getLogger(__name__)
 # itself, and a resource for it would only make the frontend load it again.
 CARD_FILES: tuple[str, ...] = (
     "ugreen-charger-card.js",
+    "ugreen-dashboard-card.js",
     "ugreen-energy-card.js",
     "ugreen-ports-card.js",
     "ugreen-power-card.js",

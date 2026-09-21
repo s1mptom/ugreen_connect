@@ -9,13 +9,14 @@
  *   type: custom:ugreen-ports-card
  *   device_id: <the charger>        # optional if only one charger is set up
  *   title: Ports                    # optional
+ *   ports: true                     # the port table itself; default true
  *   sessions: true                  # the ended-sessions table; default true
  *   max_power: 300                  # what the row bars scale to; default: the
  *                                   # largest total this card has seen
  */
 
 import {
-  SERIES, SHARED_CSS, defineCard, duration, findOne, num, ports, since, translator,
+  mount, SERIES, SHARED_CSS, defineCard, duration, findOne, num, ports, since, translator,
 } from './ugreen-ui.js';
 
 const TEXT = {
@@ -108,7 +109,7 @@ class UgreenPortsCard extends HTMLElement {
     this._config = config || {};
     this._built = false;
     this._peak = 0;
-    this.innerHTML = '';
+    if (this.shadowRoot) this.shadowRoot.innerHTML = '';
   }
 
   set hass(hass) {
@@ -123,11 +124,14 @@ class UgreenPortsCard extends HTMLElement {
   _build() {
     if (this._built) return;
     this._built = true;
-    this.innerHTML = `
+    this._root = mount(this, `
       <ha-card>
         <style>${STYLE}</style>
         <div class="body">
-          <div class="head"><h2>${this._config.title || this._t('title')}</h2></div>
+          <div class="head"><h2>${
+            this._config.title
+            ?? (this._config.ports === false ? this._t('sessions') : this._t('title'))
+          }</h2></div>
           <table class="u-table ports">
             <thead>
               <tr>
@@ -158,24 +162,27 @@ class UgreenPortsCard extends HTMLElement {
           <div class="u-empty" hidden></div>
         </div>
       </ha-card>
-    `;
+    `);
     this._els = {
-      ports: this.querySelector('table.ports tbody'),
-      sessionsHead: this.querySelector('.sessions-head'),
-      sessions: this.querySelector('table.sessions'),
-      sessionRows: this.querySelector('table.sessions tbody'),
-      empty: this.querySelector('.u-empty'),
+      portsTable: this._root.querySelector('table.ports'),
+      ports: this._root.querySelector('table.ports tbody'),
+      sessionsHead: this._root.querySelector('.sessions-head'),
+      sessions: this._root.querySelector('table.sessions'),
+      sessionRows: this._root.querySelector('table.sessions tbody'),
+      empty: this._root.querySelector('.u-empty'),
     };
   }
 
   _sync() {
     if (!this._hass) return;
     const found = ports(this._hass, this._config.device_id);
+    const showPorts = this._config.ports !== false && found.length > 0;
     const showSessions = this._config.sessions !== false && found.length > 0;
 
     this._els.empty.hidden = found.length > 0;
     this._els.empty.textContent = found.length ? '' : this._t('noPorts');
-    this._els.sessionsHead.hidden = !showSessions;
+    this._els.portsTable.hidden = !showPorts;
+    this._els.sessionsHead.hidden = !showSessions || !showPorts;
     this._els.sessions.hidden = !showSessions;
     if (!found.length) {
       this._els.ports.replaceChildren();
@@ -190,9 +197,11 @@ class UgreenPortsCard extends HTMLElement {
     this._peak = Math.max(this._peak, total, 1);
     const scale = Number(this._config.max_power) || this._peak;
 
-    this._els.ports.replaceChildren(
-      ...found.map((port, index) => this._portRow(port, scale, SERIES[index % SERIES.length])),
-    );
+    if (showPorts) {
+      this._els.ports.replaceChildren(
+        ...found.map((port, index) => this._portRow(port, scale, SERIES[index % SERIES.length])),
+      );
+    }
     if (showSessions) this._sessionRows(found);
   }
 
