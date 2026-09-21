@@ -51,20 +51,35 @@ def test_the_message_takes_no_placeholder() -> None:
         assert "{" not in message, f"{name}: the refusal took a placeholder again"
 
 
-def test_the_card_defines_its_element_only_if_nothing_else_has() -> None:
+def test_every_card_defines_its_element_only_if_nothing_else_has() -> None:
     """A module loaded twice must not throw on the second pass.
 
     `customElements.define` for a name already taken is an exception, and the
-    page shows it. The card can be loaded twice -- a resource list holding an
-    older url for this same file, a dashboard adding it by hand -- so the
-    definition is guarded and the rest of the module is a no-op the second
-    time.
+    page shows it. A card can be loaded twice -- a resource list holding an
+    older url for the same file, a dashboard adding it by hand -- so every
+    definition is guarded and a second load is a no-op.
+
+    The cards that share `ugreen-ui.js` do it through `defineCard`, which holds
+    the guard once; the wallpaper card, which predates the module, holds its
+    own.
     """
-    card = (_COMPONENT / "www" / "ugreen-wallpaper-card.js").read_text(encoding="utf-8")
-    define = "customElements.define('ugreen-wallpaper-card'"
-    assert card.count(define) == 1, "the card defines its element more than once"
-    guard = card.index("if (!customElements.get('ugreen-wallpaper-card'))")
-    assert guard < card.index(define), "the definition is not behind the guard"
-    assert card.index("window.customCards.push") > guard, (
-        "a second load would still push the card into the picker again"
+    www = _COMPONENT / "www"
+    cards = sorted(path for path in www.glob("*-card.js"))
+    assert len(cards) >= 2, "no cards found -- this test is reading the wrong path"
+
+    shared = (www / "ugreen-ui.js").read_text(encoding="utf-8")
+    assert "if (customElements.get(tag)) return;" in shared, (
+        "defineCard no longer refuses a name that is taken"
     )
+
+    for card in cards:
+        source = card.read_text(encoding="utf-8")
+        direct = source.count("customElements.define(")
+        if direct == 0:
+            assert "defineCard(" in source, f"{card.name} never defines its element"
+            continue
+        assert direct == 1, f"{card.name} defines its element more than once"
+        guard = source.find("customElements.get(")
+        assert 0 <= guard < source.index("customElements.define("), (
+            f"{card.name} defines its element without checking the name first"
+        )

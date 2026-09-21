@@ -1,245 +1,61 @@
-# The view in docs/dashboard.png, as one screenful in four columns.
+# The view in docs/dashboard.png: the charger on one screen.
 #
-# REQUIRES, beyond this integration:
-#   statistics-graph-chart-card  (HACS -> Frontend), used by the Power history
-#   card. Without it that one card shows "Custom element doesn't exist" and the
-#   rest of the dashboard is fine -- delete the card, or swap it for the
-#   built-in `type: history-graph` with the same entities.
+# Every card here ships with the integration -- installing it is enough, there
+# is nothing to add in HACS and no resource to wire up by hand.
 #
-#   The screensaver card is this integration's own, registered for you; nothing
-#   to install.
+# TO USE: paste under `views:` in a dashboard's raw configuration editor, then
+#   - replace the device_id with your charger's (Settings -> Devices -> your
+#     charger; it is the last part of the URL), and
+#   - drop `max_power` or set it to your model's rating; without it the bars
+#     scale to the largest total the card has seen.
 #
 # The Custom mode limits card is conditional: it appears only while the charger
 # is in that mode, because the sensors behind it read nothing under a preset.
-# The session figures are per port and reset when a port starts drawing again.
-#
-# TO USE: paste under `views:` in a dashboard's raw configuration editor, then
-#   - replace ugreen_nexode_pro_x783 with your charger's own entity prefix, and
-#   - replace the device_id under the screensaver card with your charger's
-#     (Settings -> Devices -> your charger; it is the last part of the URL).
+# Its entity ids are the one part of this that is not device_id-driven, so they
+# need the charger's own prefix.
 
-title: UGREEN Nexode Pro 300W
+title: Charger
 path: charger
+icon: mdi:ev-station
 type: sections
 max_columns: 4
 dense_section_placement: true
 sections:
 - type: grid
-  column_span: 1
+  column_span: 4
   cards:
-  - type: heading
-    heading: Power
-    icon: mdi:lightning-bolt
-    heading_style: title
-  - type: gauge
-    entity: sensor.ugreen_nexode_pro_x783_total_power
-    name: Total power
-    unit: W
-    min: 0
-    max: 300
-    needle: true
-    severity:
-      green: 0
-      yellow: 150
-      red: 250
-  - type: tile
-    entity: select.ugreen_nexode_pro_x783_charging_mode
-    name: Mode
-    icon: mdi:ev-station
-  - type: tile
-    entity: sensor.ugreen_nexode_pro_x783_cloud_status
-    name: Cloud
-    icon: mdi:cloud-check-variant
-  - type: heading
-    heading: Screen
-    icon: mdi:monitor
-    heading_style: title
-  - type: tile
-    entity: number.ugreen_nexode_pro_x783_screen_brightness
-    name: Brightness
-    icon: mdi:brightness-6
-    features:
-    - type: numeric-input
-      style: slider
-  - type: tile
-    entity: select.ugreen_nexode_pro_x783_screen_off_time
-    name: Screen off
-    icon: mdi:monitor-off
-  - type: tile
-    entity: switch.ugreen_nexode_pro_x783_screensaver
-    name: Screensaver
-    icon: mdi:image-frame
-  - type: tile
-    entity: select.ugreen_nexode_pro_x783_wallpaper
-    name: Wallpaper
-    icon: mdi:image-multiple
-  - type: tile
-    entity: select.ugreen_nexode_pro_x783_clock_style
-    name: Clock style
-    icon: mdi:clock-outline
-  - type: tile
-    entity: select.ugreen_nexode_pro_x783_time_format
-    name: Time format
-    icon: mdi:clock-digital
-  - type: heading
-    heading: Device
-    icon: mdi:information-outline
-    heading_style: title
-  - type: tile
-    entity: update.ugreen_nexode_pro_x783_firmware
-    name: Firmware
-    icon: mdi:chip
-  - type: tile
-    entity: sensor.ugreen_nexode_pro_x783_energy
-    name: Energy, all time
-    icon: mdi:counter
-  - type: markdown
-    text_only: true
-    content: '**Firmware** {{ state_attr(''sensor.ugreen_nexode_pro_x783_total_power'',''firmware'') }}
-      · **Wi-Fi** {{ state_attr(''sensor.ugreen_nexode_pro_x783_total_power'',''ssid'') }}
-
-
-      **MAC** `{{ state_attr(''sensor.ugreen_nexode_pro_x783_cloud_status'',''mac'') }}`'
+  - type: custom:ugreen-charger-card
+    device_id: 0123456789abcdef0123456789abcdef
+    max_power: 300
+    grid_options:
+      columns: full
 - type: grid
-  column_span: 1
+  column_span: 2
+  cards:
+  - type: custom:ugreen-ports-card
+    device_id: 0123456789abcdef0123456789abcdef
+    max_power: 300
+    grid_options:
+      columns: full
+- type: grid
+  column_span: 2
+  cards:
+  - type: custom:ugreen-power-card
+    device_id: 0123456789abcdef0123456789abcdef
+    hours: 3
+    grid_options:
+      columns: full
+  - type: custom:ugreen-energy-card
+    device_id: 0123456789abcdef0123456789abcdef
+    period: week
+    grid_options:
+      columns: full
+- type: grid
+  column_span: 2
   cards:
   - type: custom:ugreen-wallpaper-card
     device_id: 0123456789abcdef0123456789abcdef
     title: Screensaver
-- type: grid
-  column_span: 2
-  cards:
-  - type: heading
-    heading: Ports
-    icon: mdi:usb-port
-    heading_style: title
-  - type: grid
-    columns: 4
-    square: false
-    grid_options:
-      columns: full
-    cards:
-    - type: tile
-      entity: sensor.ugreen_nexode_pro_x783_c1_power
-      name: C1
-      icon: mdi:usb-c-port
-      color: green
-      vertical: true
-      tap_action:
-        action: more-info
-    - type: tile
-      entity: sensor.ugreen_nexode_pro_x783_c2_power
-      name: C2
-      icon: mdi:usb-c-port
-      color: green
-      vertical: true
-      tap_action:
-        action: more-info
-    - type: tile
-      entity: sensor.ugreen_nexode_pro_x783_c3_power
-      name: C3
-      icon: mdi:usb-c-port
-      color: green
-      vertical: true
-      tap_action:
-        action: more-info
-    - type: tile
-      entity: sensor.ugreen_nexode_pro_x783_c4_power
-      name: C4
-      icon: mdi:usb-c-port
-      color: green
-      vertical: true
-      tap_action:
-        action: more-info
-    - type: tile
-      entity: sensor.ugreen_nexode_pro_x783_c5_power
-      name: C5
-      icon: mdi:usb-c-port
-      color: green
-      vertical: true
-      tap_action:
-        action: more-info
-    - type: tile
-      entity: sensor.ugreen_nexode_pro_x783_c6_power
-      name: C6
-      icon: mdi:usb-c-port
-      color: green
-      vertical: true
-      tap_action:
-        action: more-info
-    - type: tile
-      entity: sensor.ugreen_nexode_pro_x783_a1_power
-      name: A1
-      icon: mdi:usb-port
-      color: blue
-      vertical: true
-      tap_action:
-        action: more-info
-    - type: tile
-      entity: sensor.ugreen_nexode_pro_x783_dc_power
-      name: DC
-      icon: mdi:current-dc
-      color: blue
-      vertical: true
-      tap_action:
-        action: more-info
-  - type: heading
-    heading: This session
-    icon: mdi:battery-clock
-    heading_style: title
-  - type: markdown
-    text_only: true
-    content: 'A session starts when a port begins drawing and ends after a gap with nothing on it. The charger cannot tell a cable from a device, so a port left plugged in and full simply ends its session.'
-  - type: entities
-    title: Charge put in
-    grid_options:
-      columns: full
-    entities:
-    - entity: sensor.ugreen_nexode_pro_x783_c1_session_energy
-      name: C1
-      secondary_info: last-changed
-    - entity: sensor.ugreen_nexode_pro_x783_c2_session_energy
-      name: C2
-      secondary_info: last-changed
-    - entity: sensor.ugreen_nexode_pro_x783_c3_session_energy
-      name: C3
-      secondary_info: last-changed
-    - entity: sensor.ugreen_nexode_pro_x783_c4_session_energy
-      name: C4
-      secondary_info: last-changed
-    - entity: sensor.ugreen_nexode_pro_x783_c5_session_energy
-      name: C5
-      secondary_info: last-changed
-    - entity: sensor.ugreen_nexode_pro_x783_c6_session_energy
-      name: C6
-      secondary_info: last-changed
-    - entity: sensor.ugreen_nexode_pro_x783_a1_session_energy
-      name: A1
-      secondary_info: last-changed
-    - entity: sensor.ugreen_nexode_pro_x783_dc_session_energy
-      name: DC
-      secondary_info: last-changed
-  - type: entities
-    title: Last session that ended
-    grid_options:
-      columns: full
-    entities:
-    - entity: event.ugreen_nexode_pro_x783_c1_charging
-      name: C1
-    - entity: event.ugreen_nexode_pro_x783_c2_charging
-      name: C2
-    - entity: event.ugreen_nexode_pro_x783_c3_charging
-      name: C3
-    - entity: event.ugreen_nexode_pro_x783_c4_charging
-      name: C4
-    - entity: event.ugreen_nexode_pro_x783_c5_charging
-      name: C5
-    - entity: event.ugreen_nexode_pro_x783_c6_charging
-      name: C6
-    - entity: event.ugreen_nexode_pro_x783_a1_charging
-      name: A1
-    - entity: event.ugreen_nexode_pro_x783_dc_charging
-      name: DC
   - type: conditional
     conditions:
     - condition: state
@@ -248,8 +64,6 @@ sections:
     card:
       type: entities
       title: Custom mode limits
-      grid_options:
-        columns: full
       entities:
       - entity: sensor.ugreen_nexode_pro_x783_c1_custom_mode_limit
         name: C1
@@ -263,102 +77,3 @@ sections:
         name: C5
       - entity: sensor.ugreen_nexode_pro_x783_c6_a_custom_mode_limit
         name: C6+A
-  - type: heading
-    heading: Power history
-    icon: mdi:chart-line
-    heading_style: title
-  - type: custom:statistics-graph-chart-card
-    show_interval_picker: true
-    hours_to_show: 3
-    points_per_hour: 60
-    auto_scale_points: true
-    height: 160
-    update_interval: 60
-    x_grid_style: dashed
-    y_grid_style: dashed
-    chart_mode: timeline
-    grid_options:
-      columns: full
-    drill_down: true
-    extended_window_multiplier: 2
-    interval_options:
-    - 1H
-    - 4H
-    - 12H
-    - 24H
-    - 7D
-    - 30D
-    auto_scale_rules:
-    - up_to_hours: 24
-      group_by: interval
-      points_per_hour: 12
-    - up_to_hours: 168
-      group_by: interval
-      points_per_hour: 2
-    - up_to_hours: 720
-      group_by: 2h
-    entities:
-    - entity: sensor.ugreen_nexode_pro_x783_total_power
-      name: Total
-      color: '#f5a623'
-      legend_stats:
-      - live
-      primary_state_as: last
-      show_color_dot: true
-      decimals: 1
-    - entity: sensor.ugreen_nexode_pro_x783_c1_power
-      name: C1
-      color: '#4a90d9'
-      legend_stats:
-      - live
-      primary_state_as: last
-      show_color_dot: true
-      decimals: 1
-    - entity: sensor.ugreen_nexode_pro_x783_c2_power
-      name: C2
-      color: '#7ed321'
-      legend_stats:
-      - live
-      primary_state_as: last
-      show_color_dot: true
-      decimals: 1
-    - entity: sensor.ugreen_nexode_pro_x783_c3_power
-      name: C3
-      color: '#bd10e0'
-      legend_stats:
-      - live
-      primary_state_as: last
-      show_color_dot: true
-      decimals: 1
-    - entity: sensor.ugreen_nexode_pro_x783_c4_power
-      name: C4
-      color: '#50e3c2'
-      legend_stats:
-      - live
-      primary_state_as: last
-      show_color_dot: true
-      decimals: 1
-    - entity: sensor.ugreen_nexode_pro_x783_c5_power
-      name: C5
-      color: '#e35050'
-      legend_stats:
-      - live
-      primary_state_as: last
-      show_color_dot: true
-      decimals: 1
-    - entity: sensor.ugreen_nexode_pro_x783_c6_power
-      name: C6
-      color: '#9013fe'
-      legend_stats:
-      - live
-      primary_state_as: last
-      show_color_dot: true
-      decimals: 1
-    - entity: sensor.ugreen_nexode_pro_x783_a1_power
-      name: A1
-      color: '#b8e986'
-      legend_stats:
-      - live
-      primary_state_as: last
-      show_color_dot: true
-      decimals: 1

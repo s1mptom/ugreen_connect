@@ -680,31 +680,44 @@ class _Resources:
 async def test_one_resource_per_card_even_after_the_url_changes(hass):
     """Two resources for one file load the module twice, and the second throws.
 
-    An earlier release registered this card under a url carrying its version.
-    Matching the url whole left that entry beside the current one, so the
-    browser fetched both and the second `customElements.define` failed -- the
-    card still drawn, by whichever copy won, and a red error beside it.
-    """
-    from custom_components.ugreen_connect.frontend import CARD_URL, _register_resource
+    An earlier release registered the wallpaper card under a url carrying its
+    version. Matching the url whole left that entry beside the current one, so
+    the browser fetched both and the second `customElements.define` failed --
+    the card still drawn, by whichever copy won, and a red error beside it.
 
+    Every card the integration ships gets a resource; the module they import
+    does not, because they fetch it themselves by relative path.
+    """
+    from custom_components.ugreen_connect.frontend import (
+        CARD_FILES,
+        WWW_URL,
+        _register_resource,
+    )
+
+    wallpaper = f"{WWW_URL}/ugreen-wallpaper-card.js"
     resources = _Resources(
         [
-            {"id": "old", "url": f"{CARD_URL}?v=0.10.0", "type": "module"},
+            {"id": "old", "url": f"{wallpaper}?v=0.10.0", "type": "module"},
             {"id": "other", "url": "/local/somebody-elses-card.js", "type": "module"},
         ]
     )
     hass.data["lovelace"] = SimpleNamespace(resources=resources)
 
-    await _register_resource(hass, CARD_URL)
+    for name in CARD_FILES:
+        await _register_resource(hass, f"{WWW_URL}/{name}")
 
     urls = [item["url"] for item in resources.async_items()]
-    assert urls == ["/local/somebody-elses-card.js", CARD_URL]
-    assert resources.deleted == ["old"]
-
-    # Run again, as every restart does: still one, and nothing deleted twice.
-    await _register_resource(hass, CARD_URL)
-    assert [item["url"] for item in resources.async_items()] == [
+    assert urls == [
         "/local/somebody-elses-card.js",
-        CARD_URL,
+        *[f"{WWW_URL}/{name}" for name in CARD_FILES],
     ]
+    assert resources.deleted == ["old"]
+    assert not any("ugreen-ui.js" in url for url in urls), (
+        "the shared module is imported by the cards, not loaded on its own"
+    )
+
+    # Run again, as every restart does: still one each, and nothing deleted twice.
+    for name in CARD_FILES:
+        await _register_resource(hass, f"{WWW_URL}/{name}")
+    assert [item["url"] for item in resources.async_items()] == urls
     assert resources.deleted == ["old"]

@@ -17,6 +17,8 @@ const OUT_W = 560;
 const OUT_H = 170;
 const RATIO = OUT_W / OUT_H;
 
+import { pending } from './ugreen-ui.js';
+
 /* Everything the card says, in one place.
  *
  * To add a language: copy the whole `en` block, key it by the language code
@@ -170,6 +172,8 @@ class UgreenWallpaperCard extends HTMLElement {
     this._config = config;
     this._image = null;
     this._built = false;
+    // What has been asked for and not yet confirmed; see `pending`.
+    this._asked = pending();
     this.innerHTML = '';
   }
 
@@ -290,16 +294,17 @@ class UgreenWallpaperCard extends HTMLElement {
 
     this._power.addEventListener('change', () => {
       const id = this._entities().screensaver;
-      if (id) {
-        this._hass.callService('switch', this._power.checked ? 'turn_on' : 'turn_off',
-          { entity_id: id });
-      }
+      if (!id) return;
+      const wanted = this._power.checked;
+      this._asked.set('screensaver', wanted ? 'on' : 'off');
+      this._settings.hidden = !wanted;
+      this._hass.callService('switch', wanted ? 'turn_on' : 'turn_off', { entity_id: id });
     });
     this.querySelectorAll('[data-fmt]').forEach((b) => b.addEventListener('click', () => {
-      this._select(this._entities().format, b.dataset.fmt);
+      this._select(this._entities().format, b.dataset.fmt, 'format');
     }));
     this.querySelectorAll('[data-sty]').forEach((b) => b.addEventListener('click', () => {
-      this._select(this._entities().style, b.dataset.sty);
+      this._select(this._entities().style, b.dataset.sty, 'style');
     }));
     this.querySelector('input[type=file]').addEventListener('change', (e) => {
       const file = e.target.files && e.target.files[0];
@@ -321,22 +326,22 @@ class UgreenWallpaperCard extends HTMLElement {
   _sync() {
     if (!this._built || !this._hass) return;
     const ent = this._entities();
-    const on = this._state(ent.screensaver)?.state === 'on';
+    const on = this._asked.read('screensaver', this._state(ent.screensaver)?.state) === 'on';
     this._power.checked = on;
     this._settings.hidden = !on;
 
-    const fmt = this._state(ent.format)?.state;
+    const fmt = this._asked.read('format', this._state(ent.format)?.state);
     this.querySelectorAll('[data-fmt]').forEach((b) => {
       b.setAttribute('aria-pressed', String(b.dataset.fmt === fmt));
     });
-    const sty = this._state(ent.style)?.state;
+    const sty = this._asked.read('style', this._state(ent.style)?.state);
     this.querySelectorAll('[data-sty]').forEach((b) => {
       b.setAttribute('aria-pressed', String(b.dataset.sty === sty));
     });
 
     const wall = this._state(ent.wallpaper);
     const list = wall?.attributes?.wallpapers || [];
-    const current = wall?.state;
+    const current = this._asked.read('wallpaper', wall?.state);
     const signature = JSON.stringify([list.map((w) => w.id), current]);
     if (signature !== this._gridSig) {
       this._gridSig = signature;
@@ -421,7 +426,7 @@ class UgreenWallpaperCard extends HTMLElement {
     // The name goes under the tile either way, so a plain one is left empty.
     el.innerHTML = (pic ? '<img alt="">' : '') + '<span class="mark">✓</span>';
     if (pic) this._show(el.querySelector('img'), w);
-    el.addEventListener('click', () => this._select(this._entities().wallpaper, w.id));
+    el.addEventListener('click', () => this._select(this._entities().wallpaper, w.id, 'wallpaper'));
     cell.appendChild(el);
     const cap = document.createElement('span');
     cap.className = 'lab';
@@ -430,8 +435,9 @@ class UgreenWallpaperCard extends HTMLElement {
     return cell;
   }
 
-  _select(entityId, option) {
+  _select(entityId, option, key) {
     if (!entityId) return;
+    if (key) this._asked.set(key, option);
     this._hass.callService('select', 'select_option', { entity_id: entityId, option });
   }
 
