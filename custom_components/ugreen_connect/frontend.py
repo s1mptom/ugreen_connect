@@ -48,15 +48,18 @@ CARD_FILES: tuple[str, ...] = (
 CARD_FILE = CARD_FILES[-1]  # kept for anything still asking for the first card
 WWW_URL = f"/{DOMAIN}"
 CARD_URL = f"{WWW_URL}/{CARD_FILE}"
-_REGISTERED = f"{DOMAIN}_card_registered"
+_SERVED = f"{DOMAIN}_www_served"
+_RESOURCES = f"{DOMAIN}_card_resources"
 
 
 async def async_register_card(hass: HomeAssistant) -> None:
-    """Expose the cards' JS and load them into the frontend, once."""
-    if hass.data.get(_REGISTERED):
-        return
-    hass.data[_REGISTERED] = True
+    """Expose the cards' JS and load them into the frontend.
 
+    Safe to call again, and worth calling again: a release that adds a card
+    reaches a running installation as new files plus a reload of the entry, and
+    the card the user is reading about is only registered if the second call
+    looks at what the first one did rather than at whether it happened.
+    """
     folder = os.path.join(os.path.dirname(__file__), "www")
     missing = [name for name in CARD_FILES if not os.path.exists(os.path.join(folder, name))]
     if missing:
@@ -65,14 +68,23 @@ async def async_register_card(hass: HomeAssistant) -> None:
 
     # The whole folder, not a path per card: the cards import their shared
     # module by relative url, and that module is only fetchable if the folder
-    # it sits in is served.
-    await hass.http.async_register_static_paths(
-        [StaticPathConfig(WWW_URL, folder, cache_headers=False)]
-    )
+    # it sits in is served. Registering it again adds a second route to the
+    # same folder rather than failing, which is pointless rather than harmful,
+    # so this part happens once however often the entry is set up.
+    if not hass.data.get(_SERVED):
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(WWW_URL, folder, cache_headers=False)]
+        )
+        hass.data[_SERVED] = True
+
+    done: set[str] = hass.data.setdefault(_RESOURCES, set())
     for name in CARD_FILES:
+        if name in done:
+            continue
         url = f"{WWW_URL}/{name}"
         if not await _register_resource(hass, url):
             add_extra_js_url(hass, url)
+        done.add(name)
     _LOGGER.debug("Serving %s from %s", ", ".join(CARD_FILES), WWW_URL)
 
 
