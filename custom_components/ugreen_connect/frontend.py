@@ -46,23 +46,32 @@ async def async_register_card(hass: HomeAssistant) -> None:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(CARD_URL, path, cache_headers=False)]
     )
-    add_extra_js_url(hass, CARD_URL)
-    await _register_resource(hass, CARD_URL)
+    registered_as_resource = await _register_resource(hass, CARD_URL)
+    if not registered_as_resource:
+        # Storage-mode Lovelace already loads the module via the resource
+        # entry above; only fall back to extra_js_url for YAML-mode setups,
+        # where that resource collection is read-only. Calling both defines
+        # the custom element twice, and the second definition throws -- a red
+        # error in the console, with the card left showing "Konfigurationsfehler".
+        add_extra_js_url(hass, CARD_URL)
     _LOGGER.debug("Serving %s", CARD_URL)
 
 
-async def _register_resource(hass: HomeAssistant, url: str) -> None:
+async def _register_resource(hass: HomeAssistant, url: str) -> bool:
     """Add the card to Lovelace's resource list if it is not already there.
 
     Only storage-mode Lovelace exposes a writable resource collection; in
     YAML mode there is nothing to do here and the user lists resources in
     their own config, so any failure is downgraded to a debug line.
+
+    Returns True if the module is (now) loaded via this resource collection,
+    so the caller knows not to also fall back to extra_js_url.
     """
     lovelace = hass.data.get("lovelace")
     resources = getattr(lovelace, "resources", None)
     if resources is None:
         _LOGGER.debug("Lovelace resources unavailable; relying on extra_js_url")
-        return
+        return False
 
     try:
         if not resources.loaded:
@@ -88,10 +97,12 @@ async def _register_resource(hass: HomeAssistant, url: str) -> None:
             await resources.async_delete_item(item["id"])
             _LOGGER.debug("Removed stale Lovelace resource %s", item.get("url"))
         if any(item.get("url") == url for item in items):
-            return
+            return True
         if not hasattr(resources, "async_create_item"):
-            return  # YAML mode: read-only
+            return False  # YAML mode: read-only
         await resources.async_create_item({"res_type": "module", "url": url})
         _LOGGER.debug("Registered Lovelace resource %s", url)
+        return True
     except Exception as err:  # noqa: BLE001 - never let this break setup
         _LOGGER.warning("Could not register Lovelace resource %s: %s", url, err)
+        return False
