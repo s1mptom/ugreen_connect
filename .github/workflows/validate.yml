@@ -83,7 +83,11 @@ jobs:
           done
       # And what the chart does to readings before it draws them, which is the
       # one piece of card code that can be wrong rather than merely ugly.
-      - run: node --test tests_js/
+      #
+      # The files are named rather than the folder: node 22 takes a folder as a
+      # module to load and fails to find it, and walking a directory for tests
+      # only arrived after it.
+      - run: node --test tests_js/*.test.mjs
 
   tests:
     name: Session logic
