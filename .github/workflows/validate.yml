@@ -65,6 +65,30 @@ jobs:
       # longer exist, not style. See ruff.toml.
       - run: ruff check .
 
+  cards:
+    name: Cards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The cards are plain modules with no build step, so nothing catches a
+      # typo in them until a browser does -- and a browser only says so to
+      # whoever opened the dashboard. `node --check` parses each file the way
+      # the browser will.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          for file in custom_components/ugreen_connect/www/*.js; do
+            node --check "$file"
+          done
+      # And what the chart does to readings before it draws them, which is the
+      # one piece of card code that can be wrong rather than merely ugly.
+      #
+      # The files are named rather than the folder: node 22 takes a folder as a
+      # module to load and fails to find it, and walking a directory for tests
+      # only arrived after it.
+      - run: node --test tests_js/*.test.mjs
+
   tests:
     name: Session logic
     runs-on: ubuntu-latest

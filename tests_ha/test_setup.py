@@ -680,31 +680,152 @@ class _Resources:
 async def test_one_resource_per_card_even_after_the_url_changes(hass):
     """Two resources for one file load the module twice, and the second throws.
 
-    An earlier release registered this card under a url carrying its version.
-    Matching the url whole left that entry beside the current one, so the
-    browser fetched both and the second `customElements.define` failed -- the
-    card still drawn, by whichever copy won, and a red error beside it.
-    """
-    from custom_components.ugreen_connect.frontend import CARD_URL, _register_resource
+    An earlier release registered the wallpaper card under a url carrying its
+    version. Matching the url whole left that entry beside the current one, so
+    the browser fetched both and the second `customElements.define` failed --
+    the card still drawn, by whichever copy won, and a red error beside it.
 
+    Every card the integration ships gets a resource; the module they import
+    does not, because they fetch it themselves by relative path.
+    """
+    from custom_components.ugreen_connect.frontend import (
+        CARD_FILES,
+        WWW_URL,
+        _register_resource,
+    )
+
+    wallpaper = f"{WWW_URL}/ugreen-wallpaper-card.js"
     resources = _Resources(
         [
-            {"id": "old", "url": f"{CARD_URL}?v=0.10.0", "type": "module"},
+            {"id": "old", "url": f"{wallpaper}?v=0.10.0", "type": "module"},
             {"id": "other", "url": "/local/somebody-elses-card.js", "type": "module"},
         ]
     )
     hass.data["lovelace"] = SimpleNamespace(resources=resources)
 
-    await _register_resource(hass, CARD_URL)
+    for name in CARD_FILES:
+        await _register_resource(hass, f"{WWW_URL}/{name}")
 
     urls = [item["url"] for item in resources.async_items()]
-    assert urls == ["/local/somebody-elses-card.js", CARD_URL]
-    assert resources.deleted == ["old"]
-
-    # Run again, as every restart does: still one, and nothing deleted twice.
-    await _register_resource(hass, CARD_URL)
-    assert [item["url"] for item in resources.async_items()] == [
+    assert urls == [
         "/local/somebody-elses-card.js",
-        CARD_URL,
+        *[f"{WWW_URL}/{name}" for name in CARD_FILES],
     ]
     assert resources.deleted == ["old"]
+    assert not any("ugreen-ui.js" in url for url in urls), (
+        "the shared module is imported by the cards, not loaded on its own"
+    )
+
+    # Run again, as every restart does: still one each, and nothing deleted twice.
+    for name in CARD_FILES:
+        await _register_resource(hass, f"{WWW_URL}/{name}")
+    assert [item["url"] for item in resources.async_items()] == urls
+    assert resources.deleted == ["old"]
+
+
+async def test_the_cards_are_served_even_when_the_charger_is_not_there(hass, entry):
+    """A cloud that is down at boot must not take the dashboard with it.
+
+    Registering the cards used to be the last thing setup did, after the login
+    and the first poll. A charger unreachable at boot raises
+    ConfigEntryNotReady long before that line, so the folder the cards are
+    served from was never registered -- while the Lovelace resources written on
+    an earlier run still pointed into it. The browser then fetched six 404s and
+    drew "Configuration error" in place of every card, and kept drawing it
+    until the page was loaded again after a retry went through.
+
+    Which is a whole dashboard broken by a charger being off its shelf.
+    """
+    from unittest.mock import patch
+
+    from homeassistant.setup import async_setup_component
+
+    from custom_components.ugreen_connect.api import UgreenError
+    from custom_components.ugreen_connect.frontend import CARD_FILES, WWW_URL
+
+    class _Down:
+        async def login(self, *_args):
+            raise UgreenError("the cloud is not answering")
+
+    # Lovelace first, so the stub below is what the integration finds rather
+    # than what the real component installs on its way up.
+    assert await async_setup_component(hass, "lovelace", {})
+    resources = _Resources([])
+    hass.data["lovelace"] = SimpleNamespace(resources=resources)
+    entry.add_to_hass(hass)
+    with (
+        patch("custom_components.ugreen_connect.async_get_clientsession"),
+        patch("custom_components.ugreen_connect.UgreenApi", return_value=_Down()),
+    ):
+        assert not await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    assert [item["url"] for item in resources.async_items()] == [
+        f"{WWW_URL}/{name}" for name in CARD_FILES
+    ]
+    assert any(WWW_URL in str(route) for route in hass.http.app.router.resources()), (
+        "the folder the cards import from has to be served, not just listed"
+    )
+
+
+async def test_a_card_added_by_an_update_is_registered_on_the_next_reload(hass):
+    """Updating the integration is new files plus a reload, not a restart.
+
+    The guard used to be "has this run before", which is true from the first
+    boot onwards -- so a card that arrived with the update stayed out of the
+    resource list until Home Assistant itself was restarted, and its config
+    error looked like the update had shipped broken.
+    """
+    from homeassistant.setup import async_setup_component
+
+    from custom_components.ugreen_connect import frontend
+    from custom_components.ugreen_connect.frontend import WWW_URL, async_register_card
+
+    assert await async_setup_component(hass, "http", {})
+    resources = _Resources([])
+    hass.data["lovelace"] = SimpleNamespace(resources=resources)
+
+    before = frontend.CARD_FILES
+    try:
+        frontend.CARD_FILES = before[:-1]  # the release before the last card
+        await async_register_card(hass)
+        assert len(resources.async_items()) == len(before) - 1
+
+        frontend.CARD_FILES = before  # the update, and a reload of the entry
+        await async_register_card(hass)
+    finally:
+        frontend.CARD_FILES = before
+
+    assert [item["url"] for item in resources.async_items()] == [
+        f"{WWW_URL}/{name}" for name in before
+    ]
+
+
+async def test_a_card_that_cannot_be_registered_does_not_stop_the_charger(
+    hass, entry, api, rtcx
+):
+    """The cards run first now, which is a new way for setup to fail.
+
+    Whatever goes wrong while serving a file -- a frontend that is not up, a
+    path that is somehow taken -- leaves a dashboard the user has to build by
+    hand. Letting it out of here would leave them a charger that does not load
+    at all, which is worse by every measure.
+    """
+    from unittest.mock import patch
+
+    entry.add_to_hass(hass)
+    with (
+        patch("custom_components.ugreen_connect.async_get_clientsession"),
+        patch("custom_components.ugreen_connect.UgreenApi", return_value=api),
+        patch("custom_components.ugreen_connect.RtcxClient", return_value=rtcx),
+        patch(
+            "custom_components.ugreen_connect.async_register_card",
+            side_effect=RuntimeError("the frontend is having a day"),
+        ),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert _entity(hass, f"{DEVICE_CODE}_C1_power") is not None

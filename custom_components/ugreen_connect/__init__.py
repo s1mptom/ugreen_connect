@@ -46,6 +46,21 @@ type UgreenConfigEntry = ConfigEntry[UgreenCoordinator]
 
 async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bool:
     """Log in and start polling."""
+    # Before the login, because a dashboard outlives a cloud outage and the
+    # cards are files on disk either way. Registered last, they were skipped
+    # whenever a charger was unreachable at boot -- and the Lovelace resources
+    # from the previous run still pointed at a path nothing was serving, so
+    # every card on the dashboard read "Configuration error" until the page was
+    # loaded again after a retry went through.
+    #
+    # Caught rather than raised, now that it runs first: a card that cannot be
+    # served is a dashboard drawn plainly, while an entry that will not load is
+    # a charger nothing can reach.
+    try:
+        await async_register_card(hass)
+    except Exception:  # noqa: BLE001 - the cards are not worth the entry
+        _LOGGER.exception("Could not register the dashboard cards")
+
     region = entry.data.get(CONF_REGION, DEFAULT_REGION)
     session = async_get_clientsession(hass)
     api = UgreenApi(
@@ -102,7 +117,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
 
     entry.runtime_data = coordinator
     await async_register(hass)
-    await async_register_card(hass)
     async_register_view(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # The poll interval is fixed when the coordinator is built, so a changed

@@ -17,6 +17,8 @@ const OUT_W = 560;
 const OUT_H = 170;
 const RATIO = OUT_W / OUT_H;
 
+import { mount, pending } from './ugreen-ui.js';
+
 /* Everything the card says, in one place.
  *
  * To add a language: copy the whole `en` block, key it by the language code
@@ -79,9 +81,11 @@ const TEXT = {
 };
 
 const css = `
-  .body { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  ha-card { height: 100%; box-sizing: border-box; }
+  .body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
   .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .head h2 { margin: 0; font-size: 1.15em; font-weight: 500; }
+  .head h2 { margin: 0; font-size: 11px; font-weight: 400; text-transform: uppercase;
+             letter-spacing: .10em; color: var(--secondary-text-color); }
   .settings { display: flex; flex-direction: column; gap: 14px; }
   .settings[hidden] { display: none; }
   .field { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -170,7 +174,9 @@ class UgreenWallpaperCard extends HTMLElement {
     this._config = config;
     this._image = null;
     this._built = false;
-    this.innerHTML = '';
+    // What has been asked for and not yet confirmed; see `pending`.
+    this._asked = pending();
+    if (this.shadowRoot) this.shadowRoot.innerHTML = '';
   }
 
   set hass(hass) {
@@ -217,15 +223,19 @@ class UgreenWallpaperCard extends HTMLElement {
   _build() {
     if (this._built) return;
     this._built = true;
-    this.innerHTML = `
+    // A root of its own. In one document this card's class names are ordinary
+    // words -- `.row`, `.grid`, `.field` -- and a layout card holding it had
+    // its own rows turned into flex rows by the rule below. Nothing outside
+    // reaches in here now, and nothing in here reaches out.
+    this._root = mount(this, `
       <ha-card>
         <div class="body">
           <div class="head">
             <h2>${this._config.title || this._t('title')}</h2>
             <ha-switch class="power"></ha-switch>
           </div>
+          <div class="hero"><span class="face centre"><span class="blk"><b></b><i></i></span></span></div>
           <div class="settings">
-            <div class="hero"><span class="face centre"><span class="blk"><b></b><i></i></span></span></div>
             <div class="field fmt"><span>${this._t('timeFormat')}</span>
               <span class="seg">
                 <button data-fmt="12h" aria-pressed="false">${this._t('hours12')}</button>
@@ -275,45 +285,46 @@ class UgreenWallpaperCard extends HTMLElement {
           </div>
         </div>
       </ha-card>
-      <style>${css}</style>`;
+      <style>${css}</style>`);
 
-    this._power = this.querySelector('.power');
-    this._settings = this.querySelector('.settings');
-    this._hero = this.querySelector('.hero');
-    this._grid = this.querySelector('.grid');
-    this._mine = this.querySelector('.grid.mine');
-    this._own = this.querySelector('.own');
-    this._statusEl = this.querySelector('.status');
-    this._editor = this.querySelector('.editor');
-    this._stage = this.querySelector('.stage');
-    this._canvas = this.querySelector('canvas');
+    this._power = this._root.querySelector('.power');
+    this._settings = this._root.querySelector('.settings');
+    this._hero = this._root.querySelector('.hero');
+    this._grid = this._root.querySelector('.grid');
+    this._mine = this._root.querySelector('.grid.mine');
+    this._own = this._root.querySelector('.own');
+    this._statusEl = this._root.querySelector('.status');
+    this._editor = this._root.querySelector('.editor');
+    this._stage = this._root.querySelector('.stage');
+    this._canvas = this._root.querySelector('canvas');
 
     this._power.addEventListener('change', () => {
       const id = this._entities().screensaver;
-      if (id) {
-        this._hass.callService('switch', this._power.checked ? 'turn_on' : 'turn_off',
-          { entity_id: id });
-      }
+      if (!id) return;
+      const wanted = this._power.checked;
+      this._asked.set('screensaver', wanted ? 'on' : 'off');
+      this._settings.hidden = !wanted;
+      this._hass.callService('switch', wanted ? 'turn_on' : 'turn_off', { entity_id: id });
     });
-    this.querySelectorAll('[data-fmt]').forEach((b) => b.addEventListener('click', () => {
-      this._select(this._entities().format, b.dataset.fmt);
+    this._root.querySelectorAll('[data-fmt]').forEach((b) => b.addEventListener('click', () => {
+      this._select(this._entities().format, b.dataset.fmt, 'format');
     }));
-    this.querySelectorAll('[data-sty]').forEach((b) => b.addEventListener('click', () => {
-      this._select(this._entities().style, b.dataset.sty);
+    this._root.querySelectorAll('[data-sty]').forEach((b) => b.addEventListener('click', () => {
+      this._select(this._entities().style, b.dataset.sty, 'style');
     }));
-    this.querySelector('input[type=file]').addEventListener('change', (e) => {
+    this._root.querySelector('input[type=file]').addEventListener('change', (e) => {
       const file = e.target.files && e.target.files[0];
       e.target.value = '';
       if (file) this._open(file);
     });
-    this.querySelector('[data-act=rot]').addEventListener('click', () => {
+    this._root.querySelector('[data-act=rot]').addEventListener('click', () => {
       this._angle += Math.PI / 2; this._fit(true);
     });
-    this.querySelector('[data-act=fit]').addEventListener('click', () => {
+    this._root.querySelector('[data-act=fit]').addEventListener('click', () => {
       this._angle = 0; this._fit(true);
     });
-    this.querySelector('[data-act=cancel]').addEventListener('click', () => this._close());
-    this.querySelector('[data-act=apply]').addEventListener('click', () => this._upload());
+    this._root.querySelector('[data-act=cancel]').addEventListener('click', () => this._close());
+    this._root.querySelector('[data-act=apply]').addEventListener('click', () => this._upload());
     this._gestures();
     window.addEventListener('resize', () => this._draw());
   }
@@ -321,22 +332,22 @@ class UgreenWallpaperCard extends HTMLElement {
   _sync() {
     if (!this._built || !this._hass) return;
     const ent = this._entities();
-    const on = this._state(ent.screensaver)?.state === 'on';
+    const on = this._asked.read('screensaver', this._state(ent.screensaver)?.state) === 'on';
     this._power.checked = on;
     this._settings.hidden = !on;
 
-    const fmt = this._state(ent.format)?.state;
-    this.querySelectorAll('[data-fmt]').forEach((b) => {
+    const fmt = this._asked.read('format', this._state(ent.format)?.state);
+    this._root.querySelectorAll('[data-fmt]').forEach((b) => {
       b.setAttribute('aria-pressed', String(b.dataset.fmt === fmt));
     });
-    const sty = this._state(ent.style)?.state;
-    this.querySelectorAll('[data-sty]').forEach((b) => {
+    const sty = this._asked.read('style', this._state(ent.style)?.state);
+    this._root.querySelectorAll('[data-sty]').forEach((b) => {
       b.setAttribute('aria-pressed', String(b.dataset.sty === sty));
     });
 
     const wall = this._state(ent.wallpaper);
     const list = wall?.attributes?.wallpapers || [];
-    const current = wall?.state;
+    const current = this._asked.read('wallpaper', wall?.state);
     const signature = JSON.stringify([list.map((w) => w.id), current]);
     if (signature !== this._gridSig) {
       this._gridSig = signature;
@@ -421,7 +432,7 @@ class UgreenWallpaperCard extends HTMLElement {
     // The name goes under the tile either way, so a plain one is left empty.
     el.innerHTML = (pic ? '<img alt="">' : '') + '<span class="mark">✓</span>';
     if (pic) this._show(el.querySelector('img'), w);
-    el.addEventListener('click', () => this._select(this._entities().wallpaper, w.id));
+    el.addEventListener('click', () => this._select(this._entities().wallpaper, w.id, 'wallpaper'));
     cell.appendChild(el);
     const cap = document.createElement('span');
     cap.className = 'lab';
@@ -430,8 +441,9 @@ class UgreenWallpaperCard extends HTMLElement {
     return cell;
   }
 
-  _select(entityId, option) {
+  _select(entityId, option, key) {
     if (!entityId) return;
+    if (key) this._asked.set(key, option);
     this._hass.callService('select', 'select_option', { entity_id: entityId, option });
   }
 
@@ -590,7 +602,7 @@ class UgreenWallpaperCard extends HTMLElement {
       return;
     }
     this._busy = true;
-    const apply = this.querySelector('[data-act=apply]');
+    const apply = this._root.querySelector('[data-act=apply]');
     apply.disabled = true;
     this._status(this._t('uploading'));
 

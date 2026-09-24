@@ -161,6 +161,32 @@ readings here instead, one per port and one for the charger, so the Energy
 dashboard can be fed without a Riemann-sum helper. Take the ports or the
 charger, not both: together they count every watt-hour twice.
 
+## The cards
+
+Five cards ship with the integration and are registered for you, so there is
+nothing to install and no resource to add by hand. Each finds the charger's
+entities itself; with two chargers set up, give them `device_id`.
+
+| Card | What it draws |
+|---|---|
+| `custom:ugreen-charger-card` | the total with a bar, today and all-time energy, the charging modes as a row of buttons, cloud and firmware, brightness and screen timeout |
+| `custom:ugreen-ports-card` | every port in one table — power, volts, amps, protocol, the session so far and how long it has run — and the sessions that ended under it |
+| `custom:ugreen-power-card` | power over the last hours, the total behind the ports that make it up, read from the recorder |
+| `custom:ugreen-energy-card` | kilowatt-hours per port for a day, a week, a month or all time |
+| `custom:ugreen-dashboard-card` | the four above arranged as one screen, for a dashboard given over to the charger |
+
+They take their colours from the theme, name the ports as the charger does, and
+a control moved on one holds its new value until the charger confirms it rather
+than springing back mid-write.
+
+Two ways to put them up. [`docs/dashboard.yaml`](docs/dashboard.yaml) is the
+screenful above, laid out in sections, which is the one to take if the charger
+shares its dashboard with anything else. If it does not,
+[`docs/dashboard-panel.yaml`](docs/dashboard-panel.yaml) hands the whole view to
+`ugreen-dashboard-card`, which sizes the pieces to what they hold rather than to
+a column grid — the ports table tall on the left, the chart and the finished
+sessions beside it. Below about 1100px it folds to one column.
+
 ## The screensaver card
 
 The entities above are enough to automate with, but the screensaver is easier to

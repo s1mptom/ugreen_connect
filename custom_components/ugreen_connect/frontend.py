@@ -1,6 +1,6 @@
-"""Serve the dashboard card that ships with this integration.
+"""Serve the dashboard cards that ship with this integration.
 
-Registering it here means installing the integration is enough -- there is no
+Registering them here means installing the integration is enough -- there is no
 second HACS entry to add, and no resource to wire up by hand.
 
 Two things are needed for a Lovelace card to load:
@@ -10,8 +10,15 @@ Two things are needed for a Lovelace card to load:
 
 For (2) we register a Lovelace *resource*. ``add_extra_js_url`` looks simpler,
 but it does not reliably make storage-mode dashboards load the module, whereas a
-resource does. It is kept as a harmless fallback for YAML-mode setups, where the
-resource collection is read-only and the user declares resources themselves.
+resource does.
+
+The two are not additive: doing both leaves the same module loaded twice, once
+by the script tag in the page and once by Lovelace's own loader, and the cards
+then come up undefined often enough to see -- four of four missing on a cold
+load, with "Custom element doesn't exist" in their place and no error anywhere
+else. So the script tag is a fallback rather than a belt: it is added only when
+there is no resource collection to add to, which is YAML mode, where the user
+declares resources themselves.
 """
 
 from __future__ import annotations
@@ -27,32 +34,65 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-CARD_FILE = "ugreen-wallpaper-card.js"
-CARD_URL = f"/{DOMAIN}/{CARD_FILE}"
-_REGISTERED = f"{DOMAIN}_card_registered"
+# One resource per card. The module they share, `ugreen-ui.js`, is not listed:
+# the cards import it by relative path, so the browser fetches it once by
+# itself, and a resource for it would only make the frontend load it again.
+CARD_FILES: tuple[str, ...] = (
+    "ugreen-charger-card.js",
+    "ugreen-dashboard-card.js",
+    "ugreen-energy-card.js",
+    "ugreen-ports-card.js",
+    "ugreen-power-card.js",
+    "ugreen-wallpaper-card.js",
+)
+CARD_FILE = CARD_FILES[-1]  # kept for anything still asking for the first card
+WWW_URL = f"/{DOMAIN}"
+CARD_URL = f"{WWW_URL}/{CARD_FILE}"
+_SERVED = f"{DOMAIN}_www_served"
+_RESOURCES = f"{DOMAIN}_card_resources"
 
 
 async def async_register_card(hass: HomeAssistant) -> None:
-    """Expose the card's JS and load it into the frontend, once."""
-    if hass.data.get(_REGISTERED):
+    """Expose the cards' JS and load them into the frontend.
+
+    Safe to call again, and worth calling again: a release that adds a card
+    reaches a running installation as new files plus a reload of the entry, and
+    the card the user is reading about is only registered if the second call
+    looks at what the first one did rather than at whether it happened.
+    """
+    folder = os.path.join(os.path.dirname(__file__), "www")
+    missing = [name for name in CARD_FILES if not os.path.exists(os.path.join(folder, name))]
+    if missing:
+        _LOGGER.warning("Card files missing from %s: %s", folder, ", ".join(missing))
         return
-    hass.data[_REGISTERED] = True
 
-    path = os.path.join(os.path.dirname(__file__), "www", CARD_FILE)
-    if not os.path.exists(path):
-        _LOGGER.warning("Card file missing at %s", path)
-        return
+    # The whole folder, not a path per card: the cards import their shared
+    # module by relative url, and that module is only fetchable if the folder
+    # it sits in is served. Registering it again adds a second route to the
+    # same folder rather than failing, which is pointless rather than harmful,
+    # so this part happens once however often the entry is set up.
+    if not hass.data.get(_SERVED):
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(WWW_URL, folder, cache_headers=False)]
+        )
+        hass.data[_SERVED] = True
 
-    await hass.http.async_register_static_paths(
-        [StaticPathConfig(CARD_URL, path, cache_headers=False)]
-    )
-    add_extra_js_url(hass, CARD_URL)
-    await _register_resource(hass, CARD_URL)
-    _LOGGER.debug("Serving %s", CARD_URL)
+    done: set[str] = hass.data.setdefault(_RESOURCES, set())
+    for name in CARD_FILES:
+        if name in done:
+            continue
+        url = f"{WWW_URL}/{name}"
+        if not await _register_resource(hass, url):
+            add_extra_js_url(hass, url)
+        done.add(name)
+    _LOGGER.debug("Serving %s from %s", ", ".join(CARD_FILES), WWW_URL)
 
 
-async def _register_resource(hass: HomeAssistant, url: str) -> None:
+async def _register_resource(hass: HomeAssistant, url: str) -> bool:
     """Add the card to Lovelace's resource list if it is not already there.
+
+    Returns whether the resource list will load this card, so the caller can
+    fall back to a script tag when it will not.
 
     Only storage-mode Lovelace exposes a writable resource collection; in
     YAML mode there is nothing to do here and the user lists resources in
@@ -61,8 +101,8 @@ async def _register_resource(hass: HomeAssistant, url: str) -> None:
     lovelace = hass.data.get("lovelace")
     resources = getattr(lovelace, "resources", None)
     if resources is None:
-        _LOGGER.debug("Lovelace resources unavailable; relying on extra_js_url")
-        return
+        _LOGGER.debug("Lovelace resources unavailable; falling back to a script tag")
+        return False
 
     try:
         if not resources.loaded:
@@ -88,10 +128,12 @@ async def _register_resource(hass: HomeAssistant, url: str) -> None:
             await resources.async_delete_item(item["id"])
             _LOGGER.debug("Removed stale Lovelace resource %s", item.get("url"))
         if any(item.get("url") == url for item in items):
-            return
+            return True
         if not hasattr(resources, "async_create_item"):
-            return  # YAML mode: read-only
+            return False  # YAML mode: read-only
         await resources.async_create_item({"res_type": "module", "url": url})
         _LOGGER.debug("Registered Lovelace resource %s", url)
+        return True
     except Exception as err:  # noqa: BLE001 - never let this break setup
         _LOGGER.warning("Could not register Lovelace resource %s: %s", url, err)
+        return False
