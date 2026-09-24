@@ -64,7 +64,13 @@ const STYLE = `
          justify-content: flex-end; height: 100%; cursor: pointer;
          background: none; border: none; padding: 0; font: inherit; }
   .bar .fill { width: 100%; border-radius: 4px 4px 0 0; min-height: 4px; }
+  .bar:hover .fill, .bar:focus-visible .fill { filter: brightness(1.12); }
   .bar .name { font-size: 11px; color: var(--secondary-text-color); }
+  /* Only the ports that took a charge are labelled: eight numbers, six of them
+   * 0.000, is a row of noise around the two that matter. The rest are a hover
+   * or a keyboard focus away. */
+  .bar .value { font-size: 11px; color: var(--primary-text-color); min-height: 1.25em; }
+  .body { position: relative; }
 `;
 
 class UgreenEnergyCard extends HTMLElement {
@@ -105,10 +111,13 @@ class UgreenEnergyCard extends HTMLElement {
           </div>
           <div class="bars"></div>
           <div class="u-empty" hidden></div>
+          <div class="u-tip" hidden></div>
         </div>
       </ha-card>
     `);
     this._els = {
+      body: this._root.querySelector('.body'),
+      tip: this._root.querySelector('.u-tip'),
       bars: this._root.querySelector('.bars'),
       feeds: this._root.querySelector('.feeds'),
       empty: this._root.querySelector('.u-empty'),
@@ -170,6 +179,40 @@ class UgreenEnergyCard extends HTMLElement {
     return this._totals[id] ?? 0;
   }
 
+  /* Every port's reading on hover or focus, including the ones whose bar is a
+   * stub -- "nothing this week" is an answer too. */
+  _tip(event, name, reading, colour, live) {
+    const tip = this._els.tip;
+    tip.replaceChildren();
+    const row = document.createElement('div');
+    row.className = 'line';
+    const key = document.createElement('span');
+    key.className = 'key';
+    key.style.background = live ? colour : 'var(--divider-color)';
+    const value = document.createElement('b');
+    value.textContent = `${reading} kWh`;
+    const label = document.createElement('span');
+    label.className = 'name';
+    label.textContent = name;
+    row.append(key, value, label);
+    tip.appendChild(row);
+    tip.hidden = false;
+    const box = this._els.body.getBoundingClientRect();
+    const mark = (event.currentTarget || event.target).getBoundingClientRect();
+    const middle = mark.left - box.left + mark.width / 2;
+    tip.style.left = `${Math.min(box.width - tip.offsetWidth - 4,
+      Math.max(4, middle - tip.offsetWidth / 2))}px`;
+    // Above the bar, but never above the bars themselves: pushed any higher it
+    // would sit on the heading, and a readout covering the title of the thing
+    // it is reading is worse than one a few pixels lower.
+    const ceiling = this._els.bars.getBoundingClientRect().top - box.top;
+    tip.style.top = `${Math.max(ceiling, mark.top - box.top - tip.offsetHeight - 6)}px`;
+  }
+
+  _hideTip() {
+    this._els.tip.hidden = true;
+  }
+
   _draw(found) {
     const rows = found.map((port, index) => ({
       port,
@@ -188,12 +231,17 @@ class UgreenEnergyCard extends HTMLElement {
       bar.className = value > 0 ? 'bar' : 'bar zero';
       const height = top > 0 ? Math.max(4, (value / top) * 100) : 4;
       const reading = value >= 0.995 ? value.toFixed(2) : value.toFixed(3);
-      bar.title = `${port.name}: ${reading} kWh`;
       bar.innerHTML = `
+        <span class="value">${value > 0 ? `${reading} kWh` : ''}</span>
         <span class="fill" style="height: ${height.toFixed(0)}%; background: ${
           value > 0 ? colour : 'var(--divider-color)'}"></span>
         <span class="name">${port.name}</span>
       `;
+      const readout = (event) => this._tip(event, port.name, reading, colour, value > 0);
+      bar.addEventListener('pointerenter', readout);
+      bar.addEventListener('focus', readout);
+      bar.addEventListener('pointerleave', () => this._hideTip());
+      bar.addEventListener('blur', () => this._hideTip());
       bar.addEventListener('click', () => this.dispatchEvent(new CustomEvent('hass-more-info', {
         detail: { entityId: `${port.base}_energy` }, bubbles: true, composed: true,
       })));

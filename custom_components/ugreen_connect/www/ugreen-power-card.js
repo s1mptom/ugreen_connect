@@ -118,6 +118,16 @@ class UgreenPowerCard extends HTMLElement {
       empty: this._root.querySelector('.u-empty'),
     };
     this._buildRanges();
+
+    // A poll lands every five seconds and redraws the chart, which throws away
+    // the hairline and the readout under the pointer -- the value someone is
+    // in the middle of reading. So the chart holds still while it is being
+    // read, and catches up when the pointer leaves.
+    this._els.chart.addEventListener('pointerenter', () => { this._held = true; });
+    this._els.chart.addEventListener('pointerleave', () => {
+      this._held = false;
+      this._sync();
+    });
   }
 
   _buildRanges() {
@@ -193,6 +203,7 @@ class UgreenPowerCard extends HTMLElement {
 
   _draw(found, total) {
     if (!this._history) return;
+    if (this._held && this._els.chart.firstChild) return;
     const series = [];
     if (total) {
       series.push({
@@ -206,7 +217,8 @@ class UgreenPowerCard extends HTMLElement {
     if (this._config.ports !== false) {
       found.forEach((port, index) => {
         const points = this._points(port.id);
-        if (points.some((point) => point.y > 0)) {
+        // A port whose average rounds to nothing can still have had a peak.
+        if (points.some((point) => (point.hi ?? point.y) > 0)) {
           series.push({
             name: port.name,
             color: SERIES[index % SERIES.length],
@@ -223,7 +235,18 @@ class UgreenPowerCard extends HTMLElement {
     this._els.empty.hidden = drawn.length > 0;
     this._els.empty.textContent = drawn.length ? '' : this._t('noData');
     this._els.chart.replaceChildren(
-      areaChart(drawn, { width: 620, height: 210, unit: ' W' }),
+      areaChart(drawn, {
+        width: 620,
+        height: 210,
+        unit: ' W',
+        // Over a day the hour is what tells two readings apart; over an hour it
+        // is the minute. Both are what the viewer's own locale calls them.
+        label: (at) => new Date(at).toLocaleTimeString(this._hass?.locale?.language || undefined, {
+          hour: '2-digit',
+          minute: '2-digit',
+          ...(this._hours >= 24 ? { weekday: 'short' } : {}),
+        }),
+      }),
     );
     this._els.legend.replaceChildren(...drawn.map((one) => {
       const button = document.createElement('button');

@@ -81,6 +81,9 @@ jobs:
           for file in custom_components/ugreen_connect/www/*.js; do
             node --check "$file"
           done
+      # And what the chart does to readings before it draws them, which is the
+      # one piece of card code that can be wrong rather than merely ugly.
+      - run: node --test tests_js/
 
   tests:
     name: Session logic
