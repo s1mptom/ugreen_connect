@@ -372,13 +372,27 @@ export function areaChart(series, {
 
   for (const one of drawn) {
     const fill = one.fill ?? 0.16;
-    const spiky = one.points.some((point) => (point.hi ?? point.y) - point.y > top / 50);
-    if (spiky) {
+    // The band only goes behind the series that asked for it. Behind all of
+    // them at once it stops reading as "this line, at its highest" and starts
+    // reading as a separate grey series nobody can name.
+    if (one.band && one.points.some((point) => (point.hi ?? point.y) - point.y > top / 50)) {
       const peaks = document.createElementNS(SVG, 'path');
       peaks.setAttribute('d', under(one.points, (point) => point.hi ?? point.y));
       peaks.setAttribute('fill', one.color);
-      peaks.setAttribute('fill-opacity', (fill * 0.45).toFixed(3));
+      peaks.setAttribute('fill-opacity', '0.14');
       svg.appendChild(peaks);
+      // Its own edge, so the top of the band is visibly a line of its own
+      // rather than where a wash happens to stop.
+      const edge = document.createElementNS(SVG, 'path');
+      edge.setAttribute('d', path(one.points, (point) => point.hi ?? point.y));
+      edge.setAttribute('fill', 'none');
+      edge.setAttribute('stroke', one.color);
+      edge.setAttribute('stroke-opacity', '0.45');
+      edge.setAttribute('stroke-width', '1');
+      edge.setAttribute('stroke-dasharray', '4 3');
+      edge.setAttribute('vector-effect', 'non-scaling-stroke');
+      svg.appendChild(edge);
+      one.banded = true;
     }
     const area = document.createElementNS(SVG, 'path');
     area.setAttribute('d', under(one.points, (point) => point.y));
@@ -402,7 +416,10 @@ export function areaChart(series, {
     text.setAttribute('text-anchor', 'end');
     text.setAttribute('fill', 'var(--secondary-text-color)');
     text.setAttribute('font-size', '11');
-    text.textContent = `${(top * fraction).toFixed(top < 10 ? 1 : 0)}${unit}`;
+    // The label is what the line is, not what it rounds to: a gridline at
+    // 7.5 W labelled "8 W" is a chart lying about its own axis.
+    const value = top * fraction;
+    text.textContent = `${Number.isInteger(value) ? value : value.toFixed(1)}${unit}`;
     svg.appendChild(text);
   }
 
