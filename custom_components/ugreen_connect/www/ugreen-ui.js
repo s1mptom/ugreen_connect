@@ -319,13 +319,32 @@ export function html(markup) {
   return template.content.firstElementChild;
 }
 
+/* Where the top of the axis sits.
+ *
+ * Only from this list, so that half of it -- the other labelled gridline -- is
+ * a number a person would say out loud. A top chosen as "whatever is above the
+ * highest reading" gave gridlines at 7.5 W and 3.75 W, and rounding those to
+ * fit made the axis claim 8 W and 4 W for lines that were not there. */
+const AXIS_TOPS = [1, 1.2, 1.4, 1.6, 1.8, 2, 3, 4, 5, 6, 8, 10];
+
+export function axisTop(raw) {
+  const decade = 10 ** Math.floor(Math.log10(raw));
+  const mantissa = raw / decade;
+  return (AXIS_TOPS.find((candidate) => candidate >= mantissa - 1e-9) ?? 10) * decade;
+}
+
+/* The number, not a rounding of it. Two decimals is enough for every top above
+ * and the trailing zeroes go. */
+export function axisLabel(value) {
+  return String(Number(value.toFixed(2)));
+}
+
 /* A chart of one or more series over time, with what the pointer is on.
  *
- * Two shapes per series rather than one: the line is the time-weighted average
- * of each bucket, and behind it a paler fill reaches up to the highest reading
- * in that bucket. On a short range the two are nearly the same shape; on a long
- * one the line is smooth and the fill still shows the spikes the smoothing
- * passed over -- so a peak does not disappear when the range is widened.
+ * One line per series: the time-weighted average of each bucket, filled to the
+ * floor. A wider range smooths it rather than changing it, and the highest
+ * reading a bucket covered is kept for the readout under the pointer -- drawn
+ * as a second shape it read as an unnamed series of its own.
  *
  * Straight segments between bucket centres, not steps: a bucket holds an
  * average over its width, and a staircase drawn through averages is a shape
@@ -347,9 +366,8 @@ export function areaChart(series, {
   const xs = drawn.flatMap((one) => one.points.map((point) => point.x));
   const x0 = Math.min(...xs);
   const x1 = Math.max(...xs);
-  const raw = Math.max(...drawn.flatMap((one) => one.points.map((p) => p.hi ?? p.y)), 1);
-  const step = 10 ** Math.floor(Math.log10(raw));
-  const top = Math.ceil(raw / (step / 2)) * (step / 2);
+  const raw = Math.max(...drawn.flatMap((one) => one.points.map((point) => point.y)), 1);
+  const top = axisTop(raw);
   const X = (x) => (x1 === x0 ? gutter : gutter + ((x - x0) / (x1 - x0)) * (width - gutter));
   const Y = (y) => height - pad - (Math.min(y, top) / top) * (height - pad * 1.6);
   const floor = height - pad;
@@ -372,28 +390,6 @@ export function areaChart(series, {
 
   for (const one of drawn) {
     const fill = one.fill ?? 0.16;
-    // The band only goes behind the series that asked for it. Behind all of
-    // them at once it stops reading as "this line, at its highest" and starts
-    // reading as a separate grey series nobody can name.
-    if (one.band && one.points.some((point) => (point.hi ?? point.y) - point.y > top / 50)) {
-      const peaks = document.createElementNS(SVG, 'path');
-      peaks.setAttribute('d', under(one.points, (point) => point.hi ?? point.y));
-      peaks.setAttribute('fill', one.color);
-      peaks.setAttribute('fill-opacity', '0.14');
-      svg.appendChild(peaks);
-      // Its own edge, so the top of the band is visibly a line of its own
-      // rather than where a wash happens to stop.
-      const edge = document.createElementNS(SVG, 'path');
-      edge.setAttribute('d', path(one.points, (point) => point.hi ?? point.y));
-      edge.setAttribute('fill', 'none');
-      edge.setAttribute('stroke', one.color);
-      edge.setAttribute('stroke-opacity', '0.45');
-      edge.setAttribute('stroke-width', '1');
-      edge.setAttribute('stroke-dasharray', '4 3');
-      edge.setAttribute('vector-effect', 'non-scaling-stroke');
-      svg.appendChild(edge);
-      one.banded = true;
-    }
     const area = document.createElementNS(SVG, 'path');
     area.setAttribute('d', under(one.points, (point) => point.y));
     area.setAttribute('fill', one.color);
@@ -416,10 +412,7 @@ export function areaChart(series, {
     text.setAttribute('text-anchor', 'end');
     text.setAttribute('fill', 'var(--secondary-text-color)');
     text.setAttribute('font-size', '11');
-    // The label is what the line is, not what it rounds to: a gridline at
-    // 7.5 W labelled "8 W" is a chart lying about its own axis.
-    const value = top * fraction;
-    text.textContent = `${Number.isInteger(value) ? value : value.toFixed(1)}${unit}`;
+    text.textContent = `${axisLabel(top * fraction)}${unit}`;
     svg.appendChild(text);
   }
 

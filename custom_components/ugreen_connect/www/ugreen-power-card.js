@@ -22,7 +22,6 @@ const TEXT = {
   en: {
     title: 'Power',
     total: 'Total',
-    peaks: 'shaded: highest in each step',
     hour: '{n}H',
     day: '24H',
     noData: 'No history yet — the recorder has nothing for this range.',
@@ -31,7 +30,6 @@ const TEXT = {
   de: {
     title: 'Leistung',
     total: 'Gesamt',
-    peaks: 'schattiert: Höchstwert je Schritt',
     hour: '{n}H',
     day: '24H',
     noData: 'Noch kein Verlauf — der Recorder hat für diesen Zeitraum nichts.',
@@ -40,7 +38,6 @@ const TEXT = {
   ru: {
     title: 'Мощность',
     total: 'Всего',
-    peaks: 'тень — максимум в интервале',
     hour: '{n}ч',
     day: '24ч',
     noData: 'Истории пока нет — за этот период рекордер ничего не отдал.',
@@ -73,9 +70,6 @@ const STYLE = `
                    background: none; border: none; padding: 0; cursor: pointer;
                    color: var(--secondary-text-color); }
   .legend .swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
-  .legend .band-key { display: inline-flex; align-items: center; gap: 6px;
-                      color: var(--secondary-text-color); }
-  .legend .swatch.band { opacity: .32; border-top: 1px dashed currentColor; }
   .legend b { font-weight: 500; color: var(--primary-text-color); }
 `;
 
@@ -218,7 +212,6 @@ class UgreenPowerCard extends HTMLElement {
         points: this._points(total),
         fill: 0.18,
         entity: total,
-        band: true,
       });
     }
     if (this._config.ports !== false) {
@@ -265,16 +258,6 @@ class UgreenPowerCard extends HTMLElement {
       })));
       return button;
     });
-    // The band is a second thing on the chart, so it gets a key of its own: an
-    // unexplained shape reads as a series nobody can name.
-    const banded = drawn.find((one) => one.banded);
-    if (banded) {
-      const note = document.createElement('span');
-      note.className = 'band-key';
-      note.innerHTML = `<span class="swatch band" style="background: ${banded.color}"></span>${
-        this._t('peaks')}`;
-      keys.push(note);
-    }
     this._els.legend.replaceChildren(...keys);
   }
 }

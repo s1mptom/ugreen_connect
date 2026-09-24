@@ -101,3 +101,19 @@ test('an empty history draws nothing rather than throwing', () => {
   assert.deepEqual(bucket([], 90, { from: NOW - HOUR, to: NOW }), []);
   assert.deepEqual(bucket(null, 90, { from: NOW - HOUR, to: NOW }), []);
 });
+
+const { axisTop, axisLabel } = await import('../custom_components/ugreen_connect/www/ugreen-ui.js');
+
+test('the axis says what its gridlines are', () => {
+  // Both labelled lines -- the top and the half -- have to survive being
+  // written down. The chart used to put a gridline at 7.5 W and label it 8 W.
+  for (const raw of [0.42, 1, 3.1, 14.2, 132, 189, 296, 0.08]) {
+    const top = axisTop(raw);
+    assert.ok(top >= raw, `axis top ${top} is below the highest reading ${raw}`);
+    assert.ok(top <= raw * 2, `axis top ${top} leaves the chart squashed for ${raw}`);
+    for (const value of [top, top / 2]) {
+      assert.equal(Number(axisLabel(value)), value,
+        `a gridline at ${value} would be labelled ${axisLabel(value)}`);
+    }
+  }
+});
