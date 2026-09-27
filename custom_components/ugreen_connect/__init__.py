@@ -58,7 +58,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
     # served is a dashboard drawn plainly, while an entry that will not load is
     # a charger nothing can reach.
     # The account before anything is logged about it (see logsafe).
-    logsafe.install(__package__)
+    logsafe.install()
     logsafe.remember(entry.data.get(CONF_EMAIL), "<account>")
 
     try:
@@ -93,9 +93,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
     # stop at the door instead of raising out of the middle of setup.
     loaded_params = await params_store.async_load()
     stored_params: dict[str, str] = loaded_params if isinstance(loaded_params, dict) else {}
-    # Its keys are cloud ids, read before any device list has named them.
+    # Its keys are cloud ids and a mode, read before any device list has named
+    # them. One without a colon is a cloud id whole.
     for name in stored_params:
-        logsafe.remember_charger(str(name).rpartition(":")[0])
+        logsafe.remember_charger(str(name).rpartition(":")[0] or str(name))
 
     # Telemetry lives behind a second cloud. Setting it up must not block the
     # entry, since the inventory sensors work without it.
@@ -127,8 +128,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
     await async_register(hass)
     async_register_view(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    # Again, for the loggers of the platforms just loaded.
-    logsafe.install(__package__)
     # The poll interval is fixed when the coordinator is built, so a changed
     # option only takes effect once the entry is set up again.
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))

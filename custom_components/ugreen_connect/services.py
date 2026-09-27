@@ -110,7 +110,8 @@ async def async_register(hass: HomeAssistant) -> None:
 
         if path := call.data.get(ATTR_PATH):
             if not hass.config.is_allowed_path(path):
-                raise HomeAssistantError(f"{path} is outside allowlist_external_dirs")
+                # Not the path: it is the owner's own, and errors are logged.
+                raise HomeAssistantError("that path is outside allowlist_external_dirs")
             raw = await hass.async_add_executor_job(_read, path)
         elif url := call.data.get(ATTR_URL):
             raw = await _fetch(hass, url)
@@ -193,5 +194,6 @@ async def _fetch(hass: HomeAssistant, url: str) -> bytes:
 
     async with async_get_clientsession(hass).get(url, timeout=30) as resp:
         if resp.status != 200:
-            raise HomeAssistantError(f"Could not fetch {url}: HTTP {resp.status}")
+            # Not the URL, which can carry a token of its own.
+            raise HomeAssistantError(f"Could not fetch the picture: HTTP {resp.status}")
         return await resp.read()

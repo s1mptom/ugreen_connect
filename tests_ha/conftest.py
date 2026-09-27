@@ -246,6 +246,18 @@ class FakeRtcx:
 
 
 @pytest.fixture(autouse=True)
+def _nothing_remembered_between_tests():
+    """`logsafe` is process-wide, so one test's identifiers would scrub the next's."""
+    from custom_components.ugreen_connect import logsafe
+
+    logsafe._known.clear()
+    logsafe._compiled = None
+    yield
+    logsafe._known.clear()
+    logsafe._compiled = None
+
+
+@pytest.fixture(autouse=True)
 def _event_loop_needs_a_socketpair(socket_enabled):
     """Let the loop build itself.
 

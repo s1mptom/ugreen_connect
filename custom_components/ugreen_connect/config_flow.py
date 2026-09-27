@@ -28,6 +28,7 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
+from . import logsafe
 from .api import UgreenApi, UgreenAuthError, UgreenError
 from .const import (
     CONF_DEBUG_DUMP,
@@ -153,6 +154,9 @@ class UgreenConnectConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             email = user_input[CONF_EMAIL].strip()
+            # Before anything can be logged about the attempt (see logsafe).
+            logsafe.install()
+            logsafe.remember(email, "<account>")
             region = user_input[CONF_REGION]
             api = UgreenApi(
                 async_get_clientsession(self.hass), REGIONS[region], DEFAULT_LANGUAGE

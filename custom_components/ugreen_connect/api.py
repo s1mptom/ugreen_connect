@@ -43,6 +43,7 @@ from .const import (
     DEFAULT_LANGUAGE,
     DEFAULT_REGION,
 )
+from .logsafe import describe
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -244,7 +245,7 @@ class UgreenApi:
                 raise UgreenError(f"{path}: {err}") from err
             else:
                 if not isinstance(payload, dict):
-                    raise UgreenError(f"{path}: unexpected response {payload!r}")
+                    raise UgreenError(f"{path}: unexpected response, {describe(payload)}")
                 return payload
         raise UgreenError(f"{path}: {last}")
 
@@ -348,7 +349,8 @@ class UgreenApi:
         self._refresh_token = _find_first(data, ("refreshToken", "refresh_token"))
         self._user_id = _find_first(data, ("userId", "user_id", "uid"))
         if not self._token:
-            raise UgreenError(f"login succeeded but no access token found in {data!r}")
+            # The answer's shape, not the answer: it is the tokens.
+            raise UgreenError(f"login succeeded but no access token found in {describe(data)}")
         self._credentials = (email, password)
         self._expires_at = _jwt_expiry(self._token)
         return payload
@@ -399,7 +401,7 @@ class UgreenApi:
         )
         data = payload.get("data")
         if not isinstance(data, dict):
-            raise UgreenError(f"getAppInfo returned no data: {payload}")
+            raise UgreenError(f"getAppInfo returned no data: {describe(payload)}")
         return data
 
     async def oauth_authorize(self, client_id: str) -> str:
@@ -419,7 +421,7 @@ class UgreenApi:
         )
         code = (payload.get("data") or {}).get("code")
         if not code:
-            raise UgreenAuthError(f"oauth/authorize returned no code: {payload}")
+            raise UgreenAuthError(f"oauth/authorize returned no code: {describe(payload)}")
         return code
 
     async def upload_wallpaper(
@@ -445,7 +447,8 @@ class UgreenApi:
         ).get("data") or {}
         upload_url, file_key = pre.get("uploadUrl"), pre.get("fileKey")
         if not upload_url or not file_key:
-            raise UgreenError(f"upload-pre-info gave no slot: {pre}")
+            # Not the slot itself: a half-filled one can still hold a signed URL.
+            raise UgreenError(f"upload-pre-info gave no slot: {describe(pre)}")
 
         content_md5 = base64.b64encode(digest).decode()
         try:
@@ -456,8 +459,9 @@ class UgreenApi:
                 timeout=TIMEOUT,
             ) as resp:
                 if resp.status not in (200, 201, 204):
-                    body = (await resp.text())[:300]
-                    raise UgreenError(f"upload failed: HTTP {resp.status} {body}")
+                    # The storage service's error body names the bucket and the
+                    # object, and the object's path can name the account.
+                    raise UgreenError(f"upload failed: HTTP {resp.status}")
         except aiohttp.ClientError as err:
             raise UgreenError(f"upload failed: {err}") from err
 

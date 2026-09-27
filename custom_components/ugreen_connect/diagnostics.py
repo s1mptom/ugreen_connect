@@ -8,7 +8,7 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 
-from . import UgreenConfigEntry
+from . import UgreenConfigEntry, logsafe
 from .coordinator import device_key
 from .protocol import PUBLISHABLE_FRAMES
 
@@ -33,6 +33,48 @@ TO_REDACT = {
     "iotId",
     "ssid",
 }
+
+# What a device entry keeps: the model code and whether it is online. The rest
+# names the household -- the MAC, the serial, the cloud id, a name its owner
+# gave it -- or is a field nobody here has looked at, and one of those should
+# not travel by default. Their names do, so a new field is still noticed.
+DEVICE_FIELDS = ("productSerialNo", "deviceType")
+DEVICE_EXTRA_FIELDS = ("onlineStatus", "networkStatus")
+
+
+def _device(device: dict[str, Any]) -> dict[str, Any]:
+    extra = device.get("extra") or {}
+    return {
+        **{name: device[name] for name in DEVICE_FIELDS if name in device},
+        "extra": {name: extra[name] for name in DEVICE_EXTRA_FIELDS if name in extra},
+        "other_fields": sorted(set(device) - set(DEVICE_FIELDS) - {"extra"}),
+    }
+
+
+def _picture(item: dict[str, Any]) -> dict[str, Any]:
+    """A picture in the library without its link or its file name.
+
+    The link is signed and opens the owner's own photo for a while; the file
+    name is whatever their phone called it.
+    """
+    return {key: value for key, value in item.items() if key not in ("url", "name")}
+
+
+def _scrubbed(value: Any) -> Any:
+    """Every string in the download, with what logsafe knows replaced.
+
+    The net under everything above, as it is under the log: a charger nobody
+    has mapped is read while debug logging is on, and its state bodies go into
+    `state_changes` as they came, MAC or serial inside them or not.
+    """
+    if isinstance(value, str):
+        return logsafe.scrub(value)
+    if isinstance(value, dict):
+        return {_scrubbed(key): _scrubbed(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_scrubbed(item) for item in value]
+    return value
+
 
 # Redaction only ever looks at values, and these sections are keyed by the
 # device code -- so the code redacted everywhere else would still be sitting
@@ -73,8 +115,16 @@ async def async_get_config_entry_diagnostics(
             data[section] = {
                 names.get(code, code): value for code, value in entries.items()
             }
+    data["devices"] = [
+        _device(device) for device in data.get("devices") or [] if isinstance(device, dict)
+    ]
+    for reading in (data.get("power") or {}).values():
+        if isinstance(reading, dict) and isinstance(reading.get("wallpaper_list"), list):
+            reading["wallpaper_list"] = [
+                _picture(item) for item in reading["wallpaper_list"] if isinstance(item, dict)
+            ]
 
-    return {
+    return _scrubbed({
         "entry": async_redact_data(dict(entry.data), TO_REDACT),
         "data": data,
         # The raw frames behind the readings above, per charger and keyed by
@@ -103,4 +153,4 @@ async def async_get_config_entry_diagnostics(
             )
             if key is not None and iot_id
         },
-    }
+    })

@@ -51,7 +51,7 @@ from .const import (
     RTCX_TOKEN_MARGIN,
     SETTING_SETTLE_SECONDS,
 )
-from .logsafe import charger_tag
+from .logsafe import charger_tag, describe
 from .protocol import (
     DC_TURBO_MODE,
     DC_VOLTAGE_BYTE,
@@ -176,8 +176,9 @@ def _unpack_params(stored: dict[str, str] | None) -> dict[tuple[str, int], bytes
             block = bytes.fromhex(value)
             key = (iot_id, int(mode))
         except (TypeError, ValueError):
-            # The name is the charger's cloud id and a mode, so only the mode.
-            _LOGGER.debug("dropping unreadable stored mode parameters for mode %s", mode)
+            # Not the name, and not the part after its colon either: the name
+            # is the charger's cloud id, and one that has no colon is all id.
+            _LOGGER.debug("dropping an unreadable stored mode parameter block")
             continue
         if len(block) not in PARAM_BLOCK_LENGTHS:
             _LOGGER.debug(
@@ -286,7 +287,9 @@ class RtcxClient:
             data = payload.get("data") or {}
             token = data.get("accessToken")
             if not token:
-                raise UgreenAuthError(f"third/login returned no accessToken: {payload}")
+                raise UgreenAuthError(
+                    f"third/login returned no accessToken: {describe(payload)}"
+                )
             self._token = token
             self._expires_at = _jwt_expiry(token) or (time.time() + 3600)
             _LOGGER.debug("RTCX login ok, token valid until %s", self._expires_at)
@@ -350,7 +353,7 @@ class RtcxClient:
             raise UgreenError(f"{path}: {err}") from err
 
         if not isinstance(payload, dict):
-            raise UgreenError(f"{path}: unexpected response {payload!r}")
+            raise UgreenError(f"{path}: unexpected response, {describe(payload)}")
         return payload
 
     async def call(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -494,7 +497,10 @@ class RtcxClient:
             # Asked only for the record, while debug logging is on: a charger
             # nobody has mapped gets its replies written down, which is how it
             # gets mapped. Nothing in them is decoded or published.
-            _LOGGER.debug("state reply of model %s recorded, not decoded", model)
+            if body:
+                _LOGGER.debug("state reply of model %s recorded, not decoded", model)
+            else:
+                _LOGGER.debug("no state reply from model %s to record", model)
             return None
         if not body or len(body) < layout.image_id + IMAGE_ID_LEN:
             return None

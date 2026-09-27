@@ -703,8 +703,13 @@ async def test_the_debug_log_carries_nothing_of_the_household(hass, started, rtc
         blocking=True,
     )
 
+    # Every identifier at once, in words the cloud wrote: no line here would put
+    # them there, so only the net under the lines can take them out.
     async def _fails(*_args, **_kwargs):
-        raise UgreenError(f"gateway refused {DEVICE_CODE}")
+        raise UgreenError(
+            f"gateway refused {DEVICE_CODE} ({IOT_ID}) at EC:1A:C3:00:00:01 "
+            "for someone@example.invalid"
+        )
 
     rtcx.async_power = _fails
     await started.runtime_data.async_refresh()

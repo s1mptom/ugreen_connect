@@ -467,16 +467,22 @@ diagnostics after each. The file has the latest power report under `frames`,
 and the port record that has values is the port you used.
 
 **What is safe to post.** The diagnostics file has the account, your
-charger's serial, cloud id and MAC, and your Wi-Fi name removed. What is left
-is the model, the firmware, the readings, the charger's own bytes and the ids
-of your pictures.
+charger's serial, cloud id and MAC, the name you gave it, your Wi-Fi name, and
+the links to and file names of your pictures removed. What is left is the
+model, the firmware, the readings, the charger's own bytes and the ids of your
+pictures.
 
 The log Home Assistant downloads is **its whole log**, with every other
 integration's messages in it. Post it only if you are asked to. Before you do,
 keep only the lines with `ugreen_connect` in them. A text editor's search
-works, or on a terminal: `grep ugreen_connect home-assistant_*.log`. In those
-lines the integration writes a charger as a tag, for example `charger 3fa9c1`,
-and replaces the account e-mail, the MAC and the Wi-Fi name.
+works, or on a terminal: `grep ugreen_connect home-assistant_*.log`. While this
+integration is loaded, every line of the log, Home Assistant's own included,
+has your account e-mail, your charger's serial, cloud id and MAC, and your
+Wi-Fi name replaced: a charger becomes a tag such as `charger 3fa9c1`, the
+rest `<account>`, `<mac>` and `<wifi>`. A Wi-Fi name that is a short plain
+word, such as `Home`, is left alone, since replacing it would rewrite every
+"Home Assistant" too. Other integrations' private details are theirs to hide,
+which is why only this integration's lines should go.
 
 Do not post `ugreen_connect_debug.json` from the *Debug snapshot* option. It is
 the unedited cloud payload, written for this integration's own development,

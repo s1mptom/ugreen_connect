@@ -82,11 +82,12 @@ def _module():
     coordinator.device_key = device_key
     sys.modules["ugc.coordinator"] = coordinator
 
-    for stem in ("protocol", "diagnostics"):
+    for stem in ("logsafe", "protocol", "diagnostics"):
         source = (_COMPONENT / f"{stem}.py").read_text()
         module = types.ModuleType(f"ugc.{stem}")
         module.__package__ = "ugc"
         sys.modules[f"ugc.{stem}"] = module
+        setattr(package, stem, module)
         exec(compile(source, f"{stem}.py", "exec"), module.__dict__)
     return sys.modules["ugc.diagnostics"]
 
@@ -98,6 +99,9 @@ MAC = "AA:BB:CC:DD:EE:FF"
 UNIT = "FF7H0039306100089"
 IOT_ID = "JuSTiZWwzabFoehKLgWT8UojudBS3LQjz7YOnQvH"
 SSID = "PavelHomeWiFi"
+OWNERS_NAME = "Pavel's desk charger"
+SIGNED_URL = "https://cdn.example/u/12345/me.jpg?Signature=abc&Expires=1"
+PHOTO_NAME = "IMG_2024_family.jpg"
 EMAIL = "someone@example.com"
 PASSWORD = "hunter2"
 SSID_FRAME = "AA0800" + b"MyWifi123".hex().upper()
@@ -112,7 +116,8 @@ def _payload():
                 # Despite the name this is the *model* code, not the unit's, and
                 # it is the one identifier a report is useless without.
                 "productSerialNo": "030002",
-                "deviceName": "UGREEN Nexode Pro X783",
+                "deviceName": OWNERS_NAME,
+                "roomName": "Pavel's study",
                 "deviceMac": MAC,
                 "extra": {"iotId": IOT_ID, "onlineStatus": 1},
             }
@@ -124,6 +129,15 @@ def _payload():
                 "ssid": SSID,
                 "firmware": "1.2.1",
                 "ports": {"C3": {"voltage": 27.9, "current": 1.4, "power": 39.0}},
+                "wallpaper_list": [
+                    {
+                        "id": "5D7BEC",
+                        "url": SIGNED_URL,
+                        "name": PHOTO_NAME,
+                        "size": 81234,
+                        "stock": False,
+                    }
+                ],
             }
         },
         "power_errors": {},
@@ -174,6 +188,10 @@ def _download(payload=None, frames=None):
         ("its cloud id", IOT_ID),
         ("its unit code", UNIT),
         ("the household's network name", SSID),
+        ("the name the owner gave the charger", OWNERS_NAME),
+        ("a field nobody has looked at", "Pavel's study"),
+        ("the signed link to the owner's photo", SIGNED_URL),
+        ("the photo's file name", PHOTO_NAME),
     ],
 )
 def test_nothing_identifying_travels(what, value):
@@ -269,3 +287,44 @@ def test_the_coordinator_s_own_payload_is_not_mutated():
 
     assert payload["power"][UNIT]["ssid"] == SSID
     assert payload["devices"][0]["deviceMac"] == MAC
+
+
+def test_a_device_keeps_the_model_and_the_names_of_the_rest():
+    device = asyncio.run(_download())["data"]["devices"][0]
+    assert device["productSerialNo"] == "030002"
+    assert device["extra"] == {"onlineStatus": 1}
+    assert "deviceName" in device["other_fields"], "a new field is still noticed"
+    assert "roomName" in device["other_fields"]
+
+
+def test_a_picture_keeps_its_id_and_loses_its_link():
+    (picture,) = asyncio.run(_download())["data"]["power"]["device_0"]["wallpaper_list"]
+    assert picture == {"id": "5D7BEC", "size": 81234, "stock": False}
+
+
+def test_what_logsafe_knows_is_gone_from_every_string_in_the_file():
+    """A charger nobody has mapped is read while debug logging is on, and its
+    state bodies travel as they came -- with its MAC inside them, if it keeps
+    one there. The bytes are as good as the MAC itself."""
+    module = _module()
+    logsafe = module.logsafe
+    logsafe._known.clear()
+    logsafe._compiled = None
+    try:
+        logsafe.remember_charger(IOT_ID, UNIT, MAC)
+        mac_bytes = MAC.replace(":", "").lower()
+        payload = _payload()
+        rtcx = types.SimpleNamespace(
+            last_frames={IOT_ID: {"AA/1": "aa01000b00" + mac_bytes + "ffff"}},
+            state_changes={IOT_ID: [{**CHANGE, "body": "0004" + mac_bytes}]},
+        )
+        entry = types.SimpleNamespace(
+            runtime_data=types.SimpleNamespace(data=payload, rtcx=rtcx),
+            data={"email": EMAIL, "password": PASSWORD, "region": "europe"},
+        )
+        text = json.dumps(asyncio.run(module.async_get_config_entry_diagnostics(None, entry)))
+    finally:
+        logsafe._known.clear()
+        logsafe._compiled = None
+    assert mac_bytes not in text.lower()
+    assert "0004<mac>" in text
