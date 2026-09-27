@@ -95,6 +95,9 @@
     "switch": {
       "screensaver": {
         "name": "Bildschirmschoner"
+      },
+      "priority_port": {
+        "name": "{port} zuerst laden"
       }
     },
     "update": {
@@ -212,6 +215,12 @@
     },
     "mode_not_selectable": {
       "message": "Port-Anpassung lässt sich nur in der UgreenConnect-App setzen. Home Assistant setzt die Voreinstellungen; die Port-Anpassung wird im Editor der App eingerichtet und dort ausgewählt."
+    },
+    "priority_not_running": {
+      "message": "Das Ladegerät ist nicht im Prioritätsmodus, daher lässt sich nicht festlegen, welche Anschlüsse zuerst geladen werden. Zuerst Priorität wählen."
+    },
+    "priority_needs_a_port": {
+      "message": "Im Prioritätsmodus muss mindestens ein Anschluss zuerst geladen werden. Erst einen anderen einschalten, dann diesen ausschalten."
     }
   }
 }

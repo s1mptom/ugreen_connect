@@ -128,6 +128,7 @@ STATE_FIELDS_ALL: Final[frozenset[str]] = frozenset(
         "sleep_time",
         "charging_mode",
         "custom",
+        "priority",
         "screensaver",
         "screensaver_theme",
         "screensaver_flag",
@@ -144,7 +145,10 @@ STATE_FIELDS_BY_MODEL: Final[dict[str, frozenset[str]]] = {
     # pair in steps and six masks is the X783's shape, and the 160W's block is
     # 26 bytes where this shape needs 35, with nobody having mapped what it
     # holds.
-    "X776": STATE_FIELDS_ALL - {"wallpapers", "custom"},
+    # `priority` too: its mask is the first byte of a block nobody has mapped
+    # on this model, and a port choice read from the wrong byte is a control
+    # that sets the wrong ports.
+    "X776": STATE_FIELDS_ALL - {"wallpapers", "custom", "priority"},
 }
 
 # Reading a byte and writing it are separate permissions, because the commands
@@ -313,6 +317,9 @@ STATE_MODE_PARAMS = 5
 # cheaper of the two, and the two are held together by a test named
 # test_the_custom_mode_byte_is_the_one_the_mode_table_names.
 CUSTOM_MODE = 4
+# And "priority", held to the table the same way, by
+# test_the_priority_mode_byte_is_the_one_the_mode_table_names.
+PRIORITY_MODE = 3
 # What the custom decoder needs about the X783's block, in body bytes: where
 # the masks start, where the block ends, and how many plain limits come
 # before the shared C6+A byte.
@@ -391,6 +398,39 @@ def parse_custom_mode(
             }
         )
     return groups
+
+
+# --- The priority mode's ports ----------------------------------------------
+#
+# Under `priority` the block's first byte says which ports are charged first,
+# as a bitmask. Read off a live X783 by changing the choice in the app one step
+# at a time: C2 alone reads 2, C3 alone reads 4, C1 with C3 reads 5 -- so C1 is
+# the bit the 5 leaves. The app offers C1, C2 and C3, in any combination, all
+# three at once included.
+PRIORITY_PORTS: Final[tuple[str, ...]] = ("C1", "C2", "C3")
+
+
+def parse_priority(body: bytes, model: str | None = None) -> list[str] | None:
+    """Which ports the priority mode charges first, while it is the mode.
+
+    None under any other mode: the byte is then that mode's own setting --
+    under `dc_turbo` the DC port's voltage -- and reading it as ports would put
+    C1 and C2 in front for a charger giving its DC port 20 V.
+    """
+    if "priority" not in state_fields(model):
+        return None
+    if len(body) <= STATE_MODE_PARAMS or body[STATE_CHARGING_MODE] != PRIORITY_MODE:
+        return None
+    mask = body[STATE_MODE_PARAMS]
+    return [port for bit, port in enumerate(PRIORITY_PORTS) if mask >> bit & 1]
+
+
+def priority_mask(ports: list[str] | tuple[str, ...] | set[str]) -> int:
+    """The byte for a set of ports charged first. Unknown names are refused."""
+    unknown = set(ports) - set(PRIORITY_PORTS)
+    if unknown:
+        raise ValueError(f"not a priority port: {', '.join(sorted(unknown))}")
+    return sum(1 << PRIORITY_PORTS.index(port) for port in set(ports))
 
 
 def crc16_modbus(data: bytes) -> int:

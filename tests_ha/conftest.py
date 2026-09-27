@@ -21,6 +21,7 @@ image carries it, which is why CI does not notice.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -67,6 +68,9 @@ STATE: dict[str, Any] = {
     "screensaver_theme": 1,
     "screensaver_flag": 0,
     "wallpaper": "31F207",
+    # Which ports `priority` charges first -- nothing, since the charger here
+    # runs `custom`, where the byte is a limit rather than a mask.
+    "priority": None,
     # The charging mode is `custom` here, so the parameter block decodes and
     # the six group sensors are created. Switching away leaves them in place
     # and unavailable, which is what
@@ -167,6 +171,7 @@ class FakeRtcx:
         # writes down; a test moves it to say the charger was seen in a mode.
         self.mode_params: dict[str, str] = {}
         self.mode_writes: list[tuple[str, int, str | None]] = []
+        self.priority_writes: list[tuple[str, list[str], str | None]] = []
 
     async def async_login(self) -> None:
         return None
@@ -184,6 +189,17 @@ class FakeRtcx:
         # how long the parameter block is, and nothing else would notice if
         # the entity stopped passing it.
         self.mode_writes.append((iot_id, mode, model))
+
+    async def async_set_priority_ports(
+        self, iot_id: str, ports: list[str], model: str | None = None
+    ) -> None:
+        # The charger takes the choice, so the read-back that follows finds it.
+        # Not at once: a cloud round trip is seconds, and a second press made
+        # meanwhile has to find this one still going.
+        await asyncio.sleep(0.05)
+        self.priority_writes.append((iot_id, list(ports), model))
+        self.state = {**self.state, "priority": list(ports)}
+        self.stale = True
 
     def mode_params_snapshot(self) -> dict[str, str]:
         return dict(self.mode_params)

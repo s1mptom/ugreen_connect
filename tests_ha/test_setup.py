@@ -430,6 +430,153 @@ async def test_leaving_custom_mode_makes_its_sensors_unavailable(hass, started, 
     assert hass.states.get(entity_id).state == STATE_UNAVAILABLE
 
 
+PRIORITY_PORTS = ("C1", "C2", "C3")
+
+
+def _priority_switch(hass, port: str) -> str | None:
+    return er.async_get(hass).async_get_entity_id(
+        "switch", DOMAIN, f"{DEVICE_CODE}_{port}_priority"
+    )
+
+
+async def _charger_now(hass, started, rtcx, **state) -> None:
+    """Put the fake charger in another state and let a poll find it."""
+    rtcx.state = {**rtcx.state, **state}
+    rtcx.stale = True          # as a write would, so the cached copy is re-read
+    await started.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+
+async def test_the_priority_ports_are_there_before_priority_is_chosen(hass, started):
+    """Three switches from the start, quiet until the mode is running.
+
+    The fixture's charger is in `custom`, where the byte they would read is
+    C1's limit. They exist anyway, so choosing `priority` in the app or in the
+    mode select brings them to life instead of making them appear.
+    """
+    for port in PRIORITY_PORTS:
+        entity_id = _priority_switch(hass, port)
+        assert entity_id == f"switch.ugreen_nexode_pro_x783_{port.lower()}_charged_first"
+        assert hass.states.get(entity_id).state == STATE_UNAVAILABLE
+
+
+async def test_under_priority_each_switch_says_whether_its_port_goes_first(
+    hass, started, rtcx
+):
+    await _charger_now(
+        hass, started, rtcx, charging_mode="priority", custom=None, priority=["C1", "C3"]
+    )
+    states = {port: hass.states.get(_priority_switch(hass, port)).state for port in PRIORITY_PORTS}
+    assert states == {"C1": "on", "C2": "off", "C3": "on"}
+
+
+async def test_a_port_turned_on_joins_the_ones_already_first(hass, started, rtcx):
+    """The charger takes the whole choice in one byte, so the write is the set.
+
+    Sending only the port that changed would make it the only one first.
+    """
+    await _charger_now(
+        hass, started, rtcx, charging_mode="priority", custom=None, priority=["C2"]
+    )
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": _priority_switch(hass, "C1")}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert rtcx.priority_writes == [(IOT_ID, ["C1", "C2"], "X783")]
+    assert hass.states.get(_priority_switch(hass, "C1")).state == "on"
+    assert hass.states.get(_priority_switch(hass, "C2")).state == "on"
+
+
+async def test_all_three_can_go_first_at_once(hass, started, rtcx):
+    await _charger_now(
+        hass, started, rtcx, charging_mode="priority", custom=None, priority=["C1", "C2"]
+    )
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": _priority_switch(hass, "C3")}, blocking=True
+    )
+    assert rtcx.priority_writes == [(IOT_ID, ["C1", "C2", "C3"], "X783")]
+
+
+async def test_a_port_turned_off_leaves_the_others_first(hass, started, rtcx):
+    await _charger_now(
+        hass, started, rtcx, charging_mode="priority", custom=None, priority=["C1", "C3"]
+    )
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": _priority_switch(hass, "C1")}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert rtcx.priority_writes == [(IOT_ID, ["C3"], "X783")]
+    assert hass.states.get(_priority_switch(hass, "C1")).state == "off"
+
+
+async def test_the_last_port_first_cannot_be_turned_off(hass, started, rtcx):
+    """An empty mask has never been sent to a charger.
+
+    Refused where it is asked, with a reason, rather than sent to find out.
+    """
+    await _charger_now(
+        hass, started, rtcx, charging_mode="priority", custom=None, priority=["C2"]
+    )
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            "switch", "turn_off", {"entity_id": _priority_switch(hass, "C2")}, blocking=True
+        )
+    assert err.value.translation_key == "priority_needs_a_port"
+    assert rtcx.priority_writes == []
+
+
+async def test_a_port_already_where_it_is_asked_to_be_sends_nothing(hass, started, rtcx):
+    await _charger_now(
+        hass, started, rtcx, charging_mode="priority", custom=None, priority=["C2"]
+    )
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": _priority_switch(hass, "C2")}, blocking=True
+    )
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": _priority_switch(hass, "C1")}, blocking=True
+    )
+    assert rtcx.priority_writes == []
+
+
+async def test_two_presses_close_together_both_reach_the_charger(hass, started, rtcx):
+    """C1 on and straight off again, the second pressed before the first is done.
+
+    Each press sends the whole set, worked out from the last reading. Started
+    side by side, both work from the reading before either, so the second finds
+    C1 already off, sends nothing, and the charger keeps C1 -- the opposite of
+    the last thing asked. Taken in turn, the second starts from what the first
+    read back.
+    """
+    await _charger_now(
+        hass, started, rtcx, charging_mode="priority", custom=None, priority=["C2"]
+    )
+    c1 = _priority_switch(hass, "C1")
+    await asyncio.gather(
+        hass.services.async_call("switch", "turn_on", {"entity_id": c1}, blocking=True),
+        hass.services.async_call("switch", "turn_off", {"entity_id": c1}, blocking=True),
+    )
+    await hass.async_block_till_done()
+
+    assert [ports for _, ports, _ in rtcx.priority_writes] == [["C1", "C2"], ["C2"]]
+    assert hass.states.get(c1).state == "off"
+
+
+async def test_outside_priority_the_switches_write_nothing(hass, started, rtcx):
+    """Under another mode the byte is that mode's setting.
+
+    Under `dc_turbo` it is the DC port's voltage, so a write here would change
+    the voltage, or put the charger in `priority` behind its owner's back.
+    """
+    await _charger_now(hass, started, rtcx, charging_mode="dc_turbo", custom=None, priority=None)
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": _priority_switch(hass, "C1")}, blocking=True
+    )
+    assert rtcx.priority_writes == []
+    assert hass.states.get(_priority_switch(hass, "C1")).state == STATE_UNAVAILABLE
+
+
 
 @pytest.mark.parametrize(
     "carrying", [False, True], ids=["after_a_fresh_poll", "while_already_carried"]
@@ -665,12 +812,17 @@ class _Resources:
         self.loaded = True
         self._items = list(items)
         self.deleted: list[str] = []
+        self._next = 0
 
     def async_items(self):
         return list(self._items)
 
     async def async_create_item(self, item):
-        self._items.append({"id": f"id{len(self._items)}", **item})
+        # A counter rather than the list's length: once an item is deleted, the
+        # length names an id that is still in use, and deleting that one would
+        # take two. Home Assistant's own collection hands out uuids.
+        self._next += 1
+        self._items.append({"id": f"new{self._next}", **item})
 
     async def async_delete_item(self, item_id):
         self.deleted.append(item_id)
@@ -678,33 +830,207 @@ class _Resources:
 
 
 async def test_one_resource_per_card_even_after_the_url_changes(hass):
-    """Two resources for one file load the module twice, and the second throws.
+    """Two resources for one file load the module twice, and the stale one wins.
 
-    An earlier release registered this card under a url carrying its version.
-    Matching the url whole left that entry beside the current one, so the
-    browser fetched both and the second `customElements.define` failed -- the
-    card still drawn, by whichever copy won, and a red error beside it.
+    Three addresses this card has had: a version query from an early release,
+    the bare path from before the fingerprint, and the fingerprinted one now.
+    Left side by side, the browser fetched each, and whichever copy defined the
+    element first was the card on screen -- after an update, the old one.
+
+    Every card the integration ships gets a resource; the module they import
+    does not, because they fetch it themselves by relative path. Somebody
+    else's card under a different path is left alone.
     """
-    from custom_components.ugreen_connect.frontend import CARD_URL, _register_resource
+    from custom_components.ugreen_connect.frontend import (
+        CARD_FILES,
+        WWW_URL,
+        _register_resource,
+        fingerprint,
+    )
 
+    base = f"{WWW_URL}/{fingerprint()}"
     resources = _Resources(
         [
-            {"id": "old", "url": f"{CARD_URL}?v=0.10.0", "type": "module"},
+            {
+                "id": "query",
+                "url": f"{WWW_URL}/ugreen-wallpaper-card.js?v=0.10.0",
+                "type": "module",
+            },
+            {"id": "bare", "url": f"{WWW_URL}/ugreen-ports-card.js", "type": "module"},
             {"id": "other", "url": "/local/somebody-elses-card.js", "type": "module"},
         ]
     )
     hass.data["lovelace"] = SimpleNamespace(resources=resources)
 
-    await _register_resource(hass, CARD_URL)
+    for name in CARD_FILES:
+        await _register_resource(hass, f"{base}/{name}")
 
     urls = [item["url"] for item in resources.async_items()]
-    assert urls == ["/local/somebody-elses-card.js", CARD_URL]
-    assert resources.deleted == ["old"]
-
-    # Run again, as every restart does: still one, and nothing deleted twice.
-    await _register_resource(hass, CARD_URL)
-    assert [item["url"] for item in resources.async_items()] == [
+    assert urls == [
         "/local/somebody-elses-card.js",
-        CARD_URL,
+        *[f"{base}/{name}" for name in CARD_FILES],
     ]
-    assert resources.deleted == ["old"]
+    assert sorted(resources.deleted) == ["bare", "query"]
+    assert not any("ugreen-ui.js" in url for url in urls), (
+        "the shared module is imported by the cards, not loaded on its own"
+    )
+
+    # Run again, as every restart does: still one each, and nothing deleted twice.
+    for name in CARD_FILES:
+        await _register_resource(hass, f"{base}/{name}")
+    assert [item["url"] for item in resources.async_items()] == urls
+    assert sorted(resources.deleted) == ["bare", "query"]
+
+
+async def test_the_cards_are_served_even_when_the_charger_is_not_there(hass, entry):
+    """A cloud that is down at boot must not take the dashboard with it.
+
+    Registering the cards used to be the last thing setup did, after the login
+    and the first poll. A charger unreachable at boot raises
+    ConfigEntryNotReady long before that line, so the folder the cards are
+    served from was never registered -- while the Lovelace resources written on
+    an earlier run still pointed into it. The browser then fetched six 404s and
+    drew "Configuration error" in place of every card, and kept drawing it
+    until the page was loaded again after a retry went through.
+
+    Which is a whole dashboard broken by a charger being off its shelf.
+    """
+    from unittest.mock import patch
+
+    from homeassistant.setup import async_setup_component
+
+    from custom_components.ugreen_connect.api import UgreenError
+    from custom_components.ugreen_connect.frontend import CARD_FILES, WWW_URL, fingerprint
+
+    class _Down:
+        async def login(self, *_args):
+            raise UgreenError("the cloud is not answering")
+
+    # Lovelace first, so the stub below is what the integration finds rather
+    # than what the real component installs on its way up.
+    assert await async_setup_component(hass, "lovelace", {})
+    resources = _Resources([])
+    hass.data["lovelace"] = SimpleNamespace(resources=resources)
+    entry.add_to_hass(hass)
+    with (
+        patch("custom_components.ugreen_connect.async_get_clientsession"),
+        patch("custom_components.ugreen_connect.UgreenApi", return_value=_Down()),
+    ):
+        assert not await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    assert [item["url"] for item in resources.async_items()] == [
+        f"{WWW_URL}/{fingerprint()}/{name}" for name in CARD_FILES
+    ]
+    assert any(WWW_URL in str(route) for route in hass.http.app.router.resources()), (
+        "the folder the cards import from has to be served, not just listed"
+    )
+
+
+async def test_a_card_added_by_an_update_is_registered_on_the_next_reload(hass):
+    """Updating the integration is new files plus a reload, not a restart.
+
+    The guard used to be "has this run before", which is true from the first
+    boot onwards -- so a card that arrived with the update stayed out of the
+    resource list until Home Assistant itself was restarted, and its config
+    error looked like the update had shipped broken.
+    """
+    from homeassistant.setup import async_setup_component
+
+    from custom_components.ugreen_connect import frontend
+    from custom_components.ugreen_connect.frontend import (
+        WWW_URL,
+        async_register_card,
+        fingerprint,
+    )
+
+    assert await async_setup_component(hass, "http", {})
+    resources = _Resources([])
+    hass.data["lovelace"] = SimpleNamespace(resources=resources)
+
+    before = frontend.CARD_FILES
+    try:
+        frontend.CARD_FILES = before[:-1]  # the release before the last card
+        await async_register_card(hass)
+        assert len(resources.async_items()) == len(before) - 1
+
+        frontend.CARD_FILES = before  # the update, and a reload of the entry
+        await async_register_card(hass)
+    finally:
+        frontend.CARD_FILES = before
+
+    assert [item["url"] for item in resources.async_items()] == [
+        f"{WWW_URL}/{fingerprint()}/{name}" for name in before
+    ]
+
+
+async def test_a_card_that_cannot_be_registered_does_not_stop_the_charger(
+    hass, entry, api, rtcx
+):
+    """The cards run first now, which is a new way for setup to fail.
+
+    Whatever goes wrong while serving a file -- a frontend that is not up, a
+    path that is somehow taken -- leaves a dashboard the user has to build by
+    hand. Letting it out of here would leave them a charger that does not load
+    at all, which is worse by every measure.
+    """
+    from unittest.mock import patch
+
+    entry.add_to_hass(hass)
+    with (
+        patch("custom_components.ugreen_connect.async_get_clientsession"),
+        patch("custom_components.ugreen_connect.UgreenApi", return_value=api),
+        patch("custom_components.ugreen_connect.RtcxClient", return_value=rtcx),
+        patch(
+            "custom_components.ugreen_connect.async_register_card",
+            side_effect=RuntimeError("the frontend is having a day"),
+        ),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert _entity(hass, f"{DEVICE_CODE}_C1_power") is not None
+
+
+async def test_a_changed_card_gets_a_new_address(hass, tmp_path, monkeypatch):
+    """The address names the contents, so a changed file cannot hide behind
+    the browser's copy of the old one.
+
+    Home Assistant serves the folder without `Cache-Control`, and Lovelace
+    loads cards with `import()` once the page is up -- a request a hard reload
+    does not reliably repeat. An updated ports card sat behind its old self
+    through several Cmd+Shift+R before this. Now the edit moves the url, the
+    reload re-registers the resource at the new one, and the old one goes.
+    """
+    import shutil
+
+    from homeassistant.setup import async_setup_component
+
+    from custom_components.ugreen_connect import frontend
+
+    folder = tmp_path / "www"
+    shutil.copytree(frontend.FOLDER, folder)
+    monkeypatch.setattr(frontend, "FOLDER", str(folder))
+
+    assert await async_setup_component(hass, "http", {})
+    resources = _Resources([])
+    hass.data["lovelace"] = SimpleNamespace(resources=resources)
+
+    await frontend.async_register_card(hass)
+    first = frontend.fingerprint(str(folder))
+    ports = f"{frontend.WWW_URL}/{first}/ugreen-ports-card.js"
+    assert ports in [item["url"] for item in resources.async_items()]
+
+    # The shared module alone changes: every card that imports it is new.
+    shared = folder / "ugreen-ui.js"
+    shared.write_text(shared.read_text() + "\n// changed\n")
+    second = frontend.fingerprint(str(folder))
+    assert second != first
+
+    await frontend.async_register_card(hass)
+    urls = [item["url"] for item in resources.async_items()]
+    assert f"{frontend.WWW_URL}/{second}/ugreen-ports-card.js" in urls
+    assert ports not in urls, "the old address was left for the browser to prefer"
+    assert len(urls) == len(frontend.CARD_FILES)
