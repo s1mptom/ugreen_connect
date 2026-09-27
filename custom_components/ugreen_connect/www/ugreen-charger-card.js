@@ -126,13 +126,17 @@ const STYLE = `
   /* Drawn here rather than by the operating system. Left native, it was a
    * different control in every browser -- 30px tall in Chrome, 19px in
    * Safari, which ignores the padding -- with the system's own arrow on a
-   * card whose every other control is a pill. The arrow is the wrapper's, in
-   * the theme's own ink, since a picture of one cannot follow the theme. */
+   * card whose every other control is a pill.
+   *
+   * The arrow is a shape used as a mask over the theme's own ink, so it follows
+   * the theme the way a picture of one could not. It was two borders of a
+   * turned square first, which is sharp at 2x and uneven at 1x -- the turned
+   * edges land between pixels, and one arm came out paler than the other. */
   .pick { position: relative; display: inline-flex; flex: none; }
-  .pick::after { content: ''; position: absolute; right: 12px; top: 50%; width: 5px; height: 5px;
-                 border-right: 1.5px solid var(--secondary-text-color);
-                 border-bottom: 1.5px solid var(--secondary-text-color);
-                 transform: translateY(-75%) rotate(45deg); pointer-events: none; }
+  .pick::after { content: ''; position: absolute; right: 12px; top: 50%; width: 10px; height: 6px;
+                 margin-top: -3px; background: var(--secondary-text-color); pointer-events: none;
+                 -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+                 mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; }
   .pick select { appearance: none; -webkit-appearance: none; -moz-appearance: none; margin: 0;
                  height: 30px; box-sizing: border-box; padding: 0 30px 0 12px; line-height: 28px;
                  font: inherit; font-size: 12px; color: var(--primary-text-color);
