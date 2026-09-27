@@ -430,6 +430,153 @@ async def test_leaving_custom_mode_makes_its_sensors_unavailable(hass, started, 
     assert hass.states.get(entity_id).state == STATE_UNAVAILABLE
 
 
+PRIORITY_PORTS = ("C1", "C2", "C3")
+
+
+def _priority_switch(hass, port: str) -> str | None:
+    return er.async_get(hass).async_get_entity_id(
+        "switch", DOMAIN, f"{DEVICE_CODE}_{port}_priority"
+    )
+
+
+async def _charger_now(hass, started, rtcx, **state) -> None:
+    """Put the fake charger in another state and let a poll find it."""
+    rtcx.state = {**rtcx.state, **state}
+    rtcx.stale = True          # as a write would, so the cached copy is re-read
+    await started.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+
+async def test_the_priority_ports_are_there_before_priority_is_chosen(hass, started):
+    """Three switches from the start, quiet until the mode is running.
+
+    The fixture's charger is in `custom`, where the byte they would read is
+    C1's limit. They exist anyway, so choosing `priority` in the app or in the
+    mode select brings them to life instead of making them appear.
+    """
+    for port in PRIORITY_PORTS:
+        entity_id = _priority_switch(hass, port)
+        assert entity_id == f"switch.ugreen_nexode_pro_x783_{port.lower()}_charged_first"
+        assert hass.states.get(entity_id).state == STATE_UNAVAILABLE
+
+
+async def test_under_priority_each_switch_says_whether_its_port_goes_first(
+    hass, started, rtcx
+):
+    await _charger_now(
+        hass, started, rtcx, charging_mode="priority", custom=None, priority=["C1", "C3"]
+    )
+    states = {port: hass.states.get(_priority_switch(hass, port)).state for port in PRIORITY_PORTS}
+    assert states == {"C1": "on", "C2": "off", "C3": "on"}
+
+
+async def test_a_port_turned_on_joins_the_ones_already_first(hass, started, rtcx):
+    """The charger takes the whole choice in one byte, so the write is the set.
+
+    Sending only the port that changed would make it the only one first.
+    """
+    await _charger_now(
+        hass, started, rtcx, charging_mode="priority", custom=None, priority=["C2"]
+    )
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": _priority_switch(hass, "C1")}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert rtcx.priority_writes == [(IOT_ID, ["C1", "C2"], "X783")]
+    assert hass.states.get(_priority_switch(hass, "C1")).state == "on"
+    assert hass.states.get(_priority_switch(hass, "C2")).state == "on"
+
+
+async def test_all_three_can_go_first_at_once(hass, started, rtcx):
+    await _charger_now(
+        hass, started, rtcx, charging_mode="priority", custom=None, priority=["C1", "C2"]
+    )
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": _priority_switch(hass, "C3")}, blocking=True
+    )
+    assert rtcx.priority_writes == [(IOT_ID, ["C1", "C2", "C3"], "X783")]
+
+
+async def test_a_port_turned_off_leaves_the_others_first(hass, started, rtcx):
+    await _charger_now(
+        hass, started, rtcx, charging_mode="priority", custom=None, priority=["C1", "C3"]
+    )
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": _priority_switch(hass, "C1")}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert rtcx.priority_writes == [(IOT_ID, ["C3"], "X783")]
+    assert hass.states.get(_priority_switch(hass, "C1")).state == "off"
+
+
+async def test_the_last_port_first_cannot_be_turned_off(hass, started, rtcx):
+    """The app always keeps one, and an empty mask has never been sent.
+
+    Refused where it is asked, with a reason, rather than sent to find out.
+    """
+    await _charger_now(
+        hass, started, rtcx, charging_mode="priority", custom=None, priority=["C2"]
+    )
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            "switch", "turn_off", {"entity_id": _priority_switch(hass, "C2")}, blocking=True
+        )
+    assert err.value.translation_key == "priority_needs_a_port"
+    assert rtcx.priority_writes == []
+
+
+async def test_a_port_already_where_it_is_asked_to_be_sends_nothing(hass, started, rtcx):
+    await _charger_now(
+        hass, started, rtcx, charging_mode="priority", custom=None, priority=["C2"]
+    )
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": _priority_switch(hass, "C2")}, blocking=True
+    )
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": _priority_switch(hass, "C1")}, blocking=True
+    )
+    assert rtcx.priority_writes == []
+
+
+async def test_two_presses_close_together_both_reach_the_charger(hass, started, rtcx):
+    """C1 on and straight off again, the second pressed before the first is done.
+
+    Each press sends the whole set, worked out from the last reading. Started
+    side by side, both work from the reading before either, so the second finds
+    C1 already off, sends nothing, and the charger keeps C1 -- the opposite of
+    the last thing asked. Taken in turn, the second starts from what the first
+    read back.
+    """
+    await _charger_now(
+        hass, started, rtcx, charging_mode="priority", custom=None, priority=["C2"]
+    )
+    c1 = _priority_switch(hass, "C1")
+    await asyncio.gather(
+        hass.services.async_call("switch", "turn_on", {"entity_id": c1}, blocking=True),
+        hass.services.async_call("switch", "turn_off", {"entity_id": c1}, blocking=True),
+    )
+    await hass.async_block_till_done()
+
+    assert [ports for _, ports, _ in rtcx.priority_writes] == [["C1", "C2"], ["C2"]]
+    assert hass.states.get(c1).state == "off"
+
+
+async def test_outside_priority_the_switches_write_nothing(hass, started, rtcx):
+    """Under another mode the byte is that mode's setting.
+
+    Under `dc_turbo` it is the DC port's voltage, so a write here would change
+    the voltage, or put the charger in `priority` behind its owner's back.
+    """
+    await _charger_now(hass, started, rtcx, charging_mode="dc_turbo", custom=None, priority=None)
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": _priority_switch(hass, "C1")}, blocking=True
+    )
+    assert rtcx.priority_writes == []
+    assert hass.states.get(_priority_switch(hass, "C1")).state == STATE_UNAVAILABLE
+
+
 
 @pytest.mark.parametrize(
     "carrying", [False, True], ids=["after_a_fresh_poll", "while_already_carried"]

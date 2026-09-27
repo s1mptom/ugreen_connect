@@ -95,6 +95,9 @@
     "switch": {
       "screensaver": {
         "name": "Screensaver"
+      },
+      "priority_port": {
+        "name": "{port} charged first"
       }
     },
     "update": {
@@ -212,6 +215,12 @@
     },
     "mode_not_selectable": {
       "message": "Custom can only be set in the UgreenConnect app. Home Assistant sets the presets; the Custom mode is configured and chosen in the app's own editor."
+    },
+    "priority_not_running": {
+      "message": "The charger is not in Priority, so which ports it charges first cannot be set. Choose Priority first."
+    },
+    "priority_needs_a_port": {
+      "message": "At least one port has to be charged first in Priority. Turn another one on before turning this one off."
     }
   }
 }

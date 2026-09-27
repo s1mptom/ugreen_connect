@@ -52,6 +52,7 @@ from .const import (
 from .protocol import (
     FRAME_QUERY,
     FRAME_SETTING,
+    PRIORITY_MODE,
     QUERY_GET_DEVICE_STATE,
     QUERY_GET_POWER_INFO,
     QUERY_GET_PRODUCT_VERSION,
@@ -66,6 +67,8 @@ from .protocol import (
     frame_body,
     parse_custom_mode,
     parse_power_frame,
+    parse_priority,
+    priority_mask,
     state_fields,
     state_layout,
     state_layout_measured,
@@ -507,6 +510,7 @@ class RtcxClient:
             "sleep_time": body[STATE_SLEEP_TIME],
             "charging_mode": CHARGING_MODES.get(body[STATE_CHARGING_MODE]),
             "custom": parse_custom_mode(body, model),
+            "priority": parse_priority(body, model),
             "screensaver": bool(body[layout.screensaver]),
             "screensaver_theme": body[layout.screensaver + 1],
             "screensaver_flag": body[layout.screensaver + 2],
@@ -693,6 +697,39 @@ class RtcxClient:
             )
             params = bytes(expected)
         await self._setting(iot_id, SETTING_SET_CHARGING_MODE, bytes([mode]) + params)
+
+    async def async_set_priority_ports(
+        self, iot_id: str, ports: list[str], model: str | None = None
+    ) -> None:
+        """Put the charger in `priority` with these ports charged first.
+
+        The same frame as selecting the mode, carrying the block `priority` was
+        last seen with and one byte of it changed: the first, which is the
+        mask. That is the byte the app changes when the choice is made there,
+        one control per frame, so the rest of the block is sent back as it
+        came. The mode byte is `priority` itself, which is why this is only
+        offered while the charger runs it.
+
+        At least one port, as the app has it: an empty mask is a question
+        nobody has asked this charger, and the answer would be learned on the
+        device.
+        """
+        mask = priority_mask(ports)
+        if not mask:
+            raise UgreenError("at least one port has to be charged first")
+        if not state_layout_measured(model):
+            raise UgreenError(
+                f"refusing to set priority ports on an unrecognised model: "
+                f"the parameter block's length is not known for {model or 'it'}"
+            )
+        expected = state_layout(model).screensaver - STATE_MODE_PARAMS
+        block = bytearray(self._mode_params.get((iot_id, PRIORITY_MODE)) or bytes(expected))
+        if len(block) != expected:
+            block = bytearray(expected)
+        block[0] = mask
+        await self._setting(
+            iot_id, SETTING_SET_CHARGING_MODE, bytes([PRIORITY_MODE]) + bytes(block)
+        )
 
     async def async_set_screensaver(
         self, iot_id: str, enabled: bool, theme: int, flag: int, wallpaper: str | None

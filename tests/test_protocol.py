@@ -7,6 +7,7 @@ checked by reasoning: it depends on a report's length, and the two models
 disagree about what a report of a given length contains.
 """
 
+import pytest
 from conftest import const
 from conftest import protocol as p
 
@@ -283,6 +284,68 @@ def test_the_custom_mode_byte_is_the_one_the_mode_table_names():
     """
     assert const.CHARGING_MODES[p.CUSTOM_MODE] == "custom"
     assert "custom" not in const.SELECTABLE_MODES, "read-only, so never offered"
+
+
+def test_the_priority_mode_byte_is_the_one_the_mode_table_names():
+    """The same literal-against-table check, for the other mode read here."""
+    assert const.CHARGING_MODES[p.PRIORITY_MODE] == "priority"
+
+
+def _mode_body(mode: int, first: int) -> bytes:
+    body = bytearray(CUSTOM_STATE)
+    body[p.STATE_CHARGING_MODE] = mode
+    body[p.STATE_MODE_PARAMS] = first
+    return bytes(body)
+
+
+def test_the_priority_mask_reads_as_the_app_shows_it():
+    """Read off a live X783 while the choice in the app moved a step at a time.
+
+    2, 4 and 5 were seen; C2 alone, C3 alone, C1 with C3. 1 and 7 follow from
+    them, and 7 is the app's "all three" -- which it offers.
+    """
+    for mask, ports in (
+        (0b001, ["C1"]),
+        (0b010, ["C2"]),
+        (0b100, ["C3"]),
+        (0b101, ["C1", "C3"]),
+        (0b111, ["C1", "C2", "C3"]),
+    ):
+        assert p.parse_priority(_mode_body(p.PRIORITY_MODE, mask), "X783") == ports
+
+
+def test_the_mask_is_only_a_mask_under_priority():
+    """Under `dc_turbo` the same byte is the DC port's voltage, 1 to 3.
+
+    3 there is 20 V; read as ports it would be C1 and C2 first on a charger
+    that has no priority mode running.
+    """
+    assert p.parse_priority(_mode_body(2, 3), "X783") is None
+    assert p.parse_priority(_mode_body(p.CUSTOM_MODE, 0), "X783") is None
+    assert p.parse_priority(CUSTOM_STATE, "X783") is None
+
+
+def test_the_160w_has_no_priority_ports_to_read():
+    assert p.parse_priority(_mode_body(p.PRIORITY_MODE, 0b010), "X776") is None
+    assert "priority" not in p.state_fields("X776")
+    assert "priority" in p.state_writable("X783")
+
+
+def test_a_body_that_stops_before_the_block_has_no_priority():
+    assert p.parse_priority(bytes([0, 0x37, 100, 0, p.PRIORITY_MODE]), "X783") is None
+
+
+def test_the_mask_is_the_ports_it_came_from():
+    for ports in (["C1"], ["C2"], ["C3"], ["C1", "C3"], ["C1", "C2", "C3"]):
+        body = _mode_body(p.PRIORITY_MODE, p.priority_mask(ports))
+        assert p.parse_priority(body, "X783") == ports
+    assert p.priority_mask([]) == 0
+    assert p.priority_mask(["C3", "C3"]) == 0b100
+
+
+def test_a_port_the_mode_does_not_offer_is_refused():
+    with pytest.raises(ValueError):
+        p.priority_mask(["C4"])
 
 
 def test_a_preset_has_no_custom_mode_to_describe():

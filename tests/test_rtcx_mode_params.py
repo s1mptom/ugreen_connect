@@ -346,3 +346,66 @@ def test_a_custom_mode_reaches_the_reading():
 
     assert [g["port"] for g in groups] == ["C1", "C2", "C3", "C4", "C5", "C6+A"]
     assert [g["limit"] for g in groups] == [60, 140, 30, 20, 30, 15]
+
+
+# --- the ports `priority` charges first -------------------------------------
+
+
+def _priority_reply(mask: int, rest: bytes = b"") -> str:
+    """The fixture's charger with another choice in the app, and optionally
+    something distinctive after the mask, so a write that zeroes the rest of the
+    block is visible rather than plausible."""
+    body = bytearray(rtcx_module.frame_body(STATE_PRIORITY, rtcx_module.FRAME_QUERY, 1))
+    body[5] = mask
+    body[6 : 6 + len(rest)] = rest
+    return rtcx_module.build_frame(rtcx_module.FRAME_QUERY, 1, bytes(body))
+
+
+def test_the_fixture_s_charger_puts_c2_first():
+    # 02 is the byte the module docstring is about: that charger's owner had
+    # C2 first, which is what the app showed when the reply was taken.
+    assert _Client({IOT: STATE_PRIORITY}).read()["priority"] == ["C2"]
+
+
+def test_the_ports_are_written_as_the_mask_in_the_priority_frame():
+    c = _Client({IOT: STATE_PRIORITY})
+    c.read()
+    asyncio.run(c.client.async_set_priority_ports(IOT, ["C1", "C3"], "X783"))
+    payload = c.sent[-1][2]
+    assert payload[0] == 3, "the mode byte has to stay priority"
+    assert payload[1] == 0b101
+    assert len(payload) == 1 + rtcx_module.CHARGING_MODE_PARAMS
+
+
+def test_the_rest_of_the_block_goes_back_as_it_came():
+    """The app changes one byte of the block per choice, and so does this.
+
+    Nothing after the mask has been seen non-zero under `priority`, so these
+    bytes are made up; the point is that whatever the charger reported there
+    is what it gets back.
+    """
+    c = _Client({IOT: _priority_reply(0b010, b"\x77\x66")})
+    c.read()
+    asyncio.run(c.client.async_set_priority_ports(IOT, ["C1", "C2", "C3"], "X783"))
+    payload = c.sent[-1][2]
+    assert payload[1] == 0b111
+    assert payload[2:4] == b"\x77\x66"
+    assert not any(payload[4:])
+
+
+def test_no_port_first_is_not_sent():
+    c = _Client({IOT: STATE_PRIORITY})
+    c.read()
+    with pytest.raises(rtcx_module.UgreenError):
+        asyncio.run(c.client.async_set_priority_ports(IOT, [], "X783"))
+    with pytest.raises(ValueError):
+        asyncio.run(c.client.async_set_priority_ports(IOT, ["C4"], "X783"))
+    assert c.sent == []
+
+
+def test_priority_ports_are_not_written_to_an_unmeasured_model():
+    c = _Client()
+    for unknown in (None, "X999"):
+        with pytest.raises(rtcx_module.UgreenError):
+            asyncio.run(c.client.async_set_priority_ports(IOT, ["C1"], unknown))
+    assert c.sent == []

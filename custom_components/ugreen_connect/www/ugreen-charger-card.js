@@ -5,7 +5,8 @@
  * the doorway; the bar under it is the same budget cut into the ports taking
  * it, each in its own colour, so "who is drawing what" and "how much is left"
  * are one glance. The mode sits under the budget because the mode is what
- * divides it, and a mode's own settings sit beside it.
+ * divides it, and a mode's own settings sit beside it -- under `priority`,
+ * the ports it charges first, which can be changed from here.
  *
  * Config:
  *   type: custom:ugreen-charger-card
@@ -31,10 +32,13 @@ const TEXT = {
     update: '{version} ready, install it in the UGREEN app',
     mode: 'Charging mode',
     limits: 'Limits, set in the UGREEN app',
+    first: 'Charged first',
+    firstHint: 'Any of the three, or all of them. The rest share what is left.',
+    lastFirst: 'One port always goes first',
     adaptive_power: 'Shares power by what each device asks for.',
     thermal_safe: 'Lowers output as the charger warms up.',
     dc_turbo: 'Gives the DC port its full output.',
-    priority: 'The ports chosen in the UGREEN app get full power first.',
+    priority: 'The ports chosen to go first get full power before the rest.',
     custom: 'Set in the UGREEN app.',
     noDevice: 'No charger entities found. Set device_id in the card config.',
   },
@@ -49,10 +53,13 @@ const TEXT = {
     update: '{version} bereit, in der UGREEN-App installieren',
     mode: 'Lademodus',
     limits: 'Grenzen, in der UGREEN-App gesetzt',
+    first: 'Zuerst geladen',
+    firstHint: 'Einer der drei oder alle. Die übrigen teilen sich den Rest.',
+    lastFirst: 'Ein Anschluss wird immer zuerst geladen',
     adaptive_power: 'Verteilt die Leistung nach dem Bedarf jedes Geräts.',
     thermal_safe: 'Senkt die Leistung, wenn das Ladegerät warm wird.',
     dc_turbo: 'Gibt dem DC-Anschluss die volle Leistung.',
-    priority: 'Die in der UGREEN-App gewählten Anschlüsse bekommen zuerst volle Leistung.',
+    priority: 'Die gewählten Anschlüsse bekommen vor den übrigen volle Leistung.',
     custom: 'In der UGREEN-App gesetzt.',
     noDevice: 'Keine Entitäten gefunden. device_id in der Kartenkonfiguration setzen.',
   },
@@ -67,10 +74,13 @@ const TEXT = {
     update: 'Готова {version}, установите в приложении UGREEN',
     mode: 'Режим зарядки',
     limits: 'Лимиты, заданные в приложении UGREEN',
+    first: 'Заряжаются первыми',
+    firstHint: 'Любой из трёх или все сразу. Остальные делят то, что осталось.',
+    lastFirst: 'Хотя бы один порт всегда заряжается первым',
     adaptive_power: 'Делит мощность по запросу каждого устройства.',
     thermal_safe: 'Снижает мощность, когда зарядка нагревается.',
     dc_turbo: 'Отдаёт DC-порту полную мощность.',
-    priority: 'Порты, выбранные в приложении UGREEN, получают полную мощность первыми.',
+    priority: 'Выбранные порты получают полную мощность раньше остальных.',
     custom: 'Задаётся в приложении UGREEN.',
     noDevice: 'Сущности не найдены. Укажите device_id в настройках карточки.',
   },
@@ -106,6 +116,11 @@ const STYLE = `
            padding: 0 10px; border-radius: 8px; background: var(--secondary-background-color); }
   .limit .n { font-size: 12px; color: var(--secondary-text-color); }
   .limit b { font-weight: 500; }
+  .first { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+  .first .label { color: var(--secondary-text-color); }
+  .first .u-pill i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .first .u-pill[aria-disabled="true"] { cursor: default; }
+  .first .hint { font-size: 12px; color: var(--secondary-text-color); }
   .empty { color: var(--secondary-text-color); }
   :host { display: block; container-type: inline-size; }
   .modepick { display: none; position: relative; flex: 1 1 auto; color: var(--secondary-text-color); }
@@ -121,6 +136,7 @@ const STYLE = `
     .status { width: 100%; justify-content: space-between; }
     .modes .u-seg { display: none; }
     .modepick { display: block; }
+    .first .hint { display: none; }
   }
 `;
 
@@ -136,6 +152,7 @@ class UgreenChargerCard extends HTMLElement {
     this._built = false;
     this._peak = 0;
     this._asked = pending();
+    this._flying = new Map();
     if (this.shadowRoot) this.shadowRoot.innerHTML = '';
   }
 
@@ -313,10 +330,11 @@ class UgreenChargerCard extends HTMLElement {
     this._syncParams(current);
   }
 
-  /* What the current mode is doing with the budget. The custom limits are
-   * the only settings the integration reads today; for the rest, a line on
-   * what the mode is for. */
+  /* What the current mode is doing with the budget: the ports `priority`
+   * charges first, which can be changed here, and the custom limits, which
+   * only the app sets. For the rest, a line on what the mode is for. */
   _syncParams(current) {
+    if (current === 'priority' && this._syncFirst()) return;
     if (current === 'custom') {
       const limits = findAll(this._hass, this._config.device_id, 'sensor', '_custom_mode_limit')
         .filter((id) => !['unavailable', 'unknown'].includes(this._hass.states[id]?.state))
@@ -344,6 +362,75 @@ class UgreenChargerCard extends HTMLElement {
     about.className = 'about';
     about.textContent = TEXT.en[current] ? this._t(current) : '';
     this._els.params.replaceChildren(about);
+  }
+
+  /* C1, C2 and C3, each a toggle, since the app lets any of them go first and
+   * all three together. One switch per port on the integration's side, so the
+   * pills are those switches; while the mode is anything else they are
+   * unavailable, and this draws nothing and says what the mode does instead.
+   *
+   * The last one on stays on: the charger has never been sent an empty choice,
+   * the switch refuses it, and a pill that looked like it would turn off and
+   * then did not is worse than one that says why it does not.
+   *
+   * A press shows at once and holds until its call is done, not until the
+   * switch first agrees: pressed twice quickly, the second press's value can
+   * be the one the switch still has from before the first, and agreeing with
+   * that let the first press's result show through in between. */
+  _syncFirst() {
+    const switches = findAll(this._hass, this._config.device_id, 'switch', '_charged_first')
+      .filter((id) => ['on', 'off'].includes(this._hass.states[id]?.state))
+      .map((id) => ({ id, name: id.split('.')[1].slice(0, -'_charged_first'.length).split('_').pop().toUpperCase() }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (!switches.length) return false;
+    const all = ports(this._hass, this._config.device_id);
+    const on = (s) => (this._flying.get(s.id)?.value
+      ?? this._asked.read(`first:${s.id}`, this._hass.states[s.id].state)) === 'on';
+    const count = switches.filter(on).length;
+
+    const row = document.createElement('div');
+    row.className = 'first';
+    row.innerHTML = `<span class="label">${this._t('first')}</span>`;
+    for (const s of switches) {
+      const pressed = on(s);
+      const last = pressed && count === 1;
+      const index = all.findIndex((p) => p.name === s.name);
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = 'u-pill';
+      pill.setAttribute('aria-pressed', String(pressed));
+      pill.innerHTML = `<i style="background: ${index >= 0 ? SERIES[index % SERIES.length] : 'var(--secondary-text-color)'}"></i><span></span>`;
+      pill.querySelector('span').textContent = s.name;
+      if (last) {
+        pill.setAttribute('aria-disabled', 'true');
+        pill.title = this._t('lastFirst');
+      }
+      pill.addEventListener('click', () => {
+        if (last) return;
+        const value = pressed ? 'off' : 'on';
+        const flight = this._flying.get(s.id) || { calls: 0 };
+        flight.value = value;
+        flight.calls += 1;
+        this._flying.set(s.id, flight);
+        this._syncParams('priority');
+        // Home Assistant says why a call failed on its own, in a toast.
+        this._hass.callService('switch', pressed ? 'turn_off' : 'turn_on', { entity_id: s.id })
+          .then(() => { if (flight.calls === 1) this._asked.set(`first:${s.id}`, flight.value); })
+          .catch(() => {})
+          .finally(() => {
+            flight.calls -= 1;
+            if (!flight.calls) this._flying.delete(s.id);
+            this._sync();
+          });
+      });
+      row.appendChild(pill);
+    }
+    const hint = document.createElement('span');
+    hint.className = 'hint';
+    hint.textContent = this._t('firstHint');
+    row.appendChild(hint);
+    this._els.params.replaceChildren(row);
+    return true;
   }
 
   _moreInfo(entityId) {

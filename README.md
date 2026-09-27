@@ -71,6 +71,7 @@ e.g. `sensor.ugreen_nexode_pro_x783_c1_power`.
 | `select.<device>_screen_off_time` | 1, 5, 10, 30 minutes, or always on |
 | `select.<device>_charging_mode` | adaptive power, thermal safe, DC turbo, priority |
 | `switch.<device>_screensaver` | the clock the screen shows once it sleeps |
+| `switch.<device>_c1_charged_first` … | C1, C2 and C3: whether the `priority` mode charges that port first. Any of them, all three included, but never none -- turning off the last one is refused. Unavailable under any other mode |
 | `select.<device>_time_format` | 12- or 24-hour |
 | `select.<device>_clock_style` | the two faces the charger draws |
 | `select.<device>_wallpaper` | any picture in your UGREEN library, or none |
@@ -84,7 +85,9 @@ some -- leaves the control where it was rather than moving and springing back.
 cannot be selected here: setting a mode carries that mode's parameter block, and
 only the app's editor can compose a custom one. Home Assistant replays a block it
 has watched the charger running; the only block it ever composes is an empty one,
-for a mode it has not seen.
+for a mode it has not seen. The one byte it changes is the priority ports' mask,
+the first of the block under `priority` -- the byte the app changes too, one
+choice per frame.
 
 That applies to the presets too. A mode carries its own settings — `priority`
 keeps a mask of its priority ports there, DC Turbo its port voltage and its
@@ -169,8 +172,8 @@ itself; with two chargers set up, give them `device_id`.
 
 | Card | What it draws |
 |---|---|
-| `custom:ugreen-charger-card` | the total out of the charger's budget, cut into the ports drawing it; the charging mode and what it does, with the custom limits beside it in that mode; cloud and firmware |
-| `custom:ugreen-ports-card` | one tile per port, in the order they sit on the charger: watts, volts, amps, protocol, a line of the last hour, and what the current charge has put in |
+| `custom:ugreen-charger-card` | the total out of the charger's budget, cut into the ports drawing it; the charging mode and what it does -- in `priority`, the ports it charges first, to pick from; in `custom`, its limits; cloud and firmware |
+| `custom:ugreen-ports-card` | one tile per port, in the order they sit on the charger: watts, volts, amps, protocol, a line of the last hour, what the current charge has put in, and a *First* badge on the ports `priority` charges first |
 | `custom:ugreen-sessions-card` | the charges that have finished, newest first, one row per port |
 | `custom:ugreen-power-card` | power over the last hour, three hours or day, per port and in total, read from the recorder |
 | `custom:ugreen-energy-card` | kilowatt-hours per port for a day, a week, a month or all time |

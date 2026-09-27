@@ -4,7 +4,8 @@
  * of them is which ports are charging and how fast. So a port that is charging
  * is a tile with its watts in large type, what it is running at, a line of the
  * last hour, and what this charge has put in so far; a port that is not is the
- * same tile, quiet, saying so.
+ * same tile, quiet, saying so. Under the priority mode, the ports it charges
+ * first say so beside their name.
  *
  * Only what is happening now is here. The session sensors keep the last
  * session's figures after it ends, and shown on an idle port those figures
@@ -24,17 +25,17 @@ import {
 
 const TEXT = {
   en: {
-    energy: 'Energy', charge: 'Charge', time: 'Charging for',
+    energy: 'Energy', charge: 'Charge', time: 'Charging for', first: 'First', firstTitle: 'Charged first',
     idle: 'Not charging', cable: 'Cable only', onPort: '{v} V on the port',
     noPorts: 'No charger entities found. Set device_id in the card config.',
   },
   de: {
-    energy: 'Energie', charge: 'Ladung', time: 'Lädt seit',
+    energy: 'Energie', charge: 'Ladung', time: 'Lädt seit', first: 'Zuerst', firstTitle: 'Zuerst geladen',
     idle: 'Lädt nicht', cable: 'Nur Kabel', onPort: '{v} V am Anschluss',
     noPorts: 'Keine Entitäten gefunden. device_id in der Kartenkonfiguration setzen.',
   },
   ru: {
-    energy: 'Энергия', charge: 'Заряд', time: 'Заряжает',
+    energy: 'Энергия', charge: 'Заряд', time: 'Заряжает', first: 'Первый', firstTitle: 'Заряжается первым',
     idle: 'Не заряжает', cable: 'Только кабель', onPort: 'на порту {v} В',
     noPorts: 'Сущности не найдены. Укажите device_id в настройках карточки.',
   },
@@ -180,6 +181,9 @@ class UgreenPortsCard extends HTMLElement {
     const drawing = s[port.charging]?.state === 'on';
     const energy = s[`${port.base}_session_energy`];
     const inSession = drawing && energy?.attributes?.charging !== false;
+    // On only while `priority` runs: the switch is unavailable under any other
+    // mode, and unavailable is not on.
+    const first = s[`switch.${port.base.split('.')[1]}_charged_first`]?.state === 'on';
 
     const tile = document.createElement('button');
     tile.type = 'button';
@@ -212,6 +216,7 @@ class UgreenPortsCard extends HTMLElement {
     }
     tile.innerHTML = `
       <div class="head"><span class="dot"></span><span class="name"></span><span class="grow"></span>
+        ${first ? `<span class="first" title="${this._t('firstTitle')}">${this._t('first')}</span>` : ''}
         <span class="proto"></span></div>
       ${body}`;
     tile.querySelector('.name').textContent = port.name;
