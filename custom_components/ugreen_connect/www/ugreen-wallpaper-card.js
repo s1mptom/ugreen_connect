@@ -188,6 +188,10 @@ const TEXT = {
 const HERO = `<span class="face centre"><span class="blk"><b></b><i></i></span></span>`;
 const CHEVRON = `<svg width="10" height="6" viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4"
   fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>`;
+const LENS_OUT = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+  stroke-linecap="round" aria-hidden="true" class="lens"><circle cx="11" cy="11" r="7"></circle><path d="M8 11h6M20 20l-4-4"></path></svg>`;
+const LENS_IN = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+  stroke-linecap="round" aria-hidden="true" class="lens"><circle cx="11" cy="11" r="7"></circle><path d="M8 11h6M11 8v6M20 20l-4-4"></path></svg>`;
 const SPINNER = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
   stroke-linecap="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"></path></svg>`;
 
@@ -224,7 +228,8 @@ const css = `
   .face.centre { justify-content: center; }
   .face.left { justify-content: flex-start; padding-left: 7%; }
   .face .blk { display: flex; flex-direction: column; align-items: flex-start; }
-  .face b { font-size: 30cqh; font-weight: 500; letter-spacing: .01em; }
+  /* A third of the strip, as the charger's own clock is. */
+  .face b { font-size: 33cqh; font-weight: 500; letter-spacing: .01em; }
   .face i { font-size: 9cqh; font-style: normal; opacity: .9; letter-spacing: .12em; margin-top: 4cqh; }
 
   /* Controls shared by the card and the editor ------------------------- */
@@ -327,6 +332,12 @@ const css = `
   .fitctl label > span:first-child { color: var(--secondary-text-color); width: 52px; flex: none; }
   .fitctl input[type="range"] { flex-grow: 1; margin: 0; accent-color: var(--primary-color); }
   .fitctl .deg { width: 48px; text-align: right; }
+  .fitctl .lens { color: var(--secondary-text-color); flex: none; }
+  .fitctl .level { position: relative; flex-grow: 1; display: flex; align-items: center; }
+  .fitctl .level input { width: 100%; }
+  .fitctl .level::before { content: ''; position: absolute; left: 50%; top: -8px; width: 1px; height: 6px;
+                           background: var(--secondary-text-color); pointer-events: none; }
+  .button.plain { border-color: transparent; }
   .result { display: flex; align-items: center; gap: 20px; padding: 14px 16px; border-radius: 12px;
             background: var(--secondary-background-color); }
   .result canvas { width: 280px; height: 85px; flex: none; border-radius: 8px; box-shadow: 0 0 0 4px #0b0b0b; }
@@ -337,7 +348,13 @@ const css = `
      settings under it, each the card's full width. */
   @container (max-width: 440px) {
     .compact { flex-direction: column; }
-    .compact .side { width: 100%; }
+    /* The heading and the screensaver switch first, then the strip, then the
+       rest -- the order they are read in, which is not the order they sit in
+       side by side. */
+    .compact .main { display: contents; }
+    .compact .headrow { order: 0; }
+    .compact .side { order: 1; width: 100%; }
+    .compact .line { order: 2; }
     .line input[type="range"] { max-width: none; }
   }
   @media (max-width: 700px) {
@@ -474,7 +491,7 @@ class UgreenWallpaperCard extends HTMLElement {
               <div class="col">
                 <div class="block">
                   <div class="row"><h3>${t('picture')}</h3>
-                    <label class="button primary upload">${t('upload')}<input type="file" accept="image/*" aria-label="${t('upload')}"></label>
+                    <label class="button primary upload"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M6 10l6-6 6 6M4 20h16"></path></svg>${t('upload')}<input type="file" accept="image/*" aria-label="${t('upload')}"></label>
                   </div>
                   <span class="sub">${t('fromCharger')}</span>
                   <div class="grid stock" role="radiogroup" aria-label="${t('fromCharger')}"></div>
@@ -496,8 +513,8 @@ class UgreenWallpaperCard extends HTMLElement {
           <div class="dbody"><div class="fitbody">
             <div class="stage" role="img" aria-label="${t('gestures')}"><canvas class="canvas"></canvas><span class="gestures">${t('gestures')}</span></div>
             <div class="fitctl">
-              <label><span>${t('zoom')}</span><input type="range" class="zoom" min="0" max="1000" step="1" value="0"></label>
-              <label><span>${t('angle')}</span><input type="range" class="angle" min="-180" max="180" step="0.5" value="0"><span class="deg">0.0°</span></label>
+              <label><span>${t('zoom')}</span>${LENS_OUT}<input type="range" class="zoom" min="0" max="1000" step="1" value="0" aria-label="${t('zoom')}">${LENS_IN}</label>
+              <label><span>${t('angle')}</span><span class="level"><input type="range" class="angle" min="-180" max="180" step="0.5" value="0" aria-label="${t('angle')}"></span><span class="deg">0.0°</span></label>
               <button type="button" class="button quiet reset">${t('reset')}</button>
             </div>
             <div class="result"><canvas class="out" width="${OUT_W}" height="${OUT_H}"></canvas>
@@ -505,7 +522,7 @@ class UgreenWallpaperCard extends HTMLElement {
             </div>
           </div></div>
           <div class="dfoot"><span class="status fitstatus"></span>
-            <button type="button" class="button quiet cancel">${t('cancel')}</button>
+            <button type="button" class="button quiet plain cancel">${t('cancel')}</button>
             <button type="button" class="button primary use">${t('use')}</button>
           </div>
         </div>

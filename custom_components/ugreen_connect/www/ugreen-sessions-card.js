@@ -11,7 +11,8 @@
  *   type: custom:ugreen-sessions-card
  *   device_id: <the charger>        # optional if only one charger is set up
  *   title: Finished recently        # optional
- *   limit: 4                        # rows at most; default 4
+ *   limit: 4                        # rows at most; by default as many as the
+ *                                   # card has room for, from 4 to one per port
  */
 
 import {
@@ -94,6 +95,13 @@ class UgreenSessionsCard extends HTMLElement {
     `);
     this._root.querySelector('h2').textContent = this._config.title || this._t('title');
     this._rows = this._root.querySelector('.rows');
+    // Given more height than four rows need -- the bottom of a tall screen --
+    // it lists more of the ports rather than leaving the room empty.
+    this._room = 4;
+    new ResizeObserver(() => {
+      const room = Math.max(4, Math.floor((this.clientHeight - 48) / 30));
+      if (room !== this._room) { this._room = room; this._sync(); }
+    }).observe(this);
   }
 
   /* When it ended, the way a person says it: the time today, the day before,
@@ -111,7 +119,7 @@ class UgreenSessionsCard extends HTMLElement {
   _sync() {
     if (!this._hass) return;
     const found = ports(this._hass, this._config.device_id);
-    const limit = Number(this._config.limit) || 4;
+    const limit = Number(this._config.limit) || this._room || 4;
     const rows = found
       .map((port, index) => {
         const event = this._hass.states[port.event];

@@ -19,6 +19,8 @@
  *   max_power: 300                  # the charger's budget
  *   hours: 3                        # the chart's range to start on
  *   period: week                    # the energy card's period
+ *   fill: true                      # in a panel view, take the height under
+ *                                   # the toolbar; false to size to content
  */
 
 import { SHARED_CSS, applyTheme, defineCard, mount } from './ugreen-ui.js';
@@ -39,7 +41,16 @@ const STYLE = `
   .screen { display: flex; flex-direction: column; gap: 16px; }
   .below { display: grid; grid-template-columns: minmax(0, 1fr) 464px; gap: 16px; align-items: stretch; }
   .side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-  .side > :last-child { flex-grow: 1; }
+  /* Height the column has spare goes to the finished sessions, which can use
+   * it for more rows; the screen card stretched instead was mostly empty. */
+  .side > :first-child { flex-grow: 1; }
+  /* Given a panel view to itself, the screen is filled the way the design
+   * draws it: the row below takes whatever height is left under the toolbar,
+   * and the chart, which is read the most, takes it within the row. On a
+   * screen too short for that, this changes nothing. */
+  :host([fill]) { min-height: calc(100vh - var(--header-height, 56px)); display: flex; flex-direction: column; }
+  :host([fill]) .screen { flex-grow: 1; }
+  :host([fill]) .below { flex-grow: 1; }
   /* One column once the chart would have less room than its side column. */
   @container (max-width: 1060px) {
     :host { padding: 12px; }
@@ -59,6 +70,7 @@ class UgreenDashboardCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     applyTheme(this, hass);
+    this.toggleAttribute('fill', this._config.fill !== false && this._inPanel());
     this._build();
     for (const card of this._cards || []) {
       if (typeof card.setConfig === 'function') card.hass = hass;
@@ -66,6 +78,17 @@ class UgreenDashboardCard extends HTMLElement {
   }
 
   getCardSize() { return 20; }
+
+  /* Whether this card is the whole of a panel view. Looked for up through the
+   * shadow roots it sits in, since that is where Lovelace puts it. */
+  _inPanel() {
+    let node = this;
+    for (let step = 0; node && step < 12; step += 1) {
+      if (node.localName === 'hui-panel-view') return true;
+      node = node.parentNode || node.host;
+    }
+    return false;
+  }
 
   /* One child card, configured from this card's own options.
    *
