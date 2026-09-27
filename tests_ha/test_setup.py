@@ -665,12 +665,17 @@ class _Resources:
         self.loaded = True
         self._items = list(items)
         self.deleted: list[str] = []
+        self._next = 0
 
     def async_items(self):
         return list(self._items)
 
     async def async_create_item(self, item):
-        self._items.append({"id": f"id{len(self._items)}", **item})
+        # A counter rather than the list's length: once an item is deleted, the
+        # length names an id that is still in use, and deleting that one would
+        # take two. Home Assistant's own collection hands out uuids.
+        self._next += 1
+        self._items.append({"id": f"new{self._next}", **item})
 
     async def async_delete_item(self, item_id):
         self.deleted.append(item_id)
@@ -678,49 +683,56 @@ class _Resources:
 
 
 async def test_one_resource_per_card_even_after_the_url_changes(hass):
-    """Two resources for one file load the module twice, and the second throws.
+    """Two resources for one file load the module twice, and the stale one wins.
 
-    An earlier release registered the wallpaper card under a url carrying its
-    version. Matching the url whole left that entry beside the current one, so
-    the browser fetched both and the second `customElements.define` failed --
-    the card still drawn, by whichever copy won, and a red error beside it.
+    Three addresses this card has had: a version query from an early release,
+    the bare path from before the fingerprint, and the fingerprinted one now.
+    Left side by side, the browser fetched each, and whichever copy defined the
+    element first was the card on screen -- after an update, the old one.
 
     Every card the integration ships gets a resource; the module they import
-    does not, because they fetch it themselves by relative path.
+    does not, because they fetch it themselves by relative path. Somebody
+    else's card under a different path is left alone.
     """
     from custom_components.ugreen_connect.frontend import (
         CARD_FILES,
         WWW_URL,
         _register_resource,
+        fingerprint,
     )
 
-    wallpaper = f"{WWW_URL}/ugreen-wallpaper-card.js"
+    base = f"{WWW_URL}/{fingerprint()}"
     resources = _Resources(
         [
-            {"id": "old", "url": f"{wallpaper}?v=0.10.0", "type": "module"},
+            {
+                "id": "query",
+                "url": f"{WWW_URL}/ugreen-wallpaper-card.js?v=0.10.0",
+                "type": "module",
+            },
+            {"id": "bare", "url": f"{WWW_URL}/ugreen-ports-card.js", "type": "module"},
             {"id": "other", "url": "/local/somebody-elses-card.js", "type": "module"},
         ]
     )
     hass.data["lovelace"] = SimpleNamespace(resources=resources)
 
     for name in CARD_FILES:
-        await _register_resource(hass, f"{WWW_URL}/{name}")
+        await _register_resource(hass, f"{base}/{name}")
 
     urls = [item["url"] for item in resources.async_items()]
     assert urls == [
         "/local/somebody-elses-card.js",
-        *[f"{WWW_URL}/{name}" for name in CARD_FILES],
+        *[f"{base}/{name}" for name in CARD_FILES],
     ]
-    assert resources.deleted == ["old"]
+    assert sorted(resources.deleted) == ["bare", "query"]
     assert not any("ugreen-ui.js" in url for url in urls), (
         "the shared module is imported by the cards, not loaded on its own"
     )
 
     # Run again, as every restart does: still one each, and nothing deleted twice.
     for name in CARD_FILES:
-        await _register_resource(hass, f"{WWW_URL}/{name}")
+        await _register_resource(hass, f"{base}/{name}")
     assert [item["url"] for item in resources.async_items()] == urls
-    assert resources.deleted == ["old"]
+    assert sorted(resources.deleted) == ["bare", "query"]
 
 
 async def test_the_cards_are_served_even_when_the_charger_is_not_there(hass, entry):
@@ -741,7 +753,7 @@ async def test_the_cards_are_served_even_when_the_charger_is_not_there(hass, ent
     from homeassistant.setup import async_setup_component
 
     from custom_components.ugreen_connect.api import UgreenError
-    from custom_components.ugreen_connect.frontend import CARD_FILES, WWW_URL
+    from custom_components.ugreen_connect.frontend import CARD_FILES, WWW_URL, fingerprint
 
     class _Down:
         async def login(self, *_args):
@@ -762,7 +774,7 @@ async def test_the_cards_are_served_even_when_the_charger_is_not_there(hass, ent
 
     assert entry.state is ConfigEntryState.SETUP_RETRY
     assert [item["url"] for item in resources.async_items()] == [
-        f"{WWW_URL}/{name}" for name in CARD_FILES
+        f"{WWW_URL}/{fingerprint()}/{name}" for name in CARD_FILES
     ]
     assert any(WWW_URL in str(route) for route in hass.http.app.router.resources()), (
         "the folder the cards import from has to be served, not just listed"
@@ -780,7 +792,11 @@ async def test_a_card_added_by_an_update_is_registered_on_the_next_reload(hass):
     from homeassistant.setup import async_setup_component
 
     from custom_components.ugreen_connect import frontend
-    from custom_components.ugreen_connect.frontend import WWW_URL, async_register_card
+    from custom_components.ugreen_connect.frontend import (
+        WWW_URL,
+        async_register_card,
+        fingerprint,
+    )
 
     assert await async_setup_component(hass, "http", {})
     resources = _Resources([])
@@ -798,7 +814,7 @@ async def test_a_card_added_by_an_update_is_registered_on_the_next_reload(hass):
         frontend.CARD_FILES = before
 
     assert [item["url"] for item in resources.async_items()] == [
-        f"{WWW_URL}/{name}" for name in before
+        f"{WWW_URL}/{fingerprint()}/{name}" for name in before
     ]
 
 
@@ -829,3 +845,45 @@ async def test_a_card_that_cannot_be_registered_does_not_stop_the_charger(
 
     assert entry.state is ConfigEntryState.LOADED
     assert _entity(hass, f"{DEVICE_CODE}_C1_power") is not None
+
+
+async def test_a_changed_card_gets_a_new_address(hass, tmp_path, monkeypatch):
+    """The address names the contents, so a changed file cannot hide behind
+    the browser's copy of the old one.
+
+    Home Assistant serves the folder without `Cache-Control`, and Lovelace
+    loads cards with `import()` once the page is up -- a request a hard reload
+    does not reliably repeat. An updated ports card sat behind its old self
+    through several Cmd+Shift+R before this. Now the edit moves the url, the
+    reload re-registers the resource at the new one, and the old one goes.
+    """
+    import shutil
+
+    from homeassistant.setup import async_setup_component
+
+    from custom_components.ugreen_connect import frontend
+
+    folder = tmp_path / "www"
+    shutil.copytree(frontend.FOLDER, folder)
+    monkeypatch.setattr(frontend, "FOLDER", str(folder))
+
+    assert await async_setup_component(hass, "http", {})
+    resources = _Resources([])
+    hass.data["lovelace"] = SimpleNamespace(resources=resources)
+
+    await frontend.async_register_card(hass)
+    first = frontend.fingerprint(str(folder))
+    ports = f"{frontend.WWW_URL}/{first}/ugreen-ports-card.js"
+    assert ports in [item["url"] for item in resources.async_items()]
+
+    # The shared module alone changes: every card that imports it is new.
+    shared = folder / "ugreen-ui.js"
+    shared.write_text(shared.read_text() + "\n// changed\n")
+    second = frontend.fingerprint(str(folder))
+    assert second != first
+
+    await frontend.async_register_card(hass)
+    urls = [item["url"] for item in resources.async_items()]
+    assert f"{frontend.WWW_URL}/{second}/ugreen-ports-card.js" in urls
+    assert ports not in urls, "the old address was left for the browser to prefer"
+    assert len(urls) == len(frontend.CARD_FILES)
