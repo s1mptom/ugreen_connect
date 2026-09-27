@@ -108,9 +108,9 @@ const STYLE = `
   .strip { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
            margin-top: auto; }
   .chips { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; font: inherit;
-          font-size: 12px; background: var(--secondary-background-color); border: none;
-          border-radius: 999px; color: var(--secondary-text-color); cursor: pointer; }
+  .chip { display: inline-flex; align-items: center; gap: 7px; height: 30px; box-sizing: border-box;
+          padding: 0 10px; font: inherit; font-size: 12px; background: var(--secondary-background-color);
+          border: none; border-radius: 999px; color: var(--secondary-text-color); cursor: pointer; }
   .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--disabled-text-color); }
   .chip.ok .dot { background: var(--success-color, #4caf50); }
   .chip.warn { color: var(--primary-text-color); }
@@ -123,9 +123,25 @@ const STYLE = `
   .screen input[type="range"] { flex: none; width: 130px; margin: 0;
                    accent-color: var(--state-icon-active-color, var(--primary-color)); }
   .screen .val { font-size: 12px; color: var(--secondary-text-color); width: 34px; }
-  .screen select { font: inherit; font-size: 12px; padding: 6px 10px; border-radius: 999px;
-                   color: var(--primary-text-color); background: var(--secondary-background-color);
-                   border: 1px solid var(--divider-color); max-width: 140px; }
+  /* Drawn here rather than by the operating system. Left native, it was a
+   * different control in every browser -- 30px tall in Chrome, 19px in
+   * Safari, which ignores the padding -- with the system's own arrow on a
+   * card whose every other control is a pill. The arrow is the wrapper's, in
+   * the theme's own ink, since a picture of one cannot follow the theme. */
+  .pick { position: relative; display: inline-flex; flex: none; }
+  .pick::after { content: ''; position: absolute; right: 12px; top: 50%; width: 5px; height: 5px;
+                 border-right: 1.5px solid var(--secondary-text-color);
+                 border-bottom: 1.5px solid var(--secondary-text-color);
+                 transform: translateY(-75%) rotate(45deg); pointer-events: none; }
+  .pick select { appearance: none; -webkit-appearance: none; -moz-appearance: none; margin: 0;
+                 height: 30px; box-sizing: border-box; padding: 0 30px 0 12px; line-height: 28px;
+                 font: inherit; font-size: 12px; color: var(--primary-text-color);
+                 background: var(--secondary-background-color); border: 1px solid transparent;
+                 border-radius: 999px; cursor: pointer; max-width: 160px; }
+  .pick select:hover { border-color: var(--divider-color); }
+  .pick select:focus-visible { outline: 2px solid var(--state-icon-active-color, var(--primary-color));
+                               outline-offset: 1px; }
+  .pick select option { color: var(--primary-text-color); background: var(--card-background-color); }
   .note { font-size: 11px; color: var(--secondary-text-color); }
   .empty { padding: 14px 16px; color: var(--secondary-text-color); }
   :host([data-part="summary"]) .body,
@@ -209,7 +225,8 @@ class UgreenChargerCard extends HTMLElement {
                 <span class="label">${this._t('screen')}</span>
                 <input class="bright" type="range" min="0" max="100" step="1" aria-label="${this._t('screen')}">
                 <span class="val"></span>
-                <select class="off" aria-label="${this._t('screenOff')}"></select>
+                <span class="label off-label">${this._t('screenOff')}</span>
+                <span class="pick"><select class="off" aria-label="${this._t('screenOff')}"></select></span>
               </div>
             </div>
           </div>
@@ -235,6 +252,8 @@ class UgreenChargerCard extends HTMLElement {
       bright: this._root.querySelector('.bright'),
       brightValue: this._root.querySelector('.val'),
       off: this._root.querySelector('.off'),
+      offPick: this._root.querySelector('.pick'),
+      offLabel: this._root.querySelector('.off-label'),
       note: this._root.querySelector('.note'),
     };
 
@@ -402,7 +421,8 @@ class UgreenChargerCard extends HTMLElement {
     this._els.bright.hidden = !brightness;
 
     const off = ent.screenOff ? this._hass.states[ent.screenOff] : undefined;
-    this._els.off.hidden = !off;
+    this._els.offPick.hidden = !off;
+    this._els.offLabel.hidden = !off;
     if (!off) return;
     const options = off.attributes.options || [];
     const same = this._els.off.options.length === options.length
