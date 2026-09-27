@@ -163,41 +163,50 @@ charger, not both: together they count every watt-hour twice.
 
 ## The cards
 
-Five cards ship with the integration and are registered for you, so there is
-nothing to install and no resource to add by hand. Each finds the charger's
-entities itself; with two chargers set up, give them `device_id`.
+These ship with the integration and are registered for you, so there is nothing
+to install and no resource to add by hand. Each finds the charger's entities
+itself; with two chargers set up, give them `device_id`.
 
 | Card | What it draws |
 |---|---|
-| `custom:ugreen-charger-card` | the total with a bar, today and all-time energy, the charging modes as a row of buttons, cloud and firmware, brightness and screen timeout |
-| `custom:ugreen-ports-card` | every port in one table — power, volts, amps, protocol, the session so far and how long it has run — and the sessions that ended under it |
-| `custom:ugreen-power-card` | power over the last hours, the total behind the ports that make it up, read from the recorder |
+| `custom:ugreen-charger-card` | the total out of the charger's budget, cut into the ports drawing it; the charging mode and what it does, with the custom limits beside it in that mode; cloud and firmware |
+| `custom:ugreen-ports-card` | one tile per port, in the order they sit on the charger: watts, volts, amps, protocol, a line of the last hour, and what the current charge has put in |
+| `custom:ugreen-sessions-card` | the charges that have finished, newest first, one row per port |
+| `custom:ugreen-power-card` | power over the last hour, three hours or day, per port and in total, read from the recorder |
 | `custom:ugreen-energy-card` | kilowatt-hours per port for a day, a week, a month or all time |
-| `custom:ugreen-dashboard-card` | the four above arranged as one screen, for a dashboard given over to the charger |
+| `custom:ugreen-wallpaper-card` | the charger's screen: screensaver, brightness and screen-off, with an editor for the clock and the picture |
+| `custom:ugreen-dashboard-card` | all of the above as one screen, for a view given over to the charger |
 
-They take their colours from the theme, name the ports as the charger does, and
-a control moved on one holds its new value until the charger confirms it rather
-than springing back mid-write.
+A port keeps one colour on every card, picked to stay apart in light and dark
+themes and for common kinds of colour blindness; a theme can set
+`--ugreen-port-color-1` to `-8` to change them. Times follow the 12- or 24-hour
+choice in your Home Assistant profile. A control moved on a card holds its new
+value until the charger confirms it rather than springing back mid-write, which
+for this charger takes a few seconds.
 
-Two ways to put them up. [`docs/dashboard.yaml`](docs/dashboard.yaml) is the
-screenful above, laid out in sections, which is the one to take if the charger
-shares its dashboard with anything else. If it does not,
+Two ways to put them up. [`docs/dashboard.yaml`](docs/dashboard.yaml) lays them
+out in sections, the one to take if the charger shares its dashboard with
+anything else. If it does not,
 [`docs/dashboard-panel.yaml`](docs/dashboard-panel.yaml) hands the whole view to
-`ugreen-dashboard-card`, which sizes the pieces to what they hold rather than to
-a column grid — the ports table tall on the left, the chart and the finished
-sessions beside it. Below about 1100px it folds to one column.
+`ugreen-dashboard-card`: the budget across the top, the ports as tiles under
+it, and the chart with the finished sessions, the week's energy and the screen
+beside it. On a narrower screen it folds to one column, and the tiles go four
+to a row, then two.
 
-## The screensaver card
+## The screen card
 
-The entities above are enough to automate with, but the screensaver is easier to
-set the way the app sets it: one panel, with a live preview of the strip the
-charger will actually show.
+The entities are enough to automate with, but the screen is easier to set the
+way the app sets it. The card shows the strip as the charger will show it, with
+the screensaver, the brightness and how soon the screen goes dark; **Edit
+screen** opens an editor over the page, with the strip at the charger's own
+size, the clock's style and format, the pictures the charger carries and your
+own, and an upload.
 
-<img src="docs/screensaver-card.png" alt="The screensaver card" width="340">
+<img src="docs/screensaver-card.png" alt="The screen card" width="340">
 
 The card is **served by the integration itself**, so there is nothing to add in
-HACS and no resource to register — install the integration, restart, and the
-card is available. Add it to a dashboard with *Add card → Manual*:
+HACS and no resource to register. Add it to a dashboard with *Add card →
+Manual*:
 
 ```yaml
 type: custom:ugreen-wallpaper-card
@@ -209,28 +218,29 @@ the device:
 ```yaml
 type: custom:ugreen-wallpaper-card
 device_id: 0123456789abcdef0123456789abcdef   # Settings → Devices → your charger, from the URL
-title: Screensaver                            # optional; the card's heading
+title: Screen                                 # optional; the card's heading
 ```
 
 | Option | Default | Meaning |
 |---|---|---|
 | `device_id` | first charger found | which charger the card controls |
-| `title` | `Screensaver` | heading next to the on/off switch |
+| `title` | `Screen` | the card's heading |
 
-Turning the switch off hides the settings, exactly as the app does — there is
-nothing to configure while the screensaver is off.
-
-**If the card does not appear** after installing, reload the browser with a hard
-refresh (Ctrl/Cmd + Shift + R). The dashboard can render once before the
-integration has finished starting, and shows *Configuration error* until the
-page is loaded again.
+**If a card does not appear** right after installing, load the page once more:
+a dashboard drawn while Home Assistant was still starting can have asked for
+the cards before they were being served. After an update there is nothing to
+clear -- the cards' address changes with their contents, so a browser cannot
+keep showing the old ones.
 
 ### Your own wallpaper
 
-*Upload a picture* opens a crop window over the photo you choose — drag, zoom
-and rotate under it. The screen is **560 × 170**, wide enough that a photo almost
-never suits it as taken, and zoom cannot go below the size that fills the window,
-so a wallpaper never ends up with empty edges.
+*Upload a photo* opens a fitting step: the screen's frame over the photo you
+chose, which you drag, zoom and turn under it — to any angle, with the slider
+or with two fingers on a phone — while a preview shows it as the charger will.
+The screen is **560 × 170**, wide enough that a photo almost never suits it as
+taken, and the zoom cannot go below what keeps the frame covered at the angle
+you set, so a wallpaper never ends up with a blank corner. Nothing is sent until
+you press *Use this photo*.
 
 The charger keeps **one** slot of its own alongside the built-in pictures, so
 uploading replaces whatever custom picture it was holding.

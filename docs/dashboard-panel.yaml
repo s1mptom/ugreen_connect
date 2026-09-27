@@ -2,10 +2,11 @@
 # Home Assistant's column grid.
 #
 # `ugreen-dashboard-card` draws the same pieces as docs/dashboard.yaml -- they
-# are the same cards -- but decides their sizes itself: the ports table is as
-# tall as it needs to be, the chart sits beside it, and the strip runs across
-# the top. That only works in a view given over to one card, which is what
-# `type: panel` means. Below about 1100px it folds to a single column.
+# are the same cards -- but decides their sizes itself: the budget across the
+# top, the ports as tiles in the order they sit on the charger, and the chart
+# with the finished sessions, the week's energy and the screen beside it. That
+# only works in a view given over to one card, which is what `type: panel`
+# means. On a narrower screen it folds to one column.
 #
 # TO USE: paste under `views:` in a dashboard's raw configuration editor and
 # replace the device_id with your charger's (Settings -> Devices -> your

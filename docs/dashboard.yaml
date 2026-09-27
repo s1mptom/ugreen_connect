@@ -1,18 +1,19 @@
-# The view in docs/dashboard.png: the charger on one screen.
+# The charger's own cards, laid out in sections -- for a dashboard the charger
+# shares with other things. If it has a view to itself, docs/dashboard-panel.yaml
+# is the same screen laid out by one card, which fits the pieces more tightly.
 #
 # Every card here ships with the integration -- installing it is enough, there
 # is nothing to add in HACS and no resource to wire up by hand.
 #
 # TO USE: paste under `views:` in a dashboard's raw configuration editor, then
 #   - replace the device_id with your charger's (Settings -> Devices -> your
-#     charger; it is the last part of the URL), and
-#   - drop `max_power` or set it to your model's rating; without it the total
-#     bar scales to the largest reading the card has seen.
+#     charger; it is the last part of the URL), or drop it with one charger, and
+#   - set `max_power` to your model's rating, or drop it; without it the
+#     budget bar scales to the largest reading the card has seen.
 #
-# The Custom mode limits card is conditional: it appears only while the charger
-# is in that mode, because the sensors behind it read nothing under a preset.
-# Its entity ids are the one part of this that is not device_id-driven, so they
-# need the charger's own prefix.
+# The custom-mode limits are part of the charger card: they appear beside the
+# modes while the charger runs Custom, since the sensors behind them read
+# nothing under a preset.
 
 title: Charger
 path: charger
@@ -29,19 +30,24 @@ sections:
     max_power: 300
     grid_options:
       columns: full
-- type: grid
-  column_span: 2
-  cards:
   - type: custom:ugreen-ports-card
     device_id: 0123456789abcdef0123456789abcdef
     grid_options:
       columns: full
 - type: grid
-  column_span: 2
+  column_span: 3
   cards:
   - type: custom:ugreen-power-card
     device_id: 0123456789abcdef0123456789abcdef
     hours: 3
+    grid_options:
+      columns: full
+      rows: 7
+- type: grid
+  column_span: 1
+  cards:
+  - type: custom:ugreen-sessions-card
+    device_id: 0123456789abcdef0123456789abcdef
     grid_options:
       columns: full
   - type: custom:ugreen-energy-card
@@ -49,30 +55,7 @@ sections:
     period: week
     grid_options:
       columns: full
-- type: grid
-  column_span: 2
-  cards:
   - type: custom:ugreen-wallpaper-card
     device_id: 0123456789abcdef0123456789abcdef
-    title: Screensaver
-  - type: conditional
-    conditions:
-    - condition: state
-      entity: select.ugreen_nexode_pro_x783_charging_mode
-      state: custom
-    card:
-      type: entities
-      title: Custom mode limits
-      entities:
-      - entity: sensor.ugreen_nexode_pro_x783_c1_custom_mode_limit
-        name: C1
-      - entity: sensor.ugreen_nexode_pro_x783_c2_custom_mode_limit
-        name: C2
-      - entity: sensor.ugreen_nexode_pro_x783_c3_custom_mode_limit
-        name: C3
-      - entity: sensor.ugreen_nexode_pro_x783_c4_custom_mode_limit
-        name: C4
-      - entity: sensor.ugreen_nexode_pro_x783_c5_custom_mode_limit
-        name: C5
-      - entity: sensor.ugreen_nexode_pro_x783_c6_a_custom_mode_limit
-        name: C6+A
+    grid_options:
+      columns: full
