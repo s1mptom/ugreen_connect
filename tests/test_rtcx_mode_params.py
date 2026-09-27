@@ -409,3 +409,68 @@ def test_priority_ports_are_not_written_to_an_unmeasured_model():
         with pytest.raises(rtcx_module.UgreenError):
             asyncio.run(c.client.async_set_priority_ports(IOT, ["C1"], unknown))
     assert c.sent == []
+
+
+# --- the DC turbo settings ---------------------------------------------------
+
+
+def _turbo_reply(volts_byte: int, always_on: int, rest: bytes = b"") -> str:
+    """The fixture's charger put in `dc_turbo`, with something distinctive
+    after the pair when asked, so a write that zeroes it shows."""
+    body = bytearray(rtcx_module.frame_body(STATE_PRIORITY, rtcx_module.FRAME_QUERY, 1))
+    body[4] = rtcx_module.DC_TURBO_MODE
+    body[5] = volts_byte
+    body[6] = always_on
+    body[7 : 7 + len(rest)] = rest
+    return rtcx_module.build_frame(rtcx_module.FRAME_QUERY, 1, bytes(body))
+
+
+def test_a_charger_in_dc_turbo_reads_its_voltage_and_switch():
+    state = _Client({IOT: _turbo_reply(3, 0)}).read()
+    assert state["dc_turbo"] == {"voltage": 20, "always_on": False}
+    assert state["priority"] is None
+
+
+def test_the_voltage_is_written_alone():
+    c = _Client({IOT: _turbo_reply(3, 1, b"\x55")})
+    c.read()
+    asyncio.run(c.client.async_set_dc_turbo(IOT, "X783", voltage=15))
+    payload = c.sent[-1][2]
+    assert payload[0] == 2, "the mode byte has to stay dc_turbo"
+    assert payload[1] == 2, "15 V"
+    assert payload[2] == 1, "Always On went back as it came"
+    assert payload[3] == 0x55
+    assert len(payload) == 1 + rtcx_module.CHARGING_MODE_PARAMS
+
+
+def test_always_on_is_written_alone():
+    c = _Client({IOT: _turbo_reply(1, 0, b"\x55")})
+    c.read()
+    asyncio.run(c.client.async_set_dc_turbo(IOT, "X783", always_on=True))
+    payload = c.sent[-1][2]
+    assert payload[:4] == bytes([2, 1, 1, 0x55])
+
+
+def test_dc_turbo_never_seen_is_not_written_one_byte_at_a_time():
+    """The other byte would go out as 0, and a voltage of 0 is refused."""
+    c = _Client({IOT: STATE_PRIORITY})
+    c.read()
+    with pytest.raises(rtcx_module.UgreenError):
+        asyncio.run(c.client.async_set_dc_turbo(IOT, "X783", always_on=True))
+    assert c.sent == []
+
+
+def test_a_voltage_the_app_does_not_offer_is_refused():
+    c = _Client({IOT: _turbo_reply(3, 0)})
+    c.read()
+    with pytest.raises(ValueError):
+        asyncio.run(c.client.async_set_dc_turbo(IOT, "X783", voltage=9))
+    assert c.sent == []
+
+
+def test_dc_turbo_is_not_written_to_an_unmeasured_model():
+    c = _Client()
+    for unknown in (None, "X999"):
+        with pytest.raises(rtcx_module.UgreenError):
+            asyncio.run(c.client.async_set_dc_turbo(IOT, unknown, voltage=12))
+    assert c.sent == []

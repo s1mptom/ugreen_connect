@@ -72,6 +72,8 @@ e.g. `sensor.ugreen_nexode_pro_x783_c1_power`.
 | `select.<device>_charging_mode` | adaptive power, thermal safe, DC turbo, priority |
 | `switch.<device>_screensaver` | the clock the screen shows once it sleeps |
 | `switch.<device>_c1_charged_first` … | C1, C2 and C3: whether the `priority` mode charges that port first. Any of them, all three included, but never none -- turning off the last one is refused. Unavailable under any other mode |
+| `select.<device>_dc_port_voltage` | 12, 15 or 20 V: what DC turbo gives the DC port. Unavailable under any other mode |
+| `switch.<device>_dc_always_on` | whether DC turbo keeps the DC port live with nothing plugged in. Unavailable under any other mode |
 | `select.<device>_time_format` | 12- or 24-hour |
 | `select.<device>_clock_style` | the two faces the charger draws |
 | `select.<device>_wallpaper` | any picture in your UGREEN library, or none |
@@ -85,9 +87,21 @@ some -- leaves the control where it was rather than moving and springing back.
 cannot be selected here: setting a mode carries that mode's parameter block, and
 only the app's editor can compose a custom one. Home Assistant replays a block it
 has watched the charger running; the only block it ever composes is an empty one,
-for a mode it has not seen. The one byte it changes is the priority ports' mask,
-the first of the block under `priority`, and the only one that moves when the
-choice is changed in the app.
+for a mode it has not seen. The bytes it changes are the priority ports'
+mask, the first of the block under `priority`, and under `dc_turbo` the DC
+voltage and Always On, the first two -- each the only byte that moves when that
+control is changed in the app.
+
+**DC turbo turns USB ports off.** At 12 or 15 V only C1–C3 keep charging beside
+the DC port, and at 20 V none of the USB ports do. That is how the
+[Notebookcheck review](https://www.notebookcheck.net/Powerful-fast-charging-hub-with-DC-port-Ugreen-Nexode-Pro-300W-Desktop-Charger-review.1370087.0.html)
+describes this charger, and what an X783 did here: C5 went dark the moment DC
+turbo came on at 12 V, and came back seconds after the mode was changed again.
+C1 went dark too, both times DC turbo was switched on, although it is one of
+the three that should stay on. Once its device came back by itself after the
+mode was changed again, and once it had not several minutes later. So a device
+that was charging when DC turbo came on may need to be plugged in again. The
+charger card says which ports are off beside the voltage, and their tiles say so too.
 
 That applies to the presets too. A mode carries its own settings — `priority`
 keeps a mask of its priority ports there, DC Turbo its port voltage and its
@@ -172,8 +186,8 @@ itself; with two chargers set up, give them `device_id`.
 
 | Card | What it draws |
 |---|---|
-| `custom:ugreen-charger-card` | the total out of the charger's budget, cut into the ports drawing it; the charging mode and what it does -- in `priority`, the ports it charges first, to pick from; in `custom`, its limits; cloud and firmware |
-| `custom:ugreen-ports-card` | one tile per port, in the order they sit on the charger: watts, volts, amps, protocol, a line of the last hour, what the current charge has put in, and a *First* badge on the ports `priority` charges first |
+| `custom:ugreen-charger-card` | the total out of the charger's budget, cut into the ports drawing it; the charging mode and what it does -- in `priority`, the ports it charges first, to pick from; in DC turbo, the DC port's voltage and Always On, and which USB ports that turns off; in `custom`, its limits; cloud and firmware |
+| `custom:ugreen-ports-card` | one tile per port, in the order they sit on the charger: watts, volts, amps, protocol, a line of the last hour, what the current charge has put in, a *First* badge on the ports `priority` charges first, and *Off in DC turbo* on the ports DC turbo turns off |
 | `custom:ugreen-sessions-card` | the charges that have finished, newest first, one row per port |
 | `custom:ugreen-power-card` | power over the last hour, three hours or day, per port and in total, read from the recorder |
 | `custom:ugreen-energy-card` | kilowatt-hours per port for a day, a week, a month or all time |

@@ -1,4 +1,4 @@
-"""Select platform: charging mode and wallpaper."""
+"""Select platform: charging mode, DC turbo voltage, screen-off time, clock and picture."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import asyncio
 from typing import Any
 
 from homeassistant.components.select import SelectEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -23,6 +24,7 @@ from .const import (
 from .coordinator import UgreenCoordinator, device_key
 from .entity import UgreenDeviceEntity, cloud_errors
 from .image_proxy import wallpaper_path
+from .protocol import DC_VOLTAGE_BYTE
 
 MODE_VALUE = {name: value for value, name in CHARGING_MODES.items()}
 CLOCK_STYLE_VALUE = {name: value for value, name in CLOCK_STYLES.items()}
@@ -53,6 +55,11 @@ async def async_setup_entry(
             if reading.get("charging_mode") and (key, "mode") not in known:
                 known.add((key, "mode"))
                 new.append(UgreenChargingMode(coordinator, key))
+            # Whatever mode is running, as with the priority ports: unavailable
+            # outside `dc_turbo`, alive the moment it is chosen.
+            if "dc_turbo" in reading and (key, "dc_voltage") not in known:
+                known.add((key, "dc_voltage"))
+                new.append(UgreenDcVoltage(coordinator, key))
             if reading.get("wallpapers") and (key, "wallpaper") not in known:
                 known.add((key, "wallpaper"))
                 new.append(UgreenWallpaper(coordinator, key))
@@ -138,11 +145,63 @@ class UgreenChargingMode(UgreenDeviceEntity, SelectEntity):
         if not iot_id or option not in MODE_VALUE:
             return
         self._require_writable("charging_mode")
-        with cloud_errors():
-            await self.coordinator.rtcx.async_set_charging_mode(
-                iot_id, MODE_VALUE[option], self.coordinator.model_for(self._key)
-            )
-        await self.coordinator.async_read_back(self._key, iot_id)
+        # In turn with the mode's own settings, which go out in this frame too.
+        async with self.coordinator.mode_turns(self._key):
+            with cloud_errors():
+                await self.coordinator.rtcx.async_set_charging_mode(
+                    iot_id, MODE_VALUE[option], self.coordinator.model_for(self._key)
+                )
+            await self.coordinator.async_read_back(self._key, iot_id)
+
+
+class UgreenDcVoltage(UgreenDeviceEntity, SelectEntity):
+    """The voltage DC turbo gives the DC port: 12, 15 or 20 V, as the app offers.
+
+    The first byte of `dc_turbo`'s block, so available only while that mode
+    runs: under `priority` the same byte is the port mask, and C2 alone would
+    read as 15 V.
+    """
+
+    _attr_translation_key = "dc_voltage"
+    _attr_icon = "mdi:flash"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_options = [str(volts) for volts in DC_VOLTAGE_BYTE]
+
+    def __init__(self, coordinator: UgreenCoordinator, key: str) -> None:
+        super().__init__(coordinator, key)
+        self._attr_unique_id = f"{key}_dc_voltage"
+
+    @property
+    def _turbo(self) -> dict[str, Any] | None:
+        return (self._reading or {}).get("dc_turbo")
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._turbo is not None
+
+    @property
+    def current_option(self) -> str | None:
+        volts = (self._turbo or {}).get("voltage")
+        return None if volts is None else str(volts)
+
+    async def async_select_option(self, option: str) -> None:
+        async with self.coordinator.mode_turns(self._key):
+            turbo = self._turbo
+            iot_id = self._iot_id
+            if turbo is None or not iot_id:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="dc_turbo_not_running",
+                )
+            volts = int(option)
+            if turbo["voltage"] == volts:
+                return
+            self._require_writable("dc_turbo")
+            with cloud_errors():
+                await self.coordinator.rtcx.async_set_dc_turbo(
+                    iot_id, self.coordinator.model_for(self._key), voltage=volts
+                )
+            await self.coordinator.async_read_back(self._key, iot_id)
 
 
 class UgreenWallpaper(UgreenDeviceEntity, SelectEntity):

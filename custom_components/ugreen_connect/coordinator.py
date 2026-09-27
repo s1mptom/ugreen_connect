@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -112,6 +113,14 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._params_store = params_store
         # What the store already holds, so an unchanged poll writes nothing.
         self._saved_params: dict[str, str] = dict(mode_params or {})
+        # One queue per charger for every write that goes out in the charging
+        # mode's frame: the mode itself, the priority ports, the DC turbo
+        # settings. Each sends a whole block worked out from the last reading,
+        # so two started side by side both begin from the reading before
+        # either, and the second undoes the first -- a voltage change and an
+        # Always On toggle together would leave only one of them. In turn, each
+        # starts from what the one before it read back.
+        self._mode_turns: dict[str, asyncio.Lock] = {}
 
     async def _async_update_data(self) -> dict[str, Any]:
         started = time.monotonic()
@@ -331,6 +340,10 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     retained[0].update(settled)
 
         return data
+
+    def mode_turns(self, key: str) -> asyncio.Lock:
+        """The queue this charger's charging-mode writes wait in, one at a time."""
+        return self._mode_turns.setdefault(key, asyncio.Lock())
 
     def model_for(self, key: str) -> str | None:
         """What this charger is, as far as anyone has been told.
