@@ -11,8 +11,6 @@
  *   title: Ports                    # optional
  *   ports: true                     # the port table itself; default true
  *   sessions: true                  # the ended-sessions table; default true
- *   max_power: 300                  # what the row bars scale to; default: the
- *                                   # largest total this card has seen
  */
 
 import {
@@ -113,13 +111,12 @@ const STYLE = `
   td.volts, td.amps { font-size: 13px; }
   td.protocol { font-size: 12px; }
   td.since { font-size: 12px; }
-  /* The bar belongs beside what it measures, not beside the number it repeats:
-   * against the session text it reads as how much of the charger this port is
-   * taking, which is the question a row of eight ports is asked. */
-  .session { display: flex; align-items: center; gap: 8px; }
-  .session .u-meter { flex-grow: 1; height: 6px; }
-  .session .text { font-size: 12px; width: 104px; flex: none; white-space: nowrap;
-                   overflow: hidden; text-overflow: ellipsis; }
+  /* What went into this port, in as much of the column as it needs. A bar of
+   * the port's share of the charger used to sit in front of it, and took half
+   * the width to say what the watts beside it already said -- while the
+   * milliamp-hours, which are only here, were cut off. */
+  .session { display: block; font-size: 12px; white-space: nowrap;
+             overflow: hidden; text-overflow: ellipsis; }
   h3 { margin: 8px 0 0; font-size: 11px; font-weight: 400; text-transform: uppercase;
        letter-spacing: .10em; color: var(--secondary-text-color); }
   table.sessions { font-size: 13px; }
@@ -136,7 +133,6 @@ class UgreenPortsCard extends HTMLElement {
   setConfig(config) {
     this._config = config || {};
     this._built = false;
-    this._peak = 0;
     if (this.shadowRoot) this.shadowRoot.innerHTML = '';
   }
 
@@ -231,22 +227,15 @@ class UgreenPortsCard extends HTMLElement {
       return;
     }
 
-    const totalId = findOne(this._hass, this._config.device_id, 'sensor', '_total_power');
-    const total = totalId
-      ? num(this._hass, totalId)
-      : found.reduce((sum, port) => sum + num(this._hass, port.id), 0);
-    this._peak = Math.max(this._peak, total, 1);
-    const scale = Number(this._config.max_power) || this._peak;
-
     if (showPorts) {
       this._els.ports.replaceChildren(
-        ...found.map((port, index) => this._portRow(port, scale, SERIES[index % SERIES.length])),
+        ...found.map((port, index) => this._portRow(port, SERIES[index % SERIES.length])),
       );
     }
     if (showSessions) this._sessionRows(found);
   }
 
-  _portRow(port, scale, colour) {
+  _portRow(port, colour) {
     const watts = num(this._hass, port.id);
     const volts = num(this._hass, `${port.base}_voltage`);
     const amps = num(this._hass, `${port.base}_current`);
@@ -264,11 +253,7 @@ class UgreenPortsCard extends HTMLElement {
       <td class="protocol u-narrow-hide">${
         protocol && protocol !== 'none' ? protocol : `<span class="u-muted">${this._t('none')}</span>`
       }</td>
-      <td><span class="session">
-        <span class="u-meter"><i style="width: ${
-          Math.min(100, (watts / scale) * 100).toFixed(0)}%; background: ${colour}"></i></span>
-        <span class="text u-muted">${this._sessionText(port, volts)}</span>
-      </span></td>
+      <td><span class="session u-muted">${this._sessionText(port, volts)}</span></td>
       <td class="num since u-narrow-hide u-muted">${this._sinceText(port)}</td>
     `;
     row.addEventListener('click', () => this._moreInfo(port.id));

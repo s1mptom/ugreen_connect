@@ -13,7 +13,7 @@
  * Config:
  *   type: custom:ugreen-dashboard-card
  *   device_id: <the charger>        # optional if only one charger is set up
- *   max_power: 300                  # what the bars scale to
+ *   max_power: 300                  # what the total bar scales to
  *   hours: 3                        # the chart's range to start on
  *   period: week                    # the energy card's period
  */

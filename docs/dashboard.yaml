@@ -6,8 +6,8 @@
 # TO USE: paste under `views:` in a dashboard's raw configuration editor, then
 #   - replace the device_id with your charger's (Settings -> Devices -> your
 #     charger; it is the last part of the URL), and
-#   - drop `max_power` or set it to your model's rating; without it the bars
-#     scale to the largest total the card has seen.
+#   - drop `max_power` or set it to your model's rating; without it the total
+#     bar scales to the largest reading the card has seen.
 #
 # The Custom mode limits card is conditional: it appears only while the charger
 # is in that mode, because the sensors behind it read nothing under a preset.
@@ -34,7 +34,6 @@ sections:
   cards:
   - type: custom:ugreen-ports-card
     device_id: 0123456789abcdef0123456789abcdef
-    max_power: 300
     grid_options:
       columns: full
 - type: grid
