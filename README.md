@@ -202,7 +202,9 @@ screen** opens an editor over the page, with the strip at the charger's own
 size, the clock's style and format, the pictures the charger carries and your
 own, and an upload.
 
-<img src="docs/screensaver-card.png" alt="The screen card" width="340">
+<img src="docs/screensaver-card.png" alt="The screen card" width="464">
+
+<img src="docs/screen-editor.png" alt="The screen editor" width="640">
 
 The card is **served by the integration itself**, so there is nothing to add in
 HACS and no resource to register. Add it to a dashboard with *Add card →
