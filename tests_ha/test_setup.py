@@ -8,6 +8,7 @@ when they were written and neither had ever been run.
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from types import SimpleNamespace
 
@@ -682,6 +683,71 @@ async def test_outside_dc_turbo_the_dc_settings_write_nothing(hass, started, rtc
     )
     assert rtcx.turbo_writes == []
     assert hass.states.get(DC_VOLTAGE).state == STATE_UNAVAILABLE
+
+
+async def test_the_debug_log_carries_nothing_of_the_household(hass, started, rtcx, caplog):
+    """What people mapping a charger are asked to post.
+
+    Debug logging on, a poll, a write, and a failure whose message the cloud
+    wrote -- with the charger's unit code in it, which no line here would put
+    there on purpose. None of the account, the unit code, the cloud id or the
+    MAC may come out.
+    """
+    from custom_components.ugreen_connect.api import UgreenError
+    from custom_components.ugreen_connect.logsafe import charger_tag
+
+    caplog.set_level(logging.DEBUG, logger="custom_components.ugreen_connect")
+    await started.runtime_data.async_refresh()
+    await hass.services.async_call(
+        "select", "select_option", {"entity_id": CHARGING_MODE_SELECT, "option": "thermal_safe"},
+        blocking=True,
+    )
+
+    async def _fails(*_args, **_kwargs):
+        raise UgreenError(f"gateway refused {DEVICE_CODE}")
+
+    rtcx.async_power = _fails
+    await started.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    text = caplog.text
+    assert "Live power unavailable" in text, "the failure has to have been logged"
+    for secret in (DEVICE_CODE, IOT_ID, "EC:1A:C3:00:00:01", "someone@example.invalid"):
+        assert secret not in text, f"{secret} is in the log"
+    assert charger_tag(IOT_ID) in text, "a line still says which charger"
+
+
+async def test_idle_the_poll_slows_but_not_while_debug_logging(hass, started, caplog):
+    """Mapping a setting is done with nothing plugged in, a few seconds apart."""
+    coordinator = started.runtime_data
+    coordinator._drawing = False
+    # Said outright: asking for `caplog` puts the root logger at DEBUG here.
+    caplog.set_level(logging.INFO, logger="custom_components.ugreen_connect")
+    coordinator._reschedule(0)
+    slow = coordinator.update_interval
+    caplog.set_level(logging.DEBUG, logger="custom_components.ugreen_connect")
+    coordinator._reschedule(0)
+    assert coordinator.update_interval < slow
+    assert coordinator.update_interval.total_seconds() == coordinator._target_period
+
+
+async def test_the_state_is_read_once_a_minute(hass, started, rtcx):
+    before = rtcx.state_reads
+    for _ in range(3):
+        await started.runtime_data.async_refresh()
+    assert rtcx.state_reads == before
+
+
+async def test_while_debug_logging_the_state_is_read_every_poll(hass, started, rtcx, caplog):
+    """Somebody mapping their charger changes one setting in the app at a time.
+
+    A minute between reads would put several of those into one diff.
+    """
+    caplog.set_level(logging.DEBUG, logger="custom_components.ugreen_connect")
+    before = rtcx.state_reads
+    for _ in range(3):
+        await started.runtime_data.async_refresh()
+    assert rtcx.state_reads == before + 3
 
 
 @pytest.mark.parametrize(

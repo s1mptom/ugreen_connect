@@ -130,6 +130,17 @@ def _payload():
     }
 
 
+# One entry of the state record, as the client writes it: no ids in it.
+CHANGE = {
+    "at": "2026-09-27T20:00:00+00:00",
+    "model": "X783",
+    "length": 74,
+    "mode": "priority",
+    "moved": [[5, "02", "03"]],
+    "body": "0037640103030000",
+}
+
+
 def _download(payload=None, frames=None):
     module = _module()
     payload = _payload() if payload is None else payload
@@ -144,7 +155,8 @@ def _download(payload=None, frames=None):
             }
             if frames is None
             else frames
-        }
+        },
+        state_changes={IOT_ID: [CHANGE]},
     )
     entry = types.SimpleNamespace(
         runtime_data=types.SimpleNamespace(data=payload, rtcx=rtcx),
@@ -227,7 +239,8 @@ def test_a_second_charger_does_not_get_the_first_one_s_frames():
         last_frames={
             IOT_ID: {"AA/6": "AA06003F0033"},
             second_iot: {"AA/6": "AA0600200C7"},
-        }
+        },
+        state_changes={second_iot: [{**CHANGE, "model": "X776"}]},
     )
     entry = types.SimpleNamespace(
         runtime_data=types.SimpleNamespace(data=payload, rtcx=rtcx),
@@ -237,6 +250,16 @@ def test_a_second_charger_does_not_get_the_first_one_s_frames():
 
     assert frames["device_0"]["AA/6"] == "AA06003F0033"
     assert frames["device_1"]["AA/6"] == "AA0600200C7"
+
+    # And the state record the same way: the 160W's mapping session under the
+    # 160W, and nothing under the charger that was not being mapped.
+    changes = asyncio.run(module.async_get_config_entry_diagnostics(None, entry))["state_changes"]
+    assert changes == {"device_0": [], "device_1": [{**CHANGE, "model": "X776"}]}
+
+
+def test_the_state_record_travels_with_the_file():
+    """What an owner mapping a setting sends back, so it has to be in there."""
+    assert asyncio.run(_download())["state_changes"] == {"device_0": [CHANGE]}
 
 
 def test_the_coordinator_s_own_payload_is_not_mutated():

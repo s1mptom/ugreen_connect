@@ -487,7 +487,8 @@ def frame_body(value: str, frame_type: int, cmd: int) -> bytes | None:
     try:
         raw = bytes.fromhex(value)
     except ValueError:
-        _LOGGER.debug("PT_data is not hex: %r", value)
+        # Not the value: a frame can be the Wi-Fi name or the serial as ASCII.
+        _LOGGER.debug("PT_data is not hex: %d characters", len(value or ""))
         return None
     if len(raw) < 6:
         return None
@@ -498,7 +499,9 @@ def frame_body(value: str, frame_type: int, cmd: int) -> bytes | None:
     if crc16_modbus(raw[: 4 + length]) != int.from_bytes(
         raw[4 + length : 6 + length], "little"
     ):
-        _LOGGER.debug("PT_data CRC mismatch: %s", value)
+        _LOGGER.debug(
+            "PT_data CRC mismatch on a 0x%02X/%d frame, %d bytes", raw[0], raw[1], len(raw)
+        )
         return None
     if raw[0] != frame_type or raw[1] != cmd:
         return None

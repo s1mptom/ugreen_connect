@@ -23,6 +23,7 @@ from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN, WALLPAPER_SIZE
 from .coordinator import device_key
+from .logsafe import charger_tag
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -164,7 +165,9 @@ async def async_register(hass: HomeAssistant) -> None:
             reading.get("screensaver_flag", 0),
             wallpaper_id,
         )
-        _LOGGER.info("Wallpaper %s is now on %s", wallpaper_id, device.name)
+        # The tag rather than the device's name, which its owner may have
+        # given their own name to.
+        _LOGGER.info("Wallpaper %s is now on charger %s", wallpaper_id, charger_tag(iot_id))
         await coordinator.async_request_refresh()
 
     hass.services.async_register(DOMAIN, SERVICE_SET_WALLPAPER, _handle, schema=SCHEMA)

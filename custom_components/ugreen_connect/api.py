@@ -368,7 +368,12 @@ class UgreenApi:
             for key in ("list", "records", "devices", "data"):
                 if isinstance(data.get(key), list):
                     return data[key]
-        _LOGGER.debug("deviceList returned an unrecognised shape: %r", data)
+        # The shape only: the list is every charger's MAC, serial and cloud id.
+        _LOGGER.debug(
+            "deviceList returned an unrecognised shape: %s%s",
+            type(data).__name__,
+            f" with keys {sorted(data)}" if isinstance(data, dict) else "",
+        )
         return []
 
     async def get_product_model(self, **params: Any) -> Any:

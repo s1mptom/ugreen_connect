@@ -441,6 +441,47 @@ diagnostics download (*Settings → Devices & Services → UGREEN Connect →
 Download diagnostics*) is the most useful thing to attach; it has credentials
 redacted.
 
+### Mapping a setting on your charger
+
+Settings live at byte offsets in the charger's state reply. To find one, change
+it in the UGREEN app and see which byte moves. The integration records this for
+you.
+
+1. Open *Settings → Devices & Services → UGREEN Connect* and choose **Enable
+   debug logging**. While it is on, the charger's state is read on every poll,
+   about every five seconds, instead of once a minute, even with nothing
+   plugged in.
+2. In the UGREEN app, change **one** setting. Write down what you changed and
+   to what, for example "brightness 100 → 37". Wait ten seconds before
+   changing the next one.
+3. Choose **Download diagnostics** on the same page. The file has the last 60
+   changes under `state_changes`: when each one happened, the charging mode,
+   and which bytes moved, such as `[5, "02", "05"]` (byte 5 went from 02 to 05).
+4. Choose **Disable debug logging**. Home Assistant then downloads its log;
+   you can keep it or delete it (see below).
+5. Attach the diagnostics file and your notes to an issue. Your notes are what
+   match each change to a setting.
+
+To map the ports instead, plug one device in at a time and download the
+diagnostics after each. The file has the latest power report under `frames`,
+and the port record that has values is the port you used.
+
+**What is safe to post.** The diagnostics file has the account, your
+charger's serial, cloud id and MAC, and your Wi-Fi name removed. What is left
+is the model, the firmware, the readings, the charger's own bytes and the ids
+of your pictures.
+
+The log Home Assistant downloads is **its whole log**, with every other
+integration's messages in it. Post it only if you are asked to. Before you do,
+keep only the lines with `ugreen_connect` in them. A text editor's search
+works, or on a terminal: `grep ugreen_connect home-assistant_*.log`. In those
+lines the integration writes a charger as a tag, for example `charger 3fa9c1`,
+and replaces the account e-mail, the MAC and the Wi-Fi name.
+
+Do not post `ugreen_connect_debug.json` from the *Debug snapshot* option. It is
+the unedited cloud payload, written for this integration's own development,
+and it has all of the above in it.
+
 ## Legal
 
 Written for interoperability, using the exception in Directive 2009/24/EC Art. 6

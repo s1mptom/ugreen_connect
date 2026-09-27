@@ -91,4 +91,16 @@ async def async_get_config_entry_diagnostics(
             )
             if key is not None
         },
+        # Each state reply that differed from the one before, with the bytes
+        # that moved -- what someone mapping their charger's settings sends
+        # back after changing them in the app one at a time. The same bodies
+        # the frames above carry, so nothing in them needs redacting.
+        "state_changes": {
+            names.get(key, key): list(coordinator.rtcx.state_changes.get(iot_id) or [])
+            for key, iot_id in (
+                (device_key(d), (d.get("extra") or {}).get("iotId"))
+                for d in raw.get("devices") or []
+            )
+            if key is not None and iot_id
+        },
     }

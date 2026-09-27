@@ -11,6 +11,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 
+from . import logsafe
 from .api import UgreenApi, UgreenAuthError, UgreenError
 from .const import (
     CONF_DEBUG_DUMP,
@@ -56,6 +57,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
     # Caught rather than raised, now that it runs first: a card that cannot be
     # served is a dashboard drawn plainly, while an entry that will not load is
     # a charger nothing can reach.
+    # The account before anything is logged about it (see logsafe).
+    logsafe.install(__package__)
+    logsafe.remember(entry.data.get(CONF_EMAIL), "<account>")
+
     try:
         await async_register_card(hass)
     except Exception:  # noqa: BLE001 - the cards are not worth the entry
@@ -88,6 +93,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
     # stop at the door instead of raising out of the middle of setup.
     loaded_params = await params_store.async_load()
     stored_params: dict[str, str] = loaded_params if isinstance(loaded_params, dict) else {}
+    # Its keys are cloud ids, read before any device list has named them.
+    for name in stored_params:
+        logsafe.remember_charger(str(name).rpartition(":")[0])
 
     # Telemetry lives behind a second cloud. Setting it up must not block the
     # entry, since the inventory sensors work without it.
@@ -119,6 +127,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
     await async_register(hass)
     async_register_view(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Again, for the loggers of the platforms just loaded.
+    logsafe.install(__package__)
     # The poll interval is fixed when the coordinator is built, so a changed
     # option only takes effect once the entry is set up again.
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))

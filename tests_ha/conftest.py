@@ -175,6 +175,7 @@ class FakeRtcx:
         self.mode_writes: list[tuple[str, int, str | None]] = []
         self.priority_writes: list[tuple[str, list[str], str | None]] = []
         self.turbo_writes: list[dict[str, Any]] = []
+        self.state_reads = 0
 
     async def async_login(self) -> None:
         return None
@@ -183,6 +184,7 @@ class FakeRtcx:
         return _reading(model) if self.power_answers else None
 
     async def async_device_state(self, _iot_id: str, _model: str | None = None) -> dict[str, Any]:
+        self.state_reads += 1
         return dict(self.state)
 
     async def async_set_charging_mode(

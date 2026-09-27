@@ -10,6 +10,7 @@ byte was overwritten.
 """
 
 import asyncio
+import logging
 
 import pytest
 from conftest import rtcx as rtcx_module
@@ -474,3 +475,116 @@ def test_dc_turbo_is_not_written_to_an_unmeasured_model():
         with pytest.raises(rtcx_module.UgreenError):
             asyncio.run(c.client.async_set_dc_turbo(IOT, unknown, voltage=12))
     assert c.sent == []
+
+
+# --- the record of state changes ---------------------------------------------
+#
+# What someone mapping a charger nobody here has sends back: change one setting
+# in the app, and the byte that moved is the answer.
+
+
+def _counting(replies: dict[str, str]):
+    """A client that also counts how often it asked the charger anything."""
+    c = _Client(replies)
+    c.asked = 0
+    ask = c.client._ask
+
+    async def _ask(*args, **kwargs):
+        c.asked += 1
+        return await ask(*args, **kwargs)
+
+    c.client._ask = _ask
+    return c
+
+
+def test_the_first_reply_is_written_down_whole():
+    c = _Client({IOT: STATE_PRIORITY})
+    c.read()
+    (entry,) = c.client.state_changes[IOT]
+    assert entry["moved"] is None
+    assert entry["model"] == "X783"
+    assert entry["mode"] == "priority"
+    body = rtcx_module.frame_body(STATE_PRIORITY, rtcx_module.FRAME_QUERY, 1)
+    assert entry["body"] == body.hex()
+    assert entry["length"] == len(body)
+
+
+def test_the_same_reply_again_is_not_a_change():
+    c = _Client({IOT: STATE_PRIORITY})
+    c.read()
+    c.read()
+    assert len(c.client.state_changes[IOT]) == 1
+
+
+def test_a_change_says_which_bytes_moved():
+    """Byte 5 is the priority mask: C2 alone, then C1 with C3."""
+    c = _Client({IOT: STATE_PRIORITY})
+    c.read()
+    c.replies[IOT] = _priority_reply(0b101)
+    c.read()
+    assert c.client.state_changes[IOT][-1]["moved"] == [[5, "02", "05"]]
+
+
+def test_a_reply_that_grows_says_so_byte_by_byte():
+    """The 160W's reply grew by six bytes when a picture was added."""
+    body = bytearray(rtcx_module.frame_body(STATE_PRIORITY, rtcx_module.FRAME_QUERY, 1))
+    longer = rtcx_module.build_frame(rtcx_module.FRAME_QUERY, 1, bytes(body) + b"ABCDEF")
+    c = _Client({IOT: STATE_PRIORITY})
+    c.read()
+    c.replies[IOT] = longer
+    c.read()
+    moved = c.client.state_changes[IOT][-1]["moved"]
+    assert moved == [[len(body) + i, None, f"{ch:02x}"] for i, ch in enumerate(b"ABCDEF")]
+
+
+def test_the_debug_log_says_the_change_and_not_whose_charger(caplog):
+    """The log is downloaded and posted in public, like the diagnostics."""
+    caplog.set_level(logging.DEBUG, logger=rtcx_module.__name__)
+    c = _Client({IOT: STATE_PRIORITY})
+    c.read()
+    c.replies[IOT] = _priority_reply(0b100)
+    c.read()
+    assert "byte 5 02>04" in caplog.text
+    assert rtcx_module.charger_tag(IOT) in caplog.text
+    assert IOT not in caplog.text
+
+
+def test_without_debug_logging_nothing_is_said(caplog):
+    caplog.set_level(logging.INFO, logger=rtcx_module.__name__)
+    c = _Client({IOT: STATE_PRIORITY})
+    c.read()
+    c.replies[IOT] = _priority_reply(0b100)
+    c.read()
+    assert "byte 5" not in caplog.text
+    assert len(c.client.state_changes[IOT]) == 2, "the record is kept either way"
+
+
+def test_a_charger_nobody_has_mapped_is_asked_only_while_debug_logging(caplog):
+    """Read for the record and nothing else: no state comes back from it."""
+    caplog.set_level(logging.INFO, logger=rtcx_module.__name__)
+    c = _counting({IOT: STATE_PRIORITY})
+    assert c.read(model="X999") is None
+    assert c.asked == 0
+
+    caplog.set_level(logging.DEBUG, logger=rtcx_module.__name__)
+    assert c.read(model="X999") is None
+    assert c.asked == 1
+    assert c.client.state_changes[IOT][-1]["model"] == "X999"
+
+
+def test_the_record_is_a_session_long_not_a_history():
+    c = _Client({IOT: STATE_PRIORITY})
+    for mask in range(1, rtcx_module.STATE_CHANGES_KEPT + 10):
+        c.replies[IOT] = _priority_reply(mask % 256)
+        c.read()
+    assert len(c.client.state_changes[IOT]) == rtcx_module.STATE_CHANGES_KEPT
+
+
+def test_a_power_report_is_logged_when_it_changes(caplog):
+    caplog.set_level(logging.DEBUG, logger=rtcx_module.__name__)
+    c = _Client()
+    frame = "aa06002000c70005006301000000000000000035001f00a40100000000000000050005005c4d"
+    c.client._note_power(IOT, "X776", frame)
+    c.client._note_power(IOT, "X776", frame)
+    assert caplog.text.count("power report of X776") == 1
+    assert IOT not in caplog.text
