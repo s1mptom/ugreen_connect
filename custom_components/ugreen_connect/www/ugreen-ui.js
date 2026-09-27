@@ -100,6 +100,23 @@ export function translator(table, hass) {
  * `formatEntityState` is what the more-info dialog uses, so a card asking it
  * gets "DC turbo" and "Пользовательский" rather than a guess made from the key
  * -- which is where "Dc turbo" came from. */
+/* How this person wants a time of day written.
+ *
+ * Home Assistant keeps it in the user's profile -- 12 hours, 24, or whatever
+ * the language does -- and a card that asked the browser instead wrote
+ * "04:19 PM" for someone whose every other clock in HA says 16:19. */
+export function timeOptions(hass) {
+  const pick = hass?.locale?.time_format;
+  const base = { hour: '2-digit', minute: '2-digit' };
+  if (pick === '12') return { ...base, hour12: true };
+  if (pick === '24') return { ...base, hour12: false };
+  return base;
+}
+
+export function timeOf(hass, at) {
+  return new Date(at).toLocaleTimeString(hass?.locale?.language || undefined, timeOptions(hass));
+}
+
 export function optionLabel(hass, entityId, option) {
   const state = hass?.states?.[entityId];
   if (state && hass.formatEntityState) {
@@ -245,6 +262,34 @@ export function pending(timeout = 15000) {
 const SVG = 'http://www.w3.org/2000/svg';
 
 export const SHARED_CSS = `
+  /* A port keeps its colour everywhere it appears -- the dot on its tile, its
+   * line on the chart, its bar -- so the colour is the port's name as much as
+   * the label is. Eight hues in a fixed order, stepped separately for light
+   * and dark, and checked for both: adjacent pairs at least 8 apart for the
+   * common kinds of colour blindness and 19 apart for everyone. Home
+   * Assistant's own graph palette failed that -- two of its eight read as
+   * grey, and its green and teal were close enough to confuse outright. A
+   * theme can still set --ugreen-port-color-1 .. -8 and win. */
+  :host {
+    --ugreen-port-1: var(--ugreen-port-color-1, #2a78d6);
+    --ugreen-port-2: var(--ugreen-port-color-2, #eb6834);
+    --ugreen-port-3: var(--ugreen-port-color-3, #1baf7a);
+    --ugreen-port-4: var(--ugreen-port-color-4, #eda100);
+    --ugreen-port-5: var(--ugreen-port-color-5, #e87ba4);
+    --ugreen-port-6: var(--ugreen-port-color-6, #008300);
+    --ugreen-port-7: var(--ugreen-port-color-7, #4a3aa7);
+    --ugreen-port-8: var(--ugreen-port-color-8, #e34948);
+  }
+  :host([data-dark]) {
+    --ugreen-port-1: var(--ugreen-port-color-1, #3987e5);
+    --ugreen-port-2: var(--ugreen-port-color-2, #d95926);
+    --ugreen-port-3: var(--ugreen-port-color-3, #199e70);
+    --ugreen-port-4: var(--ugreen-port-color-4, #c98500);
+    --ugreen-port-5: var(--ugreen-port-color-5, #d55181);
+    --ugreen-port-6: var(--ugreen-port-color-6, #008300);
+    --ugreen-port-7: var(--ugreen-port-color-7, #9085e9);
+    --ugreen-port-8: var(--ugreen-port-color-8, #e66767);
+  }
   /* The hidden attribute loses to any display a rule sets, and most of what
    * these cards hide is a flex row or a grid. Said once here rather than
    * remembered in every card that hides something. */
@@ -282,21 +327,87 @@ export const SHARED_CSS = `
   .u-tip .key { width: 10px; height: 2px; border-radius: 1px; flex: none; }
   .u-tip b { font-weight: 500; }
   .u-tip .name { color: var(--secondary-text-color); }
+  /* A choice of one among a few, drawn as a sunken track with the chosen one
+   * raised out of it -- the charging modes, a chart's range, 12 or 24 hours.
+   * The raised face is the card's own colour on a light theme and a step
+   * lighter than the track on a dark one, where the card is darker than the
+   * track and would read as a hole. */
+  .u-seg { display: inline-flex; flex: none; gap: 2px; padding: 3px; border-radius: 10px;
+           background: var(--secondary-background-color); }
+  .u-seg button { font: inherit; font-size: 13px; height: 30px; padding: 0 14px; border-radius: 8px;
+                  border: none; background: transparent; color: var(--primary-text-color);
+                  cursor: pointer; white-space: nowrap; }
+  .u-seg button[aria-checked="true"] { font-weight: 500; box-shadow: 0 1px 2px rgba(0, 0, 0, .18);
+                  background: var(--ha-card-background, var(--card-background-color)); }
+  :host([data-dark]) .u-seg button[aria-checked="true"] { box-shadow: 0 1px 2px rgba(0, 0, 0, .5);
+                  background: color-mix(in srgb, var(--primary-text-color) 12%, var(--secondary-background-color)); }
+  .u-seg button:disabled { color: var(--disabled-text-color); cursor: default; }
+  .u-seg button:focus-visible, .u-pill:focus-visible, .u-button:focus-visible {
+                  outline: 2px solid var(--primary-color); outline-offset: 1px; }
+  .u-seg.small button { font-size: 12px; height: 24px; padding: 0 10px; border-radius: 6px; }
+  /* A button that is an action rather than a choice. */
+  .u-button { font: inherit; font-size: 13px; font-weight: 500; height: 32px; padding: 0 14px;
+              border-radius: 16px; border: 1px solid var(--divider-color); background: transparent;
+              color: var(--primary-color); cursor: pointer; white-space: nowrap; }
+  .u-button.primary { border-color: transparent; background: var(--primary-color);
+                      color: var(--text-primary-color, #fff); }
+  /* A toggle among several that can each be on -- the ports charged first. */
+  .u-pill { font: inherit; font-size: 13px; height: 30px; padding: 0 12px; border-radius: 15px;
+            display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+            border: 1px solid var(--divider-color); background: transparent;
+            color: var(--primary-text-color); }
+  .u-pill[aria-pressed="true"] { font-weight: 500;
+            border-color: color-mix(in srgb, var(--primary-color) 55%, transparent);
+            background: color-mix(in srgb, var(--primary-color) 16%, transparent); }
+  .u-card-title { margin: 0; font-size: 15px; font-weight: 500; }
   @media (max-width: 520px) { .u-narrow-hide { display: none; } }
 `;
 
-/* The eight colours a chart hands out, from the theme's own graph palette so a
- * dashboard's charts agree with each other. */
-export const SERIES = [
-  'var(--graph-color-1, #4269d0)',
-  'var(--graph-color-2, #efb118)',
-  'var(--graph-color-3, #ff725c)',
-  'var(--graph-color-4, #6cc5b0)',
-  'var(--graph-color-5, #3ca951)',
-  'var(--graph-color-6, #ff8ab7)',
-  'var(--graph-color-7, #a463f2)',
-  'var(--graph-color-8, #97bbf5)',
-];
+/* A port's colour, by its place on the charger. See SHARED_CSS for the values
+ * and why they are these. */
+export const SERIES = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => `var(--ugreen-port-${n})`);
+
+/* Which of the two palettes a card draws with.
+ *
+ * Home Assistant says whether its theme is dark, and that -- not the
+ * operating system's preference -- is what the card is sitting on. */
+export function applyTheme(element, hass) {
+  element.toggleAttribute('data-dark', Boolean(hass?.themes?.darkMode));
+}
+
+/* Fitting a photo to the charger's screen ------------------------------- */
+
+/* The frame's size measured along a photo's own sides, with the photo turned
+ * by `angle` radians. At a quarter turn that is the frame with its sides
+ * swapped; at anything else it is the box the turned frame needs. */
+export function frameSpan(frame, angle) {
+  const c = Math.abs(Math.cos(angle));
+  const s = Math.abs(Math.sin(angle));
+  return { w: frame.w * c + frame.h * s, h: frame.w * s + frame.h * c };
+}
+
+/* The smallest scale at which a photo turned by `angle` still covers the
+ * frame. Any smaller and the charger shows a blank corner; turned off the
+ * square, a photo has to be larger than the frame for its corners to stay
+ * covered too. */
+export function coverScale(image, frame, angle) {
+  const span = frameSpan(frame, angle);
+  return Math.max(span.w / image.width, span.h / image.height);
+}
+
+/* Where the photo may sit so the frame stays inside it: the offset, turned
+ * into the photo's own axes, held within what the photo has to spare there,
+ * and turned back. The frame and the photo share a centre at offset zero. */
+export function clampOffset(image, frame, angle, scale, offset) {
+  const span = frameSpan(frame, angle);
+  const lx = Math.max(0, (image.width * scale - span.w) / 2);
+  const ly = Math.max(0, (image.height * scale - span.h) / 2);
+  const ux = Math.cos(-angle) * offset.x - Math.sin(-angle) * offset.y;
+  const uy = Math.sin(-angle) * offset.x + Math.cos(-angle) * offset.y;
+  const cx = Math.min(lx, Math.max(-lx, ux));
+  const cy = Math.min(ly, Math.max(-ly, uy));
+  return { x: Math.cos(angle) * cx - Math.sin(angle) * cy, y: Math.sin(angle) * cx + Math.cos(angle) * cy };
+}
 
 /* A card's own root, so its stylesheet cannot reach anything else.
  *
@@ -351,14 +462,18 @@ export function axisLabel(value) {
  * the readings never had.
  */
 export function areaChart(series, {
-  width = 600, height = 180, pad = 22, gutter = 42, unit = '', label,
+  width = 600, height = 180, pad = 22, gutter = 42, unit = '', label, ticks = [],
 } = {}) {
   const drawn = series.filter((one) => (one.points || []).length > 1);
   const box = document.createElement('div');
   box.className = 'u-chart';
+  // Drawn at the size it is shown at. Stretched from a fixed box instead, the
+  // axis labels came out tall and thin whenever the card was taller than the
+  // box was drawn for.
   const svg = document.createElementNS(SVG, 'svg');
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('width', String(width));
+  svg.setAttribute('height', String(height));
   svg.setAttribute('role', 'img');
   box.appendChild(svg);
   if (!drawn.length) return box;
@@ -368,11 +483,12 @@ export function areaChart(series, {
   const x1 = Math.max(...xs);
   const raw = Math.max(...drawn.flatMap((one) => one.points.map((point) => point.y)), 1);
   const top = axisTop(raw);
+  const bottom = ticks.length ? pad + 8 : pad;
   const X = (x) => (x1 === x0 ? gutter : gutter + ((x - x0) / (x1 - x0)) * (width - gutter));
-  const Y = (y) => height - pad - (Math.min(y, top) / top) * (height - pad * 1.6);
-  const floor = height - pad;
+  const Y = (y) => height - bottom - (Math.min(y, top) / top) * (height - bottom - 12);
+  const floor = height - bottom;
 
-  for (const fraction of [0.25, 0.5, 0.75, 1]) {
+  for (const fraction of [0, 0.25, 0.5, 0.75, 1]) {
     const line = document.createElementNS(SVG, 'line');
     line.setAttribute('x1', gutter);
     line.setAttribute('x2', width);
@@ -405,16 +521,29 @@ export function areaChart(series, {
     svg.appendChild(stroke);
   }
 
-  for (const fraction of [0.5, 1]) {
+  for (const fraction of [0, 0.5, 1]) {
     const text = document.createElementNS(SVG, 'text');
-    text.setAttribute('x', gutter - 6);
+    text.setAttribute('x', gutter - 8);
     text.setAttribute('y', Y(top * fraction) + 4);
     text.setAttribute('text-anchor', 'end');
     text.setAttribute('fill', 'var(--secondary-text-color)');
     text.setAttribute('font-size', '11');
-    text.textContent = `${axisLabel(top * fraction)}${unit}`;
+    text.textContent = fraction ? `${axisLabel(top * fraction)}${unit}` : '0';
     svg.appendChild(text);
   }
+  // The times along the bottom, on the clock's own marks.
+  const inside = ticks.filter((tick) => tick.x >= x0 && tick.x <= x1);
+  inside.forEach((tick, index) => {
+    const text = document.createElementNS(SVG, 'text');
+    const at = X(tick.x);
+    text.setAttribute('x', at);
+    text.setAttribute('y', height - 4);
+    text.setAttribute('text-anchor', at < gutter + 20 ? 'start' : at > width - 20 ? 'end' : 'middle');
+    text.setAttribute('fill', 'var(--secondary-text-color)');
+    text.setAttribute('font-size', '11');
+    text.textContent = tick.text;
+    if (index || inside.length === 1 || at > gutter + 4) svg.appendChild(text);
+  });
 
   hover(box, svg, drawn, { X, Y, x0, x1, gutter, width, height, pad, unit, label });
   return box;

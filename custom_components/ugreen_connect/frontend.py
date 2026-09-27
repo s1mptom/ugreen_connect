@@ -53,6 +53,7 @@ CARD_FILES: tuple[str, ...] = (
     "ugreen-energy-card.js",
     "ugreen-ports-card.js",
     "ugreen-power-card.js",
+    "ugreen-sessions-card.js",
     "ugreen-wallpaper-card.js",
 )
 CARD_FILE = CARD_FILES[-1]  # kept for anything still asking for the first card

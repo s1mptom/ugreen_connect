@@ -1,338 +1,232 @@
-/* Every port of the charger in one table, and the sessions that have ended
- * under it.
+/* The charger's front panel: one tile per port, in the order they sit on it.
  *
- * Eight ports times six readings is forty-eight entities. As tiles that is
- * forty-eight cards and a screenful of chrome around numbers; the readings
- * belong in rows, which is what this draws.
+ * Eight ports times six readings is forty-eight entities, and what anyone asks
+ * of them is which ports are charging and how fast. So a port that is charging
+ * is a tile with its watts in large type, what it is running at, a line of the
+ * last hour, and what this charge has put in so far; a port that is not is the
+ * same tile, quiet, saying so.
+ *
+ * Only what is happening now is here. The session sensors keep the last
+ * session's figures after it ends, and shown on an idle port those figures
+ * repeat what the finished-sessions card already says, under a heading that
+ * claims they are current.
  *
  * Config:
  *   type: custom:ugreen-ports-card
  *   device_id: <the charger>        # optional if only one charger is set up
- *   title: Ports                    # optional
- *   ports: true                     # the port table itself; default true
- *   sessions: true                  # the ended-sessions table; default true
+ *   columns: 8                      # tiles per row at full width; fewer on a
+ *                                   # narrow card whatever this says
  */
 
 import {
-  mount, SERIES, SHARED_CSS, defineCard, duration, findOne, num, ports, since, translator,
+  SERIES, SHARED_CSS, applyTheme, bucket, defineCard, duration, mount, num, ports, translator,
 } from './ugreen-ui.js';
 
 const TEXT = {
   en: {
-    title: 'Ports',
-    hint: 'tap a row for history and session detail',
-    port: 'Port',
-    power: 'Power',
-    volts: 'Volts',
-    amps: 'Amps',
-    sinceCol: 'Since',
-    protocol: 'Protocol',
-    session: 'This session',
-    sessions: 'Sessions that ended',
-    delivered: 'Delivered',
-    peak: 'Peak',
-    lasted: 'Lasted',
-    ended: 'Ended',
-    nothing: 'nothing plugged in',
-    cable: 'cable only',
-    none: 'none',
+    energy: 'Energy', charge: 'Charge', time: 'Charging for',
+    idle: 'Not charging', cable: 'Cable only', onPort: '{v} V on the port',
     noPorts: 'No charger entities found. Set device_id in the card config.',
-    noSessions: 'Nothing has finished charging yet.',
-    justNow: 'just now',
   },
   de: {
-    title: 'Anschlüsse',
-    hint: 'Zeile antippen für Verlauf und Ladedetails',
-    port: 'Anschluss',
-    power: 'Leistung',
-    volts: 'Volt',
-    amps: 'Ampere',
-    sinceCol: 'Seit',
-    protocol: 'Protokoll',
-    session: 'Aktuelle Ladung',
-    sessions: 'Beendete Ladungen',
-    delivered: 'Geliefert',
-    peak: 'Spitze',
-    lasted: 'Dauer',
-    ended: 'Beendet',
-    nothing: 'nichts angeschlossen',
-    cable: 'nur Kabel',
-    none: 'keins',
+    energy: 'Energie', charge: 'Ladung', time: 'Lädt seit',
+    idle: 'Lädt nicht', cable: 'Nur Kabel', onPort: '{v} V am Anschluss',
     noPorts: 'Keine Entitäten gefunden. device_id in der Kartenkonfiguration setzen.',
-    noSessions: 'Noch nichts fertig geladen.',
-    justNow: 'gerade eben',
   },
   ru: {
-    title: 'Порты',
-    hint: 'строка открывает историю и детали зарядки',
-    port: 'Порт',
-    power: 'Мощность',
-    volts: 'Вольты',
-    amps: 'Амперы',
-    sinceCol: 'Идёт',
-    protocol: 'Протокол',
-    session: 'Текущая зарядка',
-    sessions: 'Завершённые зарядки',
-    delivered: 'Отдано',
-    peak: 'Пик',
-    lasted: 'Длилась',
-    ended: 'Когда',
-    nothing: 'ничего не подключено',
-    cable: 'только кабель',
-    none: 'нет',
+    energy: 'Энергия', charge: 'Заряд', time: 'Заряжает',
+    idle: 'Не заряжает', cable: 'Только кабель', onPort: 'на порту {v} В',
     noPorts: 'Сущности не найдены. Укажите device_id в настройках карточки.',
-    noSessions: 'Ни одна зарядка ещё не закончилась.',
-    justNow: 'только что',
   },
 };
 
+// How much of the past a tile's line covers, and how finely.
+const SPARK_MINUTES = 60;
+const SPARK_POINTS = 30;
+
 const STYLE = `
   ${SHARED_CSS}
-  ha-card { height: 100%; box-sizing: border-box; }
-  .body { padding: 14px 16px 10px; display: flex; flex-direction: column; gap: 8px;
-          height: 100%; box-sizing: border-box; }
-  .head { display: flex; align-items: baseline; gap: 10px; }
-  .head h2 { margin: 0; font-size: 11px; font-weight: 400; text-transform: uppercase;
-             letter-spacing: .10em; color: var(--secondary-text-color); flex-grow: 1; }
-  .head .hint { font-size: 11px; color: var(--disabled-text-color); }
-  /* Fixed, so eight rows of numbers line up in columns of their own width
-   * rather than in whatever the widest reading of the moment asks for --
-   * a table that reflows every poll is unreadable while it is charging. */
-  table.u-table { table-layout: fixed; font-size: 13px; }
-  table.u-table th { font-size: 11px; letter-spacing: .06em; padding: 0 10px 6px 0; }
-  table.u-table td { padding: 7px 10px 7px 0; }
-  table.u-table th:last-child, table.u-table td:last-child { padding-right: 0; }
-  .name { display: flex; align-items: center; gap: 7px; white-space: nowrap;
-          font-size: 14px; font-weight: 500; }
-  .u-dot { width: 7px; height: 7px; }
-  tr.idle td { color: var(--secondary-text-color); }
-  tr.idle .name { font-weight: 400; }
-  td.watts { font-size: 15px; }
-  td.volts, td.amps { font-size: 13px; }
-  td.protocol { font-size: 12px; }
-  td.since { font-size: 12px; }
-  /* What went into this port, in as much of the column as it needs. A bar of
-   * the port's share of the charger used to sit in front of it, and took half
-   * the width to say what the watts beside it already said -- while the
-   * milliamp-hours, which are only here, were cut off. */
-  .session { display: block; font-size: 12px; white-space: nowrap;
-             overflow: hidden; text-overflow: ellipsis; }
-  h3 { margin: 8px 0 0; font-size: 11px; font-weight: 400; text-transform: uppercase;
-       letter-spacing: .10em; color: var(--secondary-text-color); }
-  table.sessions { font-size: 13px; }
-  table.sessions thead { display: none; }
-  table.sessions .port { font-size: 13px; font-weight: 500; }
-  table.sessions .energy { color: var(--state-icon-active-color, var(--primary-color)); }
-  table.sessions .peak, table.sessions .lasted, table.sessions .when { font-size: 12px; }
-  table.sessions .when { text-align: right; color: var(--disabled-text-color); }
+  :host { display: block; container-type: inline-size; }
+  .tiles { display: grid; grid-template-columns: repeat(var(--cols, 8), minmax(0, 1fr)); gap: 10px; }
+  .tile { font: inherit; text-align: left; box-sizing: border-box; min-height: 232px;
+          padding: 14px 14px 12px; border-radius: var(--ha-card-border-radius, 12px);
+          border: 1px solid var(--divider-color); color: var(--primary-text-color);
+          background: color-mix(in srgb, var(--ha-card-background, var(--card-background-color)) 55%, var(--primary-background-color));
+          display: flex; flex-direction: column; cursor: pointer; }
+  .tile:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+  .tile.on { background: var(--ha-card-background, var(--card-background-color)); border-color: var(--port); }
+  .head { display: flex; align-items: center; gap: 7px; height: 20px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none;
+         background: color-mix(in srgb, var(--secondary-text-color) 45%, transparent); }
+  .on .dot { background: var(--port); }
+  .name { font-size: 15px; font-weight: 500; color: var(--secondary-text-color); }
+  .on .name { color: var(--primary-text-color); }
+  .grow { flex-grow: 1; }
+  .proto { font-size: 12px; color: var(--secondary-text-color); }
+  .first { font-size: 11px; line-height: 16px; padding: 0 6px; border-radius: 9px; color: var(--primary-color);
+           border: 1px solid color-mix(in srgb, var(--primary-color) 55%, transparent); }
+  .watts { display: flex; align-items: baseline; gap: 5px; margin-top: 12px; }
+  .watts b { font-size: 30px; font-weight: 500; line-height: 1; }
+  .watts span { font-size: 14px; color: var(--secondary-text-color); }
+  .electric { display: flex; gap: 14px; margin-top: 6px; font-size: 12px; color: var(--secondary-text-color); }
+  svg.spark { display: block; width: 100%; height: 30px; margin-top: 10px; overflow: visible; }
+  .figures { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--divider-color);
+             padding-top: 9px; font-size: 12px; }
+  .figures div { display: flex; justify-content: space-between; gap: 8px; }
+  .figures span { color: var(--secondary-text-color); }
+  .note { font-size: 13px; color: var(--secondary-text-color); }
+  .detail { font-size: 12px; color: var(--secondary-text-color); margin-top: 3px; min-height: 16px; }
+  .empty { color: var(--secondary-text-color); padding: 14px 0; }
+  /* Narrower than eight tiles can hold: four, then two. At two a pair of idle
+   * tiles folds down to its note, since there is nothing for the height to
+   * hold, while a charging tile beside an idle one keeps the row's height. */
+  @container (max-width: 1100px) { .tiles { --cols: 4; } }
+  @container (max-width: 560px) {
+    .tiles { --cols: 2; }
+    .tile { min-height: 0; }
+    .tile .watts b { font-size: 26px; }
+    svg.spark { display: none; }
+  }
 `;
 
 class UgreenPortsCard extends HTMLElement {
-  static getStubConfig() { return { device_id: '', sessions: true }; }
+  static getStubConfig() { return { device_id: '' }; }
 
   setConfig(config) {
     this._config = config || {};
     this._built = false;
+    this._history = null;
+    this._asked = 0;
     if (this.shadowRoot) this.shadowRoot.innerHTML = '';
   }
 
   set hass(hass) {
     this._hass = hass;
     this._t = translator(TEXT, hass);
+    applyTheme(this, hass);
     this._build();
     this._sync();
   }
 
-  getCardSize() { return this._config.sessions === false ? 6 : 10; }
+  getCardSize() { return 5; }
 
   _build() {
     if (this._built) return;
     this._built = true;
     this._root = mount(this, `
-      <ha-card>
-        <style>${STYLE}</style>
-        <div class="body">
-          <div class="head">
-            <h2>${
-              this._config.title
-              ?? (this._config.ports === false ? this._t('sessions') : this._t('title'))
-            }</h2>
-            <span class="hint ports-hint">${this._t('hint')}</span>
-          </div>
-          <table class="u-table ports">
-            <colgroup>
-              <col style="width: 58px"><col style="width: 74px"><col style="width: 66px">
-              <col style="width: 66px"><col style="width: 96px"><col><col style="width: 96px">
-            </colgroup>
-            <thead>
-              <tr>
-                <th>${this._t('port')}</th>
-                <th class="num">${this._t('power')}</th>
-                <th class="num u-narrow-hide">${this._t('volts')}</th>
-                <th class="num u-narrow-hide">${this._t('amps')}</th>
-                <th class="u-narrow-hide">${this._t('protocol')}</th>
-                <th>${this._t('session')}</th>
-                <th class="num u-narrow-hide">${this._t('sinceCol')}</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-          <h3 class="sessions-head">${this._t('sessions')}</h3>
-          <table class="u-table sessions">
-            <colgroup>
-              <col style="width: 44px"><col style="width: 84px"><col style="width: 76px">
-              <col><col style="width: 120px">
-            </colgroup>
-            <thead>
-              <tr>
-                <th>${this._t('port')}</th>
-                <th class="num">${this._t('delivered')}</th>
-                <th class="num u-narrow-hide">${this._t('peak')}</th>
-                <th class="u-narrow-hide">${this._t('lasted')}</th>
-                <th>${this._t('ended')}</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-          <div class="u-empty" hidden></div>
-        </div>
-      </ha-card>
+      <style>${STYLE}</style>
+      <div class="tiles" role="list"></div>
+      <div class="empty" hidden>${this._t('noPorts')}</div>
     `);
-    this._els = {
-      hint: this._root.querySelector('.ports-hint'),
-      portsTable: this._root.querySelector('table.ports'),
-      ports: this._root.querySelector('table.ports tbody'),
-      sessionsHead: this._root.querySelector('.sessions-head'),
-      sessions: this._root.querySelector('table.sessions'),
-      sessionRows: this._root.querySelector('table.sessions tbody'),
-      empty: this._root.querySelector('.u-empty'),
-    };
+    this._els = { tiles: this._root.querySelector('.tiles'), empty: this._root.querySelector('.empty') };
+    const cols = Number(this._config.columns);
+    if (cols > 0) this._els.tiles.style.setProperty('--cols', String(cols));
   }
 
   _sync() {
     if (!this._hass) return;
     const found = ports(this._hass, this._config.device_id);
-    const showPorts = this._config.ports !== false && found.length > 0;
-    const showSessions = this._config.sessions !== false && found.length > 0;
-
     this._els.empty.hidden = found.length > 0;
-    this._els.empty.textContent = found.length ? '' : this._t('noPorts');
-    this._els.portsTable.hidden = !showPorts;
-    this._els.hint.hidden = !showPorts;
-    this._els.sessionsHead.hidden = !showSessions || !showPorts;
-    this._els.sessions.hidden = !showSessions;
-    if (!found.length) {
-      this._els.ports.replaceChildren();
-      this._els.sessionRows.replaceChildren();
-      return;
-    }
-
-    if (showPorts) {
-      this._els.ports.replaceChildren(
-        ...found.map((port, index) => this._portRow(port, SERIES[index % SERIES.length])),
-      );
-    }
-    if (showSessions) this._sessionRows(found);
+    this._fetch(found);
+    this._els.tiles.replaceChildren(...found.map((port, index) => this._tile(port, SERIES[index % SERIES.length])));
   }
 
-  _portRow(port, colour) {
+  /* The last hour of every port, once a minute: the line is a shape, not a
+   * reading, and it does not need the poll's five seconds. */
+  _fetch(found) {
+    const now = Date.now();
+    if (!found.length || now - this._asked < 60000) return;
+    this._asked = now;
+    this._from = now - SPARK_MINUTES * 60000;
+    this._hass.callWS({
+      type: 'history/history_during_period',
+      start_time: new Date(this._from).toISOString(),
+      end_time: new Date(now).toISOString(),
+      entity_ids: found.map((p) => p.id),
+      minimal_response: true,
+      no_attributes: true,
+      significant_changes_only: false,
+    }).then((result) => { this._history = result || {}; this._sync(); })
+      .catch(() => { this._history = {}; });
+  }
+
+  _spark(port) {
+    const rows = this._history?.[port.id] || [];
+    const points = rows
+      .map((row) => ({ x: (row.lu ?? row.last_updated ?? 0) * 1000, y: parseFloat(row.s ?? row.state) }))
+      .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && p.x > 0);
+    const cells = bucket(points, SPARK_POINTS, { from: this._from, to: Date.now() });
+    if (cells.length < 2) return '';
+    // Scaled to the port itself: the line is the shape of this charge, and the
+    // number above it already says how big.
+    const top = Math.max(...cells.map((c) => c.y), 0.1);
+    const x0 = cells[0].x;
+    const span = (cells[cells.length - 1].x - x0) || 1;
+    const X = (x) => ((x - x0) / span) * 100;
+    const Y = (y) => 29 - (y / top) * 26;
+    const line = cells.map((c, i) => `${i ? 'L' : 'M'}${X(c.x).toFixed(2)} ${Y(c.y).toFixed(2)}`).join(' ');
+    return `<svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
+      <path d="${line} L100 30 L0 30 Z" fill="var(--port)" fill-opacity="0.16"></path>
+      <path d="${line}" fill="none" stroke="var(--port)" stroke-width="1.5" stroke-linejoin="round"
+        vector-effect="non-scaling-stroke"></path></svg>`;
+  }
+
+  _tile(port, colour) {
+    const s = this._hass.states;
     const watts = num(this._hass, port.id);
     const volts = num(this._hass, `${port.base}_voltage`);
     const amps = num(this._hass, `${port.base}_current`);
-    const protocol = this._hass.states[`${port.base}_protocol`]?.state;
-    const drawing = this._hass.states[port.charging]?.state === 'on';
+    const protocol = s[`${port.base}_protocol`]?.state;
+    const drawing = s[port.charging]?.state === 'on';
+    const energy = s[`${port.base}_session_energy`];
+    const inSession = drawing && energy?.attributes?.charging !== false;
 
-    const row = document.createElement('tr');
-    row.className = drawing ? 'click u-on' : 'click idle';
-    row.innerHTML = `
-      <td><span class="name"><span class="u-dot" style="${
-        drawing ? `background: ${colour}` : ''}"></span>${port.name}</span></td>
-      <td class="num watts" style="${drawing ? `color: ${colour}` : ''}">${watts.toFixed(1)} W</td>
-      <td class="num volts u-narrow-hide u-muted">${volts.toFixed(1)} V</td>
-      <td class="num amps u-narrow-hide u-muted">${amps.toFixed(2)} A</td>
-      <td class="protocol u-narrow-hide">${
-        protocol && protocol !== 'none' ? protocol : `<span class="u-muted">${this._t('none')}</span>`
-      }</td>
-      <td><span class="session u-muted">${this._sessionText(port, volts)}</span></td>
-      <td class="num since u-narrow-hide u-muted">${this._sinceText(port)}</td>
-    `;
-    row.addEventListener('click', () => this._moreInfo(port.id));
-    return row;
-  }
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.setAttribute('role', 'listitem');
+    tile.className = drawing ? 'tile on' : 'tile';
+    tile.style.setProperty('--port', colour);
+    const proto = protocol && protocol !== 'none' ? protocol : '';
 
-  /* How long the bout on this port has been running, or how long ago the last
-   * one ended. */
-  _sinceText(port) {
-    const energy = this._hass.states[`${port.base}_session_energy`];
-    const started = energy?.attributes?.started;
-    const ended = energy?.attributes?.ended;
-    const stamp = energy?.attributes?.charging ? started : ended;
-    if (!stamp) return '—';
-    const at = new Date(stamp);
-    return Number.isNaN(at.valueOf()) ? '—' : since(this._hass, at, this._t('justNow'));
-  }
-
-  /* What this port has taken in, or why it has taken nothing. */
-  _sessionText(port, volts) {
-    const energy = this._hass.states[`${port.base}_session_energy`];
-    const wh = parseFloat(energy?.state);
-    if (!Number.isFinite(wh) || wh <= 0) {
-      return volts > 0.5 ? this._t('cable') : this._t('nothing');
+    let body;
+    if (drawing) {
+      const wh = parseFloat(energy?.state);
+      const mah = num(this._hass, `${port.base}_session_charge`, NaN);
+      const seconds = Number(energy?.attributes?.duration) || 0;
+      body = `
+        <div class="watts"><b>${watts.toFixed(1)}</b><span>W</span></div>
+        <div class="electric"><span>${volts.toFixed(1)} V</span><span>${amps.toFixed(2)} A</span></div>
+        ${this._spark(port)}
+        <div class="grow"></div>
+        ${inSession ? `<div class="figures">
+          <div><span>${this._t('energy')}</span>${Number.isFinite(wh) ? `${wh.toFixed(1)} Wh` : '—'}</div>
+          <div><span>${this._t('charge')}</span>${Number.isFinite(mah) ? `${Math.round(mah)} mAh` : '—'}</div>
+          <div><span>${this._t('time')}</span>${seconds ? duration(seconds) : '—'}</div>
+        </div>` : ''}`;
+    } else {
+      const cable = volts > 0.5;
+      body = `
+        <div class="grow"></div>
+        <div class="note">${cable ? this._t('cable') : this._t('idle')}</div>
+        <div class="detail">${cable ? this._t('onPort', { v: volts.toFixed(1) }) : ''}</div>`;
     }
-    const charge = num(this._hass, `${port.base}_session_charge`);
-    const seconds = Number(energy.attributes.duration) || 0;
-    const parts = [`${wh.toFixed(1)} Wh`];
-    if (charge > 0) parts.push(`${Math.round(charge)} mAh`);
-    if (seconds) parts.push(duration(seconds));
-    return parts.join(' · ');
-  }
-
-  _sessionRows(found) {
-    const rows = found
-      .map((port) => {
-        const event = this._hass.states[port.event];
-        if (!event || event.attributes.event_type !== 'ended') return null;
-        const at = new Date(event.state);
-        return Number.isNaN(at.valueOf()) ? null : { port, event, at };
-      })
-      .filter(Boolean)
-      .sort((a, b) => b.at - a.at);
-
-    if (!rows.length) {
-      const empty = document.createElement('tr');
-      empty.innerHTML = `<td colspan="5" class="u-empty">${this._t('noSessions')}</td>`;
-      this._els.sessionRows.replaceChildren(empty);
-      return;
-    }
-
-    this._els.sessionRows.replaceChildren(...rows.map(({ port, event, at }) => {
-      const row = document.createElement('tr');
-      row.className = 'click';
-      const wh = Number(event.attributes.energy_wh) || 0;
-      const peak = Number(event.attributes.peak_power) || 0;
-      const protocol = event.attributes.protocol;
-      row.innerHTML = `
-        <td class="port">${port.name}</td>
-        <td class="num energy">${wh.toFixed(1)} Wh</td>
-        <td class="num peak u-narrow-hide u-muted">${peak.toFixed(1)} W</td>
-        <td class="lasted u-narrow-hide u-muted">${duration(Number(event.attributes.duration) || 0)}${
-          protocol && protocol !== 'none' ? ` · ${protocol}` : ''}</td>
-        <td class="when">${since(this._hass, at, this._t('justNow'))}</td>
-      `;
-      row.addEventListener('click', () => this._moreInfo(`${port.base}_session_energy`));
-      return row;
-    }));
-  }
-
-  _moreInfo(entityId) {
-    if (!entityId) return;
-    this.dispatchEvent(new CustomEvent('hass-more-info', {
-      detail: { entityId }, bubbles: true, composed: true,
-    }));
+    tile.innerHTML = `
+      <div class="head"><span class="dot"></span><span class="name"></span><span class="grow"></span>
+        <span class="proto"></span></div>
+      ${body}`;
+    tile.querySelector('.name').textContent = port.name;
+    tile.querySelector('.proto').textContent = proto;
+    tile.setAttribute('aria-label', drawing
+      ? `${port.name}, ${watts.toFixed(1)} W${proto ? `, ${proto}` : ''}`
+      : `${port.name}, ${volts > 0.5 ? this._t('cable') : this._t('idle')}`);
+    tile.addEventListener('click', () => this.dispatchEvent(new CustomEvent('hass-more-info', {
+      detail: { entityId: port.id }, bubbles: true, composed: true,
+    })));
+    return tile;
   }
 }
 
 defineCard('ugreen-ports-card', UgreenPortsCard, {
   name: 'UGREEN Ports',
-  description: 'Every port of a UGREEN charger in one table, with the sessions that ended',
+  description: "The charger's front panel: one tile per port, with what it is charging now",
 });

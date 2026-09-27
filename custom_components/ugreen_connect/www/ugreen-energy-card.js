@@ -13,37 +13,40 @@
  */
 
 import {
-  mount, SERIES, SHARED_CSS, defineCard, ports, translator,
+  mount, SERIES, SHARED_CSS, applyTheme, defineCard, ports, translator,
 } from './ugreen-ui.js';
 
 const TEXT = {
   en: {
     title: 'Energy per port',
+    titled: 'Energy {period}',
+    inAll: '{kwh} kWh in all',
     day: 'today',
     week: 'this week',
     month: 'this month',
     all: 'all time',
-    feeds: 'feeds the Energy dashboard',
     nothing: 'Nothing recorded for this period yet.',
     noDevice: 'No charger entities found. Set device_id in the card config.',
   },
   de: {
     title: 'Energie je Anschluss',
+    titled: 'Energie {period}',
+    inAll: '{kwh} kWh insgesamt',
     day: 'heute',
     week: 'diese Woche',
     month: 'diesen Monat',
     all: 'gesamt',
-    feeds: 'speist das Energie-Dashboard',
     nothing: 'Für diesen Zeitraum ist noch nichts aufgezeichnet.',
     noDevice: 'Keine Entitäten gefunden. device_id in der Kartenkonfiguration setzen.',
   },
   ru: {
     title: 'Энергия по портам',
+    titled: 'Энергия {period}',
+    inAll: 'всего {kwh} кВт·ч',
     day: 'сегодня',
     week: 'за неделю',
     month: 'за месяц',
     all: 'за всё время',
-    feeds: 'питает панель «Энергия»',
     nothing: 'За этот период пока ничего не записано.',
     noDevice: 'Сущности не найдены. Укажите device_id в настройках карточки.',
   },
@@ -52,25 +55,24 @@ const TEXT = {
 const STYLE = `
   ${SHARED_CSS}
   ha-card { height: 100%; box-sizing: border-box; }
-  .body { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; height: 100%;
-          box-sizing: border-box; }
+  .body { padding: 14px 18px 12px; display: flex; flex-direction: column; gap: 8px; height: 100%;
+          box-sizing: border-box; position: relative; }
   .head { display: flex; align-items: baseline; gap: 10px; }
-  .head h2 { margin: 0; font-size: 11px; font-weight: 400; text-transform: uppercase;
-             letter-spacing: .10em; color: var(--secondary-text-color); flex-grow: 1; }
-  .head .period { font-size: 11px; }
-  .head .feeds { font-size: 11px; color: var(--disabled-text-color); }
-  .bars { display: flex; align-items: flex-end; gap: 10px; height: 84px; flex: none; }
-  .bar { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 5px;
-         justify-content: flex-end; height: 100%; cursor: pointer;
-         background: none; border: none; padding: 0; font: inherit; }
-  .bar .fill { width: 100%; border-radius: 4px 4px 0 0; min-height: 4px; }
+  .head h2 { flex-grow: 1; }
+  .head .feeds { font-size: 12px; color: var(--secondary-text-color); }
+  .bars { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px; align-items: end;
+          height: 70px; flex: none; }
+  .bar { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px;
+         height: 100%; cursor: pointer; background: none; border: none; padding: 0; font: inherit;
+         color: var(--primary-text-color); min-width: 0; }
+  .bar:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; border-radius: 4px; }
+  .bar .fill { width: 100%; border-radius: 3px 3px 0 0; min-height: 3px; }
   .bar:hover .fill, .bar:focus-visible .fill { filter: brightness(1.12); }
   .bar .name { font-size: 11px; color: var(--secondary-text-color); }
   /* Only the ports that took a charge are labelled: eight numbers, six of them
    * 0.000, is a row of noise around the two that matter. The rest are a hover
-   * or a keyboard focus away. */
-  .bar .value { font-size: 11px; color: var(--primary-text-color); min-height: 1.25em; }
-  .body { position: relative; }
+   * or a keyboard focus away. The unit is said once, in the total. */
+  .bar .value { font-size: 11px; white-space: nowrap; }
 `;
 
 class UgreenEnergyCard extends HTMLElement {
@@ -87,6 +89,7 @@ class UgreenEnergyCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     this._t = translator(TEXT, hass);
+    applyTheme(this, hass);
     this._build();
     this._sync();
   }
@@ -106,8 +109,8 @@ class UgreenEnergyCard extends HTMLElement {
         <style>${STYLE}</style>
         <div class="body">
           <div class="head">
-            <h2>${this._config.title || this._t('title')}, ${this._t(this._period())}</h2>
-            <span class="feeds">${this._t('feeds')}</span>
+            <h2 class="u-card-title">${this._config.title || this._t('titled', { period: this._t(this._period()) })}</h2>
+            <span class="feeds"></span>
           </div>
           <div class="bars"></div>
           <div class="u-empty" hidden></div>
@@ -224,19 +227,23 @@ class UgreenEnergyCard extends HTMLElement {
 
     this._els.empty.hidden = top > 0;
     this._els.empty.textContent = top > 0 ? '' : this._t('nothing');
-    this._els.feeds.hidden = top <= 0;
+    const sum = rows.reduce((total, row) => total + row.value, 0);
+    this._els.feeds.textContent = top > 0 ? this._t('inAll', { kwh: sum.toFixed(2) }) : '';
     this._els.bars.replaceChildren(...rows.map(({ port, colour, value }) => {
       const bar = document.createElement('button');
       bar.type = 'button';
       bar.className = value > 0 ? 'bar' : 'bar zero';
-      const height = top > 0 ? Math.max(4, (value / top) * 100) : 4;
-      const reading = value >= 0.995 ? value.toFixed(2) : value.toFixed(3);
+      // The tallest bar leaves room above it for its own number.
+      const height = top > 0 ? Math.max(3, (value / top) * 38) : 3;
+      const reading = value >= 0.1 ? value.toFixed(2) : value.toFixed(3);
       bar.innerHTML = `
-        <span class="value">${value > 0 ? `${reading} kWh` : ''}</span>
-        <span class="fill" style="height: ${height.toFixed(0)}%; background: ${
-          value > 0 ? colour : 'var(--divider-color)'}"></span>
-        <span class="name">${port.name}</span>
+        <span class="value">${value > 0 ? reading : ''}</span>
+        <span class="fill" style="height: ${height.toFixed(0)}px; background: ${
+          value > 0 ? colour : 'color-mix(in srgb, var(--primary-text-color) 10%, transparent)'}"></span>
+        <span class="name"></span>
       `;
+      bar.querySelector('.name').textContent = port.name;
+      bar.setAttribute('aria-label', `${port.name}: ${reading} kWh`);
       const readout = (event) => this._tip(event, port.name, reading, colour, value > 0);
       bar.addEventListener('pointerenter', readout);
       bar.addEventListener('focus', readout);

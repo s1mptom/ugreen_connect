@@ -15,31 +15,32 @@
  */
 
 import {
-  mount, SERIES, SHARED_CSS, areaChart, bucket, defineCard, findOne, num, ports, translator,
+  mount, SERIES, SHARED_CSS, applyTheme, areaChart, bucket, defineCard, findOne, num, ports,
+  timeOf, timeOptions, translator,
 } from './ugreen-ui.js';
 
 const TEXT = {
   en: {
     title: 'Power',
     total: 'Total',
-    hour: '{n}H',
-    day: '24H',
+    hour: '{n} h',
+    day: '24 h',
     noData: 'No history yet — the recorder has nothing for this range.',
     noDevice: 'No charger entities found. Set device_id in the card config.',
   },
   de: {
     title: 'Leistung',
     total: 'Gesamt',
-    hour: '{n}H',
-    day: '24H',
+    hour: '{n} h',
+    day: '24 h',
     noData: 'Noch kein Verlauf — der Recorder hat für diesen Zeitraum nichts.',
     noDevice: 'Keine Entitäten gefunden. device_id in der Kartenkonfiguration setzen.',
   },
   ru: {
     title: 'Мощность',
     total: 'Всего',
-    hour: '{n}ч',
-    day: '24ч',
+    hour: '{n} ч',
+    day: '24 ч',
     noData: 'Истории пока нет — за этот период рекордер ничего не отдал.',
     noDevice: 'Сущности не найдены. Укажите device_id в настройках карточки.',
   },
@@ -48,29 +49,21 @@ const TEXT = {
 const STYLE = `
   ${SHARED_CSS}
   ha-card { height: 100%; box-sizing: border-box; }
-  .body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; height: 100%;
+  .body { padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 10px; height: 100%;
           box-sizing: border-box; }
   .head { display: flex; align-items: center; gap: 10px; }
-  .head h2 { margin: 0; font-size: 11px; font-weight: 400; text-transform: uppercase;
-             letter-spacing: .10em; color: var(--secondary-text-color); flex-grow: 1; }
-  /* Small and quiet: the range is a thing you set once and then read the chart,
-   * so it sits where the design puts it -- a line of text in the corner, not a
-   * row of buttons competing with the title. */
-  .ranges { display: flex; gap: 2px; align-items: center; }
-  .ranges button { font: inherit; font-size: 11px; padding: 2px 6px; cursor: pointer;
-                   color: var(--disabled-text-color); background: none; border: none;
-                   border-radius: 6px; letter-spacing: .04em; }
-  .ranges button:hover { color: var(--primary-text-color); }
-  .ranges button[aria-pressed="true"] { color: var(--state-icon-active-color, var(--primary-color));
-                   font-weight: 500; }
-  .chart { flex-grow: 1; min-height: 210px; display: flex; }
-  .chart svg { width: 100%; height: 100%; }
-  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; }
-  .legend button { font: inherit; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;
-                   background: none; border: none; padding: 0; cursor: pointer;
-                   color: var(--secondary-text-color); }
-  .legend .swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
-  .legend b { font-weight: 500; color: var(--primary-text-color); }
+  .head h2 { flex-grow: 1; }
+  /* The chart takes the room the card has, and is drawn to it; its box is
+   * placed over that room rather than inside it, so drawing it cannot make the
+   * room bigger and set off another draw. */
+  .chart { position: relative; flex: 1 1 0; min-height: 210px; }
+  .chart .u-chart { position: absolute; inset: 0; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; }
+  .legend button { font: inherit; font-size: 12px; display: inline-flex; align-items: center; gap: 7px;
+                   background: none; border: none; padding: 0; cursor: pointer; color: var(--primary-text-color); }
+  .legend .key { width: 14px; height: 2px; border-radius: 1px; flex: none; }
+  .legend span { color: var(--secondary-text-color); }
+  .legend b { font-weight: 500; }
 `;
 
 class UgreenPowerCard extends HTMLElement {
@@ -88,6 +81,7 @@ class UgreenPowerCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     this._t = translator(TEXT, hass);
+    applyTheme(this, hass);
     this._build();
     this._sync();
   }
@@ -102,8 +96,8 @@ class UgreenPowerCard extends HTMLElement {
         <style>${STYLE}</style>
         <div class="body">
           <div class="head">
-            <h2>${this._config.title || this._t('title')}</h2>
-            <div class="ranges"></div>
+            <h2 class="u-card-title">${this._config.title || this._t('title')}</h2>
+            <div class="ranges u-seg small" role="radiogroup"></div>
           </div>
           <div class="chart"></div>
           <div class="legend"></div>
@@ -128,6 +122,16 @@ class UgreenPowerCard extends HTMLElement {
       this._held = false;
       this._sync();
     });
+
+    // Redrawn when its room changes -- a window resized, a sidebar opened --
+    // since the chart is drawn to the size it has rather than stretched.
+    this._size = [0, 0];
+    new ResizeObserver(() => {
+      const size = [this._els.chart.clientWidth, this._els.chart.clientHeight];
+      if (Math.abs(size[0] - this._size[0]) < 2 && Math.abs(size[1] - this._size[1]) < 2) return;
+      this._size = size;
+      if (this._last) this._draw(...this._last);
+    }).observe(this._els.chart);
   }
 
   _buildRanges() {
@@ -136,12 +140,13 @@ class UgreenPowerCard extends HTMLElement {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = hours === 24 ? this._t('day') : this._t('hour', { n: hours });
-      button.setAttribute('aria-pressed', String(hours === this._hours));
+      button.setAttribute('role', 'radio');
+      button.setAttribute('aria-checked', String(hours === this._hours));
       button.addEventListener('click', () => {
         this._hours = hours;
         this._asked = 0;
         for (const other of this._els.ranges.children) {
-          other.setAttribute('aria-pressed', String(other === button));
+          other.setAttribute('aria-checked', String(other === button));
         }
         this._sync();
       });
@@ -201,16 +206,31 @@ class UgreenPowerCard extends HTMLElement {
     return bucket(points, 90, { from: this._from ?? points[0]?.x, to: Date.now() });
   }
 
+  /* The clock's own marks across the window: quarter hours over one hour,
+   * hours over three, six-hour marks over a day. */
+  _ticks(from, to) {
+    const step = this._hours <= 1 ? 15 * 60000 : this._hours <= 3 ? 3600000 : 6 * 3600000;
+    const offset = -new Date(from).getTimezoneOffset() * 60000;
+    const out = [];
+    for (let at = Math.ceil((from + offset) / step) * step - offset; at <= to; at += step) {
+      out.push({ x: at, text: timeOf(this._hass, at) });
+    }
+    return out;
+  }
+
   _draw(found, total) {
+    this._last = [found, total];
     if (!this._history) return;
     if (this._held && this._els.chart.firstChild) return;
     const series = [];
     if (total) {
+      // The total in the text's own colour, not the theme's accent: the accent
+      // is a blue, and so is the first port.
       series.push({
         name: this._t('total'),
-        color: 'var(--state-icon-active-color, var(--primary-color))',
+        color: 'var(--secondary-text-color)',
         points: this._points(total),
-        fill: 0.18,
+        fill: 0.08,
         entity: total,
       });
     }
@@ -223,8 +243,8 @@ class UgreenPowerCard extends HTMLElement {
             name: port.name,
             color: SERIES[index % SERIES.length],
             points,
-            fill: 0.10,
-            width: 1.5,
+            fill: 0.06,
+            width: 2,
             entity: port.id,
           });
         }
@@ -236,14 +256,15 @@ class UgreenPowerCard extends HTMLElement {
     this._els.empty.textContent = drawn.length ? '' : this._t('noData');
     this._els.chart.replaceChildren(
       areaChart(drawn, {
-        width: 620,
-        height: 210,
+        width: Math.max(240, Math.round(this._els.chart.clientWidth) || 620),
+        height: Math.max(180, Math.round(this._els.chart.clientHeight) || 210),
+        gutter: 46,
         unit: ' W',
+        ticks: this._ticks(this._from ?? Date.now() - this._hours * 3600000, Date.now()),
         // Over a day the hour is what tells two readings apart; over an hour it
         // is the minute. Both are what the viewer's own locale calls them.
         label: (at) => new Date(at).toLocaleTimeString(this._hass?.locale?.language || undefined, {
-          hour: '2-digit',
-          minute: '2-digit',
+          ...timeOptions(this._hass),
           ...(this._hours >= 24 ? { weekday: 'short' } : {}),
         }),
       }),
@@ -251,8 +272,9 @@ class UgreenPowerCard extends HTMLElement {
     const keys = drawn.map((one) => {
       const button = document.createElement('button');
       button.type = 'button';
-      button.innerHTML = `<span class="swatch" style="background: ${one.color}"></span>${
-        one.name} <b>${num(this._hass, one.entity).toFixed(1)} W</b>`;
+      button.innerHTML = `<i class="key" style="background: ${one.color}"></i><span></span><b>${
+        num(this._hass, one.entity).toFixed(1)} W</b>`;
+      button.querySelector('span').textContent = one.name;
       button.addEventListener('click', () => this.dispatchEvent(new CustomEvent('hass-more-info', {
         detail: { entityId: one.entity }, bubbles: true, composed: true,
       })));
