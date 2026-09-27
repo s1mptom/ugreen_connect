@@ -58,8 +58,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
     # served is a dashboard drawn plainly, while an entry that will not load is
     # a charger nothing can reach.
     # The account before anything is logged about it (see logsafe).
-    logsafe.install()
+    logsafe.install(__package__)
     logsafe.remember(entry.data.get(CONF_EMAIL), "<account>")
+    logsafe.remember(entry.data.get(CONF_PASSWORD), "<password>")
 
     try:
         await async_register_card(hass)

@@ -475,14 +475,16 @@ pictures.
 The log Home Assistant downloads is **its whole log**, with every other
 integration's messages in it. Post it only if you are asked to. Before you do,
 keep only the lines with `ugreen_connect` in them. A text editor's search
-works, or on a terminal: `grep ugreen_connect home-assistant_*.log`. While this
-integration is loaded, every line of the log, Home Assistant's own included,
-has your account e-mail, your charger's serial, cloud id and MAC, and your
-Wi-Fi name replaced: a charger becomes a tag such as `charger 3fa9c1`, the
-rest `<account>`, `<mac>` and `<wifi>`. A Wi-Fi name that is a short plain
-word, such as `Home`, is left alone, since replacing it would rewrite every
-"Home Assistant" too. Other integrations' private details are theirs to hide,
-which is why only this integration's lines should go.
+works, or on a terminal: `grep ugreen_connect home-assistant_*.log`. In this
+integration's lines, and in the messages of its errors wherever Home Assistant
+writes them, your account e-mail, password and tokens, your charger's serial,
+cloud id and MAC, and your Wi-Fi name are replaced: a charger becomes a tag
+such as `charger 3fa9c1`, the rest `<account>`, `<mac>`, `<wifi>` and so on. A
+value shorter than eight characters, such as a Wi-Fi name `Home`, is replaced
+only inside a frame's bytes, not as a word, since replacing the word would
+rewrite every "Home Assistant" too. Home Assistant's own lines and other
+integrations' are not changed, which is the other reason to keep only this
+integration's.
 
 Do not post `ugreen_connect_debug.json` from the *Debug snapshot* option. It is
 the unedited cloud payload, written for this integration's own development,

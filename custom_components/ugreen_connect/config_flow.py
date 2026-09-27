@@ -155,8 +155,9 @@ class UgreenConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             email = user_input[CONF_EMAIL].strip()
             # Before anything can be logged about the attempt (see logsafe).
-            logsafe.install()
+            logsafe.install(__package__)
             logsafe.remember(email, "<account>")
+            logsafe.remember(user_input[CONF_PASSWORD], "<password>")
             region = user_input[CONF_REGION]
             api = UgreenApi(
                 async_get_clientsession(self.hass), REGIONS[region], DEFAULT_LANGUAGE

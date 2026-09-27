@@ -98,7 +98,8 @@ class UgreenWallpaperView(HomeAssistantView):
                     _LOGGER.debug("Wallpaper %s: CDN said %s", image_id, response.status)
                     return web.Response(status=502, text="The picture could not be fetched")
             except Exception as err:  # noqa: BLE001 - a preview is never worth raising over
-                _LOGGER.debug("Wallpaper %s failed: %s", image_id, err)
+                # The kind only: the error's text has the signed link in it.
+                _LOGGER.debug("Wallpaper %s failed: %s", image_id, type(err).__name__)
                 if refresh:
                     return web.Response(status=502, text="The picture could not be fetched")
 

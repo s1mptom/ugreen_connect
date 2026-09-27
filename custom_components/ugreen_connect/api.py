@@ -43,7 +43,7 @@ from .const import (
     DEFAULT_LANGUAGE,
     DEFAULT_REGION,
 )
-from .logsafe import describe
+from .logsafe import describe, remember, scrub
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -85,7 +85,15 @@ def _wanted_method(msg: str) -> str | None:
 
 
 class UgreenError(Exception):
-    """Any error talking to the UGREEN cloud."""
+    """Any error talking to the UGREEN cloud.
+
+    Its message is cleaned as it is made (see logsafe). Whoever catches it
+    writes it into the log, Home Assistant included, and it is often in words
+    the cloud wrote, or a URL whose query names a charger.
+    """
+
+    def __init__(self, *args: object) -> None:
+        super().__init__(*(scrub(arg) if isinstance(arg, str) else arg for arg in args))
 
 
 class UgreenAuthError(UgreenError):
@@ -348,6 +356,13 @@ class UgreenApi:
         self._token = _find_first(data, ("accessToken", "access_token", "token"))
         self._refresh_token = _find_first(data, ("refreshToken", "refresh_token"))
         self._user_id = _find_first(data, ("userId", "user_id", "uid"))
+        for secret, stand_in in (
+            (self._token, "<token>"),
+            (self._refresh_token, "<token>"),
+            (self._user_id, "<user>"),
+            (password, "<password>"),
+        ):
+            remember(str(secret) if secret is not None else None, stand_in)
         if not self._token:
             # The answer's shape, not the answer: it is the tokens.
             raise UgreenError(f"login succeeded but no access token found in {describe(data)}")
@@ -371,11 +386,7 @@ class UgreenApi:
                 if isinstance(data.get(key), list):
                     return data[key]
         # The shape only: the list is every charger's MAC, serial and cloud id.
-        _LOGGER.debug(
-            "deviceList returned an unrecognised shape: %s%s",
-            type(data).__name__,
-            f" with keys {sorted(data)}" if isinstance(data, dict) else "",
-        )
+        _LOGGER.debug("deviceList returned an unrecognised shape: %s", describe(data))
         return []
 
     async def get_product_model(self, **params: Any) -> Any:
@@ -463,7 +474,9 @@ class UgreenApi:
                     # object, and the object's path can name the account.
                     raise UgreenError(f"upload failed: HTTP {resp.status}")
         except aiohttp.ClientError as err:
-            raise UgreenError(f"upload failed: {err}") from err
+            # The error's kind only, and not chained: aiohttp puts the URL in
+            # its message, and this one is a signed slot.
+            raise UgreenError(f"upload failed: {type(err).__name__}") from None
 
         await self._post(
             "/app/v1/charger/file/wallPaper/save",

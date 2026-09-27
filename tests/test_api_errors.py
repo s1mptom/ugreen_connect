@@ -54,3 +54,62 @@ def test_rate_limited_is_not_an_auth_error():
     """Or the coordinator would turn it into a re-auth flow regardless."""
     assert issubclass(api_module.UgreenRateLimited, api_module.UgreenError)
     assert not issubclass(api_module.UgreenRateLimited, api_module.UgreenAuthError)
+
+
+# --- what an error says, which somebody will post --------------------------------
+
+
+@pytest.fixture
+def _forgetful():
+    from conftest import logsafe
+
+    logsafe._known.clear()
+    logsafe._compiled = None
+    yield logsafe
+    logsafe._known.clear()
+    logsafe._compiled = None
+
+
+def _answering(answer: dict):
+    client = api_module.UgreenApi(session=None, base_url="https://example.invalid")
+
+    async def _post(*_args, **_kwargs):
+        return answer
+
+    client._post = _post
+    return client
+
+
+def test_a_login_answer_without_a_token_is_described_not_quoted(_forgetful):
+    """The answer is the refresh token and the user id."""
+    client = _answering(
+        {"code": api_module.CODE_OK, "data": {"refresh": "eyJsecret-refresh", "userId": 9}}
+    )
+    with pytest.raises(api_module.UgreenError) as err:
+        asyncio.run(client.login("someone@example.com", "hunter2-password"))
+    assert "eyJsecret-refresh" not in str(err.value)
+    assert "keys ['refresh', 'userId']" in str(err.value)
+
+
+def test_a_login_teaches_the_log_its_secrets(_forgetful):
+    """The tokens and the password, once they exist, are scrubbed wherever they go."""
+    client = _answering(
+        {
+            "code": api_module.CODE_OK,
+            "data": {
+                "accessToken": "eyJaccess-token-value",
+                "refreshToken": "eyJrefresh-token-value",
+            },
+        }
+    )
+    asyncio.run(client.login("someone@example.com", "hunter2-password"))
+    text = _forgetful.scrub("eyJaccess-token-value eyJrefresh-token-value hunter2-password")
+    assert text == "<token> <token> <password>"
+
+
+def test_an_error_cleans_its_own_message(_forgetful):
+    """Home Assistant writes the traceback, on loggers this integration does not clean."""
+    _forgetful.remember_charger("an-iot-id-long", "FF7J0000000000001")
+    err = api_module.UgreenError("gateway refused FF7J0000000000001")
+    assert "FF7J0000000000001" not in str(err)
+    assert "FF7J0000000000001" not in repr(err)

@@ -14,6 +14,7 @@ import io
 import logging
 import time
 
+import aiohttp
 import voluptuous as vol
 from homeassistant.const import CONF_DEVICE_ID
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -183,8 +184,14 @@ def _decode(encoded: str) -> bytes:
 
 
 def _read(path: str) -> bytes:
-    with open(path, "rb") as handle:
-        return handle.read()
+    try:
+        with open(path, "rb") as handle:
+            return handle.read()
+    except OSError as err:
+        # Not chained: the original names the path, which is the owner's own.
+        raise HomeAssistantError(
+            f"Could not read the picture: {err.strerror or type(err).__name__}"
+        ) from None
 
 
 async def _fetch(hass: HomeAssistant, url: str) -> bytes:
@@ -192,8 +199,12 @@ async def _fetch(hass: HomeAssistant, url: str) -> bytes:
         async_get_clientsession,
     )
 
-    async with async_get_clientsession(hass).get(url, timeout=30) as resp:
-        if resp.status != 200:
-            # Not the URL, which can carry a token of its own.
-            raise HomeAssistantError(f"Could not fetch the picture: HTTP {resp.status}")
-        return await resp.read()
+    # Never the URL, which can carry a token of its own -- and aiohttp puts it
+    # in the message of every error it raises, so those are not chained.
+    try:
+        async with async_get_clientsession(hass).get(url, timeout=30) as resp:
+            if resp.status != 200:
+                raise HomeAssistantError(f"Could not fetch the picture: HTTP {resp.status}")
+            return await resp.read()
+    except (aiohttp.ClientError, TimeoutError) as err:
+        raise HomeAssistantError(f"Could not fetch the picture: {type(err).__name__}") from None

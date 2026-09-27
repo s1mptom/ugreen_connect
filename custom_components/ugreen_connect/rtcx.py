@@ -51,7 +51,7 @@ from .const import (
     RTCX_TOKEN_MARGIN,
     SETTING_SETTLE_SECONDS,
 )
-from .logsafe import charger_tag, describe
+from .logsafe import charger_tag, describe, remember, remember_bytes
 from .protocol import (
     DC_TURBO_MODE,
     DC_VOLTAGE_BYTE,
@@ -61,6 +61,7 @@ from .protocol import (
     QUERY_GET_DEVICE_STATE,
     QUERY_GET_POWER_INFO,
     QUERY_GET_PRODUCT_VERSION,
+    QUERY_GET_WIFI_SSID,
     SETTING_SET_BRIGHTNESS,
     SETTING_SET_CHARGING_MODE,
     SETTING_SET_SCREENSAVER,
@@ -291,6 +292,7 @@ class RtcxClient:
                     f"third/login returned no accessToken: {describe(payload)}"
                 )
             self._token = token
+            remember(token, "<token>")
             self._expires_at = _jwt_expiry(token) or (time.time() + 3600)
             _LOGGER.debug("RTCX login ok, token valid until %s", self._expires_at)
 
@@ -460,10 +462,22 @@ class RtcxClient:
         }
 
     async def async_text_query(self, iot_id: str, cmd: int) -> str | None:
-        """Queries whose reply is a plain ASCII string (SSID, serial number)."""
+        """Queries whose reply is a plain string (SSID, serial number).
+
+        Both are the household's own, so each is remembered by logsafe the
+        moment it is read -- as the bytes it came in, and as text. UTF-8
+        rather than ASCII, since a network can be named in any script.
+        """
         value = await self._ask(iot_id, FRAME_QUERY, cmd)
         body = frame_body(value, FRAME_QUERY, cmd) if value else None
-        return body.decode("ascii", "replace").strip("\x00").strip() if body else None
+        if not body:
+            return None
+        raw = body.strip(b"\x00").strip()
+        text = raw.decode("utf-8", "replace")
+        stand_in = "<wifi>" if cmd == QUERY_GET_WIFI_SSID else "<serial>"
+        remember_bytes(raw, stand_in)
+        remember(text, stand_in)
+        return text
 
     async def async_firmware_version(self, iot_id: str) -> str | None:
         """Three bytes, one per version component."""

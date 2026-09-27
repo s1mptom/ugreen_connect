@@ -318,6 +318,8 @@ def test_what_logsafe_knows_is_gone_from_every_string_in_the_file():
             last_frames={IOT_ID: {"AA/1": "aa01000b00" + mac_bytes + "ffff"}},
             state_changes={IOT_ID: [{**CHANGE, "body": "0004" + mac_bytes}]},
         )
+        # A key can be an identifier too, in a section nobody thought to rename.
+        payload["power"][UNIT]["neighbours"] = {MAC: -61}
         entry = types.SimpleNamespace(
             runtime_data=types.SimpleNamespace(data=payload, rtcx=rtcx),
             data={"email": EMAIL, "password": PASSWORD, "region": "europe"},
@@ -328,3 +330,4 @@ def test_what_logsafe_knows_is_gone_from_every_string_in_the_file():
         logsafe._compiled = None
     assert mac_bytes not in text.lower()
     assert "0004<mac>" in text
+    assert MAC not in text and '"<mac>": -61' in text

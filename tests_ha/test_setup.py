@@ -722,6 +722,94 @@ async def test_the_debug_log_carries_nothing_of_the_household(hass, started, rtc
     assert charger_tag(IOT_ID) in text, "a line still says which charger"
 
 
+async def test_the_setup_form_hides_the_account_before_it_tries_it(hass, caplog, monkeypatch):
+    """The first attempt is logged before any entry exists to learn it from.
+
+    The cloud's answer to a failed login is logged at debug, and nothing stops
+    the cloud from saying the address back.
+    """
+    from custom_components.ugreen_connect import config_flow
+    from custom_components.ugreen_connect.api import UgreenError
+
+    email, password = "new.owner@example.invalid", "correct-horse-battery"
+
+    class _Api:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def login(self, *_args, **_kwargs):
+            raise UgreenError(f"no account for {email}")
+
+    monkeypatch.setattr(config_flow, "UgreenApi", _Api)
+    caplog.set_level(logging.DEBUG, logger="custom_components.ugreen_connect")
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"email": email, "password": password, "region": "europe"}
+    )
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert "Cannot connect to UGREEN cloud" in caplog.text
+    assert email not in caplog.text
+    assert password not in caplog.text
+
+
+async def test_a_stored_block_under_a_bare_cloud_id_is_still_hidden(
+    hass, entry, api, rtcx, hass_storage
+):
+    """A key with no colon in the mode store is a cloud id whole."""
+    from unittest.mock import patch
+
+    from custom_components.ugreen_connect import logsafe
+
+    bare = "JuSTiZWwzabFoehKLgWT8Uoju"
+    params_key = f"{DOMAIN}.mode_params.{entry.entry_id}"
+    hass_storage[params_key] = {
+        "version": 1, "minor_version": 1, "key": params_key, "data": {bare: "00" * 35},
+    }
+    entry.add_to_hass(hass)
+    with (
+        patch("custom_components.ugreen_connect.async_get_clientsession"),
+        patch("custom_components.ugreen_connect.UgreenApi", return_value=api),
+        patch("custom_components.ugreen_connect.RtcxClient", return_value=rtcx),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    assert logsafe.scrub(bare) == f"charger {logsafe.charger_tag(bare)}"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("path", "/config/www/pavels-family.jpg"), ("url", "https://cdn.example/me.jpg?Signature=abc")],
+)
+async def test_the_wallpaper_service_does_not_say_what_it_was_given(
+    hass, started, monkeypatch, field, value
+):
+    """A path and a URL are the owner's own, and a URL can carry a token."""
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.ugreen_connect import services
+
+    monkeypatch.setattr(hass.config, "is_allowed_path", lambda _path: True)
+
+    class _Session:
+        def get(self, *_args, **_kwargs):
+            raise services.aiohttp.InvalidURL(value)
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession", lambda _hass: _Session()
+    )
+    device = next(
+        d
+        for d in dr.async_entries_for_config_entry(dr.async_get(hass), started.entry_id)
+        if (DOMAIN, DEVICE_CODE) in d.identifiers
+    )
+    with pytest.raises(HomeAssistantError) as err:
+        await hass.services.async_call(
+            DOMAIN, "set_wallpaper", {"device_id": device.id, field: value}, blocking=True
+        )
+    assert value not in str(err.value)
+    assert err.value.__cause__ is None and err.value.__suppress_context__
+
+
 async def test_idle_the_poll_slows_but_not_while_debug_logging(hass, started, caplog):
     """Mapping a setting is done with nothing plugged in, a few seconds apart."""
     coordinator = started.runtime_data

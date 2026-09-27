@@ -1,14 +1,16 @@
-"""Nothing of the household in the log.
+"""Nothing of the household in what the integration logs.
 
 The README asks people mapping a charger to post their diagnostics and
 sometimes their log, so what the integration knows about them must not be in
 either. These hold the net under every line: the identifiers it knows are
-replaced wherever they turn up -- in a message, an argument, a traceback, a
-frame's hex, a line some other logger wrote -- and nothing else is touched.
+replaced wherever they turn up in its records -- a message, an argument, a
+traceback, a stack, a frame's hex -- and nothing else is touched, least of all
+anybody else's records.
 """
 
 import logging
 import sys
+import threading
 
 import pytest
 from conftest import logsafe
@@ -16,7 +18,8 @@ from conftest import logsafe
 IOT = "a1B2c3D4e5-iot"
 UNIT = "FF7J0000000000001"
 MAC = "EC:1A:C3:00:00:01"
-EMAIL = "someone@example.invalid"
+EMAIL = "Someone@Example.invalid"
+SCOPE = "ugreen_logsafe_test"
 
 
 @pytest.fixture(autouse=True)
@@ -42,28 +45,58 @@ def test_a_charger_without_a_cloud_id_is_still_covered():
     assert logsafe.scrub(f"{UNIT} {MAC}") == f"{tag} <mac>"
 
 
-def test_every_spelling_is_caught():
-    """The MAC in any case and without colons, the id as hex inside a frame."""
+def test_case_does_not_matter():
+    """The cloud may send the e-mail back lower-cased; an entity id has the
+    unit code in lower case."""
+    tag = logsafe.remember_charger(IOT, UNIT)
+    logsafe.remember(EMAIL, "<account>")
+    assert logsafe.scrub("user someone@example.invalid not found") == "user <account> not found"
+    assert logsafe.scrub(f"sensor.ugreen_{UNIT.lower()}_power") == f"sensor.ugreen_{tag}_power"
+
+
+def test_a_frame_s_hex_is_caught_in_either_case():
+    """`body.hex()` is lower case, and it is how every body is logged."""
     tag = logsafe.remember_charger(IOT, UNIT, MAC)
-    assert logsafe.scrub(MAC.lower()) == "<mac>"
+    spelled = UNIT.encode().hex()
+    assert logsafe.scrub("aa0500" + spelled + "ffff") == f"aa0500{tag}ffff"
+    assert logsafe.scrub("AA0500" + spelled.upper() + "FFFF") == f"AA0500{tag}FFFF"
     assert logsafe.scrub("aa06ec1ac300000101ff") == "aa06<mac>01ff"
-    assert logsafe.scrub("aa0500" + UNIT.encode().hex().upper() + "ffff") == f"aa0500{tag}ffff"
 
 
-def test_a_value_is_matched_whole_and_as_written():
-    """Inside a longer word it is some other word; in another case, another value."""
-    logsafe.remember("Lab-2G", "<wifi>")
-    assert logsafe.scrub("on Lab-2G now") == "on <wifi> now"
-    assert logsafe.scrub("Lab-2GHz") == "Lab-2GHz"
-    assert logsafe.scrub("lab-2g") == "lab-2g"
+def test_a_wi_fi_name_in_any_script_is_caught():
+    """Decoded, a Cyrillic name has to be matched as UTF-8 bytes in a frame."""
+    name = "Дом_WiFi_5G"
+    logsafe.remember(name, "<wifi>")
+    assert logsafe.scrub(f"joined {name}") == "joined <wifi>"
+    assert logsafe.scrub("aa08" + name.encode().hex()) == "aa08<wifi>"
 
 
-def test_an_ordinary_word_is_not_hunted():
-    """An SSID of `Home` would rewrite "Home Assistant" -- and give itself away."""
-    logsafe.remember("Home", "<wifi>")
-    logsafe.remember("lab", "<wifi>")
-    text = "Home Assistant at /usr/src/homeassistant, the lab bench"
+def test_bytes_that_do_not_decode_are_caught_as_bytes():
+    raw = b"\xff\xfeNet\x80"
+    logsafe.remember_bytes(raw, "<wifi>")
+    assert logsafe.scrub("aa08" + raw.hex()) == "aa08<wifi>"
+
+
+def test_a_value_is_matched_whole():
+    """Inside a longer word it is some other word."""
+    logsafe.remember("Lab-2G-Net", "<wifi>")
+    assert logsafe.scrub("on Lab-2G-Net now") == "on <wifi> now"
+    assert logsafe.scrub("Lab-2G-Network") == "Lab-2G-Network"
+
+
+@pytest.mark.parametrize("value", ["Home", "Wi-Fi", "1402", "lab"])
+def test_a_short_value_is_not_hunted_as_written(value):
+    """An SSID of `Home` would rewrite "Home Assistant", one of `1402` every
+    such number -- and each rewrite would give it away."""
+    logsafe.remember(value, "<wifi>")
+    text = f"Home Assistant took 1402 ms on Wi-Fi at the lab, {value}"
     assert logsafe.scrub(text) == text
+
+
+def test_a_short_value_is_still_caught_as_bytes():
+    """Inside a frame it is a run of hex digits, not a word."""
+    logsafe.remember("Home", "<wifi>")
+    assert logsafe.scrub("aa08" + b"Home".hex()) == "aa08<wifi>"
 
 
 def test_nothing_known_changes_nothing():
@@ -71,11 +104,14 @@ def test_nothing_known_changes_nothing():
 
 
 def test_an_answer_is_described_not_quoted():
-    """A login answer is the tokens; an error message about it says its shape."""
-    answer = {"refreshToken": "eyJsecret", "userId": 42}
+    """A login answer is the tokens; the code and message explain a refusal."""
+    answer = {"refreshToken": "eyJsecret", "userId": 42, "code": 460, "msg": "token invalid"}
     described = logsafe.describe(answer)
     assert "eyJsecret" not in described and "42" not in described
-    assert described == "an object with keys ['refreshToken', 'userId']"
+    assert described == (
+        "an object with keys ['code', 'msg', 'refreshToken', 'userId'], "
+        "code 460, msg 'token invalid'"
+    )
     assert logsafe.describe(None) == "nothing"
     assert logsafe.describe([1, 2]) == "a list of 2"
 
@@ -84,29 +120,42 @@ def test_an_answer_is_described_not_quoted():
 def installed():
     """The record factory as the integration leaves it, put back afterwards."""
     make = logging.getLogRecordFactory()
-    was = logsafe._installed
-    logsafe._installed = False
-    logsafe.install()
+    was = logsafe._scope
+    logsafe._scope = None
+    logsafe.install(SCOPE)
     yield
     logging.setLogRecordFactory(make)
-    logsafe._installed = was
+    logsafe._scope = was
 
 
-def test_every_logger_is_covered_home_assistant_s_too(installed, caplog):
-    """A traceback of an error raised here is written by Home Assistant's loggers."""
+def _record(name, msg, args=None, exc_info=None, sinfo=None):
+    return logging.getLogger(name).makeRecord(
+        name, logging.ERROR, __file__, 1, msg, args, exc_info, sinfo=sinfo
+    )
+
+
+def test_this_integration_s_records_are_cleaned(installed, caplog):
     logsafe.remember(EMAIL, "<account>")
     tag = logsafe.remember_charger(IOT, UNIT)
-    caplog.set_level(logging.DEBUG)
+    caplog.set_level(logging.DEBUG, logger=SCOPE)
 
-    logging.getLogger("custom_components.ugreen_connect.api").warning("login as %s", EMAIL)
+    logging.getLogger(f"{SCOPE}.api").warning("login as %s", EMAIL)
     try:
         raise RuntimeError(f"cloud said no to {UNIT}")
     except RuntimeError:
-        logging.getLogger("homeassistant.components.websocket_api").exception("Unexpected")
+        logging.getLogger(f"{SCOPE}.coordinator").exception("poll failed")
 
     assert EMAIL not in caplog.text and "<account>" in caplog.text
     assert UNIT not in caplog.text, "the traceback carried it"
     assert tag in caplog.text
+
+
+def test_everybody_else_s_records_are_left_alone(installed):
+    """Their records are not this integration's to rewrite."""
+    logsafe.remember(EMAIL, "<account>")
+    record = _record("homeassistant.core", "hello %s", (EMAIL,))
+    assert record.getMessage() == f"hello {EMAIL}"
+    assert _record(f"{SCOPE}x.sub", "hello %s", (EMAIL,)).getMessage() == f"hello {EMAIL}"
 
 
 def test_a_traceback_that_had_to_be_cleaned_loses_its_exception(installed):
@@ -115,32 +164,76 @@ def test_a_traceback_that_had_to_be_cleaned_loses_its_exception(installed):
     try:
         raise RuntimeError(f"no to {UNIT}")
     except RuntimeError:
-        record = logging.getLogger("x").makeRecord(
-            "x", logging.ERROR, __file__, 1, "failed", None, sys.exc_info()
-        )
+        record = _record(SCOPE, "failed", exc_info=sys.exc_info())
     assert record.exc_info is None
     assert UNIT not in record.exc_text
 
 
-def test_a_line_that_cannot_be_checked_is_withheld_not_raised(installed):
-    """A broken line used to be a `--- Logging error ---`; it must not become
-    an exception in whatever was logging, nor slip through unchecked."""
-    logsafe.remember(EMAIL, "<account>")
-    record = logging.getLogger("x").makeRecord(
-        "x", logging.DEBUG, __file__, 1, f"{EMAIL} %s %s", (1,), None
-    )
+def test_a_clean_traceback_keeps_its_exception(installed):
+    """Home Assistant's log viewer shows it; nothing needed taking out."""
+    logsafe.remember_charger(IOT, UNIT)
+    try:
+        raise RuntimeError("nothing private")
+    except RuntimeError:
+        record = _record(SCOPE, "failed", exc_info=sys.exc_info())
+    assert record.exc_info is not None
+
+
+def test_a_stack_is_cleaned(installed):
+    logsafe.remember_charger(IOT, UNIT)
+    record = _record(SCOPE, "here", sinfo=f"Stack (most recent call last):\n  at {UNIT}")
+    assert UNIT not in record.stack_info
+
+
+def test_a_line_that_cannot_be_checked_is_withheld_whole(installed):
+    """Not raised into whatever was logging, and not let through unchecked --
+    its traceback included."""
+    logsafe.remember_charger(IOT, UNIT)
+    try:
+        raise RuntimeError(f"no to {UNIT}")
+    except RuntimeError:
+        record = _record(SCOPE, f"{UNIT} %s %s", (1,), exc_info=sys.exc_info())
     assert record.getMessage() == logsafe.WITHHELD
+    assert record.exc_info is None and record.exc_text is None
+
+
+def test_a_record_made_while_compiling_does_not_hang(installed, monkeypatch):
+    """A finalizer can log while the pattern is being built, on the same thread.
+
+    It comes back through here; with a lock that is not reentrant, held while
+    compiling, that is the event loop stopped for good.
+    """
+    logsafe.remember_charger(IOT, UNIT)
+    compile_ = logsafe.re.compile
+    logged = []
+
+    def _compile(*args, **kwargs):
+        if not logged:
+            logged.append(True)
+            logging.getLogger(SCOPE).warning("from a finalizer about %s", UNIT)
+        return compile_(*args, **kwargs)
+
+    monkeypatch.setattr(logsafe.re, "compile", _compile)
+    done = threading.Event()
+
+    def _run():
+        logsafe.scrub(f"poll of {UNIT}")
+        done.set()
+
+    worker = threading.Thread(target=_run, daemon=True)
+    worker.start()
+    assert done.wait(5), "scrub never came back"
 
 
 def test_it_goes_in_once():
     make = logging.getLogRecordFactory()
-    was = logsafe._installed
-    logsafe._installed = False
+    was = logsafe._scope
+    logsafe._scope = None
     try:
-        logsafe.install()
+        logsafe.install(SCOPE)
         once = logging.getLogRecordFactory()
-        logsafe.install()
+        logsafe.install(SCOPE)
         assert logging.getLogRecordFactory() is once
     finally:
         logging.setLogRecordFactory(make)
-        logsafe._installed = was
+        logsafe._scope = was
