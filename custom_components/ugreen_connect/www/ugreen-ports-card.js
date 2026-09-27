@@ -73,8 +73,13 @@ const STYLE = `
   svg.spark { display: block; width: 100%; height: 30px; margin-top: 10px; overflow: visible; }
   .figures { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--divider-color);
              padding-top: 9px; font-size: 12px; }
-  .figures div { display: flex; justify-content: space-between; gap: 8px; }
-  .figures span { color: var(--secondary-text-color); }
+  /* Label and value each stay on one line. Eight tiles across a screen with
+   * the sidebar docked leave about 106px, less than "Charging for 1 h 31 m"
+   * needs, and without this the value broke in the middle of itself. Now it
+   * moves under its label instead, whole. */
+  .figures div { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: 8px; }
+  .figures span { color: var(--secondary-text-color); white-space: nowrap; }
+  .figures b { font-weight: inherit; white-space: nowrap; margin-left: auto; }
   .note { font-size: 13px; color: var(--secondary-text-color); }
   .detail { font-size: 12px; color: var(--secondary-text-color); margin-top: 3px; min-height: 16px; }
   .empty { color: var(--secondary-text-color); padding: 14px 0; }
@@ -203,9 +208,9 @@ class UgreenPortsCard extends HTMLElement {
         ${this._spark(port)}
         <div class="grow"></div>
         ${inSession ? `<div class="figures">
-          <div><span>${this._t('energy')}</span>${Number.isFinite(wh) ? `${wh.toFixed(1)} Wh` : '—'}</div>
-          <div><span>${this._t('charge')}</span>${Number.isFinite(mah) ? `${Math.round(mah)} mAh` : '—'}</div>
-          <div><span>${this._t('time')}</span>${seconds ? duration(seconds) : '—'}</div>
+          <div><span>${this._t('energy')}</span><b>${Number.isFinite(wh) ? `${wh.toFixed(1)} Wh` : '—'}</b></div>
+          <div><span>${this._t('charge')}</span><b>${Number.isFinite(mah) ? `${Math.round(mah)} mAh` : '—'}</b></div>
+          <div><span>${this._t('time')}</span><b>${seconds ? duration(seconds) : '—'}</b></div>
         </div>` : ''}`;
     } else {
       const cable = volts > 0.5;
