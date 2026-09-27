@@ -705,14 +705,13 @@ class RtcxClient:
 
         The same frame as selecting the mode, carrying the block `priority` was
         last seen with and one byte of it changed: the first, which is the
-        mask. That is the byte the app changes when the choice is made there,
-        one control per frame, so the rest of the block is sent back as it
+        mask. That is the only byte of the reply that moved while the choice
+        was changed in the app, so the rest of the block is sent back as it
         came. The mode byte is `priority` itself, which is why this is only
         offered while the charger runs it.
 
-        At least one port, as the app has it: an empty mask is a question
-        nobody has asked this charger, and the answer would be learned on the
-        device.
+        At least one port: an empty mask is a question nobody has asked this
+        charger, and the answer would be learned on the device.
         """
         mask = priority_mask(ports)
         if not mask:

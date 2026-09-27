@@ -86,8 +86,8 @@ cannot be selected here: setting a mode carries that mode's parameter block, and
 only the app's editor can compose a custom one. Home Assistant replays a block it
 has watched the charger running; the only block it ever composes is an empty one,
 for a mode it has not seen. The one byte it changes is the priority ports' mask,
-the first of the block under `priority` -- the byte the app changes too, one
-choice per frame.
+the first of the block under `priority`, and the only one that moves when the
+choice is changed in the app.
 
 That applies to the presets too. A mode carries its own settings — `priority`
 keeps a mask of its priority ports there, DC Turbo its port voltage and its

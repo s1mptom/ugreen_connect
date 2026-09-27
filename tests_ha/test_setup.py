@@ -512,7 +512,7 @@ async def test_a_port_turned_off_leaves_the_others_first(hass, started, rtcx):
 
 
 async def test_the_last_port_first_cannot_be_turned_off(hass, started, rtcx):
-    """The app always keeps one, and an empty mask has never been sent.
+    """An empty mask has never been sent to a charger.
 
     Refused where it is asked, with a reason, rather than sent to find out.
     """

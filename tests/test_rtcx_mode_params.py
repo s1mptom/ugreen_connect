@@ -363,7 +363,7 @@ def _priority_reply(mask: int, rest: bytes = b"") -> str:
 
 def test_the_fixture_s_charger_puts_c2_first():
     # 02 is the byte the module docstring is about: that charger's owner had
-    # C2 first, which is what the app showed when the reply was taken.
+    # C2 first: that charger's priority port was C2 when the reply was taken.
     assert _Client({IOT: STATE_PRIORITY}).read()["priority"] == ["C2"]
 
 
@@ -378,7 +378,7 @@ def test_the_ports_are_written_as_the_mask_in_the_priority_frame():
 
 
 def test_the_rest_of_the_block_goes_back_as_it_came():
-    """The app changes one byte of the block per choice, and so does this.
+    """Only the mask moved when the choice changed in the app, so only it changes.
 
     Nothing after the mask has been seen non-zero under `priority`, so these
     bytes are made up; the point is that whatever the charger reported there
