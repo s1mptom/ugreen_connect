@@ -578,6 +578,112 @@ async def test_outside_priority_the_switches_write_nothing(hass, started, rtcx):
 
 
 
+DC_VOLTAGE = "select.ugreen_nexode_pro_x783_dc_port_voltage"
+DC_ALWAYS_ON = "switch.ugreen_nexode_pro_x783_dc_always_on"
+IN_TURBO = {"charging_mode": "dc_turbo", "custom": None, "priority": None}
+
+
+async def test_the_dc_settings_are_there_before_dc_turbo_is_chosen(hass, started):
+    registry = er.async_get(hass)
+    voltage = registry.async_get_entity_id("select", DOMAIN, f"{DEVICE_CODE}_dc_voltage")
+    always_on = registry.async_get_entity_id("switch", DOMAIN, f"{DEVICE_CODE}_dc_always_on")
+    assert (voltage, always_on) == (DC_VOLTAGE, DC_ALWAYS_ON)
+    assert hass.states.get(DC_VOLTAGE).state == STATE_UNAVAILABLE
+    assert hass.states.get(DC_ALWAYS_ON).state == STATE_UNAVAILABLE
+
+
+async def test_under_dc_turbo_they_say_what_the_dc_port_is_set_to(hass, started, rtcx):
+    await _charger_now(
+        hass, started, rtcx, **IN_TURBO, dc_turbo={"voltage": 20, "always_on": False}
+    )
+    voltage = hass.states.get(DC_VOLTAGE)
+    assert voltage.state == "20"
+    assert voltage.attributes["options"] == ["12", "15", "20"]
+    assert hass.states.get(DC_ALWAYS_ON).state == "off"
+
+
+async def test_a_voltage_the_charger_does_not_report_is_unknown(hass, started, rtcx):
+    await _charger_now(
+        hass, started, rtcx, **IN_TURBO, dc_turbo={"voltage": None, "always_on": True}
+    )
+    assert hass.states.get(DC_VOLTAGE).state == "unknown"
+    assert hass.states.get(DC_ALWAYS_ON).state == "on"
+
+
+async def test_choosing_a_voltage_sends_only_the_voltage(hass, started, rtcx):
+    await _charger_now(
+        hass, started, rtcx, **IN_TURBO, dc_turbo={"voltage": 20, "always_on": True}
+    )
+    await hass.services.async_call(
+        "select", "select_option", {"entity_id": DC_VOLTAGE, "option": "15"}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert rtcx.turbo_writes == [{"voltage": 15}]
+    assert hass.states.get(DC_VOLTAGE).state == "15"
+    assert hass.states.get(DC_ALWAYS_ON).state == "on"
+
+
+async def test_always_on_sends_only_always_on(hass, started, rtcx):
+    await _charger_now(
+        hass, started, rtcx, **IN_TURBO, dc_turbo={"voltage": 12, "always_on": False}
+    )
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": DC_ALWAYS_ON}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert rtcx.turbo_writes == [{"always_on": True}]
+    assert hass.states.get(DC_ALWAYS_ON).state == "on"
+    assert hass.states.get(DC_VOLTAGE).state == "12"
+
+
+async def test_the_setting_already_there_sends_nothing(hass, started, rtcx):
+    await _charger_now(
+        hass, started, rtcx, **IN_TURBO, dc_turbo={"voltage": 12, "always_on": False}
+    )
+    await hass.services.async_call(
+        "select", "select_option", {"entity_id": DC_VOLTAGE, "option": "12"}, blocking=True
+    )
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": DC_ALWAYS_ON}, blocking=True
+    )
+    assert rtcx.turbo_writes == []
+
+
+async def test_the_voltage_and_always_on_changed_together_both_land(hass, started, rtcx):
+    """Two platforms, one block: they take turns with each other too.
+
+    Each change goes out in the mode's whole frame. Started side by side, the
+    second would start from the block before the first and put its byte back.
+    """
+    await _charger_now(
+        hass, started, rtcx, **IN_TURBO, dc_turbo={"voltage": 20, "always_on": False}
+    )
+    await asyncio.gather(
+        hass.services.async_call(
+            "select", "select_option", {"entity_id": DC_VOLTAGE, "option": "12"}, blocking=True
+        ),
+        hass.services.async_call(
+            "switch", "turn_on", {"entity_id": DC_ALWAYS_ON}, blocking=True
+        ),
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get(DC_VOLTAGE).state == "12"
+    assert hass.states.get(DC_ALWAYS_ON).state == "on"
+    assert not started.runtime_data.mode_turns(DEVICE_CODE).locked(), "the queue was left held"
+
+
+async def test_outside_dc_turbo_the_dc_settings_write_nothing(hass, started, rtcx):
+    """Under `priority` the first byte is the port mask; 15 V there is C1 and C2."""
+    await _charger_now(
+        hass, started, rtcx, charging_mode="priority", custom=None, priority=["C2"], dc_turbo=None
+    )
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": DC_ALWAYS_ON}, blocking=True
+    )
+    assert rtcx.turbo_writes == []
+    assert hass.states.get(DC_VOLTAGE).state == STATE_UNAVAILABLE
+
+
 @pytest.mark.parametrize(
     "carrying", [False, True], ids=["after_a_fresh_poll", "while_already_carried"]
 )

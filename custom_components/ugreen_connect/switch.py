@@ -1,8 +1,7 @@
-"""Switch platform: the charger's screensaver, and the ports its priority mode charges first."""
+"""Switch platform: the screensaver, the ports `priority` charges first, and DC Always On."""
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
@@ -45,10 +44,10 @@ async def async_setup_entry(
             # the charger has been seen in it.
             if "priority" in reading and (key, "priority") not in known:
                 known.add((key, "priority"))
-                turns = asyncio.Lock()
-                new.extend(
-                    UgreenPriorityPort(coordinator, key, port, turns) for port in PRIORITY_PORTS
-                )
+                new.extend(UgreenPriorityPort(coordinator, key, port) for port in PRIORITY_PORTS)
+            if "dc_turbo" in reading and (key, "dc_turbo") not in known:
+                known.add((key, "dc_turbo"))
+                new.append(UgreenDcAlwaysOn(coordinator, key))
         if new:
             async_add_entities(new)
 
@@ -115,9 +114,10 @@ class UgreenPriorityPort(UgreenDeviceEntity, SwitchEntity):
     together included, and each is a yes or a no. Available only in `priority`
     -- under another mode the byte they read is that mode's own setting.
 
-    The three of a charger take turns. Each writes the whole set, worked out
-    from the last reading, so two presses close together -- C1 on, then C1 off
-    again -- would otherwise both start from the reading before either: the
+    The three of a charger take turns, with every other write in the mode's
+    frame (`UgreenCoordinator.mode_turns`). Each writes the whole set, worked
+    out from the last reading, so two presses close together -- C1 on, then C1
+    off again -- would otherwise both start from the reading before either: the
     second finds C1 already off and sends nothing, and the charger is left with
     the first. Waiting for the one before it, read back, gives the second the
     set the first left.
@@ -127,12 +127,9 @@ class UgreenPriorityPort(UgreenDeviceEntity, SwitchEntity):
     _attr_icon = "mdi:priority-high"
     _attr_entity_category = EntityCategory.CONFIG
 
-    def __init__(
-        self, coordinator: UgreenCoordinator, key: str, port: str, turns: asyncio.Lock
-    ) -> None:
+    def __init__(self, coordinator: UgreenCoordinator, key: str, port: str) -> None:
         super().__init__(coordinator, key)
         self._port = port
-        self._turns = turns
         self._attr_translation_placeholders = {"port": port}
         self._attr_unique_id = f"{key}_{port}_priority"
 
@@ -150,7 +147,7 @@ class UgreenPriorityPort(UgreenDeviceEntity, SwitchEntity):
         return None if ports is None else self._port in ports
 
     async def _async_set(self, on: bool) -> None:
-        async with self._turns:
+        async with self.coordinator.mode_turns(self._key):
             await self._async_set_now(on)
 
     async def _async_set_now(self, on: bool) -> None:
@@ -177,6 +174,59 @@ class UgreenPriorityPort(UgreenDeviceEntity, SwitchEntity):
                 self.coordinator.model_for(self._key),
             )
         await self.coordinator.async_read_back(self._key, iot_id)
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._async_set(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._async_set(False)
+
+
+class UgreenDcAlwaysOn(UgreenDeviceEntity, SwitchEntity):
+    """Whether DC turbo keeps the DC port live with nothing plugged in.
+
+    The second byte of `dc_turbo`'s block, so available only while that mode
+    runs; under another mode the byte is that mode's own.
+    """
+
+    _attr_translation_key = "dc_always_on"
+    _attr_icon = "mdi:power-plug-outline"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: UgreenCoordinator, key: str) -> None:
+        super().__init__(coordinator, key)
+        self._attr_unique_id = f"{key}_dc_always_on"
+
+    @property
+    def _turbo(self) -> dict[str, Any] | None:
+        return (self._reading or {}).get("dc_turbo")
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._turbo is not None
+
+    @property
+    def is_on(self) -> bool | None:
+        turbo = self._turbo
+        return None if turbo is None else turbo["always_on"]
+
+    async def _async_set(self, on: bool) -> None:
+        async with self.coordinator.mode_turns(self._key):
+            turbo = self._turbo
+            iot_id = self._iot_id
+            if turbo is None or not iot_id:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="dc_turbo_not_running",
+                )
+            if turbo["always_on"] == on:
+                return
+            self._require_writable("dc_turbo")
+            with cloud_errors():
+                await self.coordinator.rtcx.async_set_dc_turbo(
+                    iot_id, self.coordinator.model_for(self._key), always_on=on
+                )
+            await self.coordinator.async_read_back(self._key, iot_id)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self._async_set(True)

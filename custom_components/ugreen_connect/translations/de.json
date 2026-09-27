@@ -98,6 +98,9 @@
       },
       "priority_port": {
         "name": "{port} zuerst laden"
+      },
+      "dc_always_on": {
+        "name": "DC immer an"
       }
     },
     "update": {
@@ -144,6 +147,14 @@
         "name": "Hintergrundbild",
         "state": {
           "none": "Keines"
+        }
+      },
+      "dc_voltage": {
+        "name": "Spannung am DC-Anschluss",
+        "state": {
+          "12": "12 V",
+          "15": "15 V",
+          "20": "20 V"
         }
       }
     },
@@ -221,6 +232,9 @@
     },
     "priority_needs_a_port": {
       "message": "Im Prioritätsmodus muss mindestens ein Anschluss zuerst geladen werden. Erst einen anderen einschalten, dann diesen ausschalten."
+    },
+    "dc_turbo_not_running": {
+      "message": "Das Ladegerät ist nicht im DC-Turbo, daher lassen sich die Einstellungen des DC-Anschlusses nicht ändern. Zuerst DC-Turbo wählen."
     }
   }
 }

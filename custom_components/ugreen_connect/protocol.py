@@ -129,6 +129,7 @@ STATE_FIELDS_ALL: Final[frozenset[str]] = frozenset(
         "charging_mode",
         "custom",
         "priority",
+        "dc_turbo",
         "screensaver",
         "screensaver_theme",
         "screensaver_flag",
@@ -147,8 +148,9 @@ STATE_FIELDS_BY_MODEL: Final[dict[str, frozenset[str]]] = {
     # holds.
     # `priority` too: its mask is the first byte of a block nobody has mapped
     # on this model, and a port choice read from the wrong byte is a control
-    # that sets the wrong ports.
-    "X776": STATE_FIELDS_ALL - {"wallpapers", "custom", "priority"},
+    # that sets the wrong ports. And `dc_turbo`, for the same reason: the 160W
+    # has no DC port for its first two bytes to be about.
+    "X776": STATE_FIELDS_ALL - {"wallpapers", "custom", "priority", "dc_turbo"},
 }
 
 # Reading a byte and writing it are separate permissions, because the commands
@@ -317,9 +319,11 @@ STATE_MODE_PARAMS = 5
 # cheaper of the two, and the two are held together by a test named
 # test_the_custom_mode_byte_is_the_one_the_mode_table_names.
 CUSTOM_MODE = 4
-# And "priority", held to the table the same way, by
-# test_the_priority_mode_byte_is_the_one_the_mode_table_names.
+# And "priority" and "dc_turbo", held to the table the same way, by
+# test_the_priority_mode_byte_is_the_one_the_mode_table_names and
+# test_the_dc_turbo_mode_byte_is_the_one_the_mode_table_names.
 PRIORITY_MODE = 3
+DC_TURBO_MODE = 2
 # What the custom decoder needs about the X783's block, in body bytes: where
 # the masks start, where the block ends, and how many plain limits come
 # before the shared C6+A byte.
@@ -431,6 +435,35 @@ def priority_mask(ports: list[str] | tuple[str, ...] | set[str]) -> int:
     if unknown:
         raise ValueError(f"not a priority port: {', '.join(sorted(unknown))}")
     return sum(1 << PRIORITY_PORTS.index(port) for port in set(ports))
+
+
+# --- The DC turbo mode's settings -------------------------------------------
+#
+# Under `dc_turbo` the block's first byte is the DC port's voltage and the
+# second its Always On switch, 0 or 1. Read off a live X783 by changing one
+# control at a time in the app: the voltage byte reads 1 at 12 V, 2 at 15 V and
+# 3 at 20 V, and the two bytes move independently.
+DC_VOLTAGES: Final[dict[int, int]] = {1: 12, 2: 15, 3: 20}
+DC_VOLTAGE_BYTE: Final[dict[int, int]] = {volts: byte for byte, volts in DC_VOLTAGES.items()}
+
+
+def parse_dc_turbo(body: bytes, model: str | None = None) -> dict[str, Any] | None:
+    """The DC port's voltage and Always On switch, while `dc_turbo` is the mode.
+
+    None under any other mode, where the two bytes are that mode's own: under
+    `priority` the first is the port mask, and C2 alone would read as 15 V.
+
+    A voltage byte outside the three the app sets is reported as None rather
+    than guessed at, while the switch beside it still reads.
+    """
+    if "dc_turbo" not in state_fields(model):
+        return None
+    if len(body) <= STATE_MODE_PARAMS + 1 or body[STATE_CHARGING_MODE] != DC_TURBO_MODE:
+        return None
+    return {
+        "voltage": DC_VOLTAGES.get(body[STATE_MODE_PARAMS]),
+        "always_on": bool(body[STATE_MODE_PARAMS + 1]),
+    }
 
 
 def crc16_modbus(data: bytes) -> int:

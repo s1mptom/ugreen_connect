@@ -348,6 +348,58 @@ def test_a_port_the_mode_does_not_offer_is_refused():
         p.priority_mask(["C4"])
 
 
+def test_the_dc_turbo_mode_byte_is_the_one_the_mode_table_names():
+    assert const.CHARGING_MODES[p.DC_TURBO_MODE] == "dc_turbo"
+
+
+def _turbo_body(volts_byte: int, always_on: int, mode: int = 2) -> bytes:
+    body = bytearray(CUSTOM_STATE)
+    body[p.STATE_CHARGING_MODE] = mode
+    body[p.STATE_MODE_PARAMS] = volts_byte
+    body[p.STATE_MODE_PARAMS + 1] = always_on
+    return bytes(body)
+
+
+def test_the_dc_turbo_block_reads_as_the_app_shows_it():
+    """Read off a live X783 while one control at a time moved in the app."""
+    for volts_byte, volts in ((1, 12), (2, 15), (3, 20)):
+        for always_on in (0, 1):
+            assert p.parse_dc_turbo(_turbo_body(volts_byte, always_on), "X783") == {
+                "voltage": volts,
+                "always_on": bool(always_on),
+            }
+
+
+def test_a_voltage_byte_the_app_never_sets_is_not_guessed_at():
+    # 0 is the empty block the charger refuses; 4 is past the three the app offers.
+    for odd in (0, 4):
+        assert p.parse_dc_turbo(_turbo_body(odd, 1), "X783") == {
+            "voltage": None,
+            "always_on": True,
+        }
+
+
+def test_the_dc_turbo_bytes_are_only_its_own_under_dc_turbo():
+    """Under `priority` the first byte is the port mask: C2 alone is 2."""
+    assert p.parse_dc_turbo(_turbo_body(2, 0, mode=p.PRIORITY_MODE), "X783") is None
+    assert p.parse_dc_turbo(CUSTOM_STATE, "X783") is None
+    assert p.parse_priority(_turbo_body(3, 1), "X783") is None
+
+
+def test_the_160w_has_no_dc_turbo_to_read():
+    assert p.parse_dc_turbo(_turbo_body(3, 1), "X776") is None
+    assert "dc_turbo" not in p.state_fields("X776")
+    assert "dc_turbo" in p.state_writable("X783")
+
+
+def test_a_body_that_stops_inside_the_dc_turbo_pair_has_none():
+    assert p.parse_dc_turbo(bytes([0, 0x37, 100, 0, p.DC_TURBO_MODE, 3]), "X783") is None
+
+
+def test_the_voltage_table_goes_both_ways():
+    assert {p.DC_VOLTAGE_BYTE[v]: v for v in p.DC_VOLTAGE_BYTE} == p.DC_VOLTAGES
+
+
 def test_a_preset_has_no_custom_mode_to_describe():
     """The mode byte decides it, not the contents.
 

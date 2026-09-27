@@ -71,6 +71,8 @@ STATE: dict[str, Any] = {
     # Which ports `priority` charges first -- nothing, since the charger here
     # runs `custom`, where the byte is a limit rather than a mask.
     "priority": None,
+    # And the DC port's settings, which are `dc_turbo`'s alone.
+    "dc_turbo": None,
     # The charging mode is `custom` here, so the parameter block decodes and
     # the six group sensors are created. Switching away leaves them in place
     # and unavailable, which is what
@@ -172,6 +174,7 @@ class FakeRtcx:
         self.mode_params: dict[str, str] = {}
         self.mode_writes: list[tuple[str, int, str | None]] = []
         self.priority_writes: list[tuple[str, list[str], str | None]] = []
+        self.turbo_writes: list[dict[str, Any]] = []
 
     async def async_login(self) -> None:
         return None
@@ -199,6 +202,26 @@ class FakeRtcx:
         await asyncio.sleep(0.05)
         self.priority_writes.append((iot_id, list(ports), model))
         self.state = {**self.state, "priority": list(ports)}
+        self.stale = True
+
+    async def async_set_dc_turbo(
+        self,
+        iot_id: str,
+        model: str | None = None,
+        *,
+        voltage: int | None = None,
+        always_on: bool | None = None,
+    ) -> None:
+        # As the real client does: the block is the one last read, taken when
+        # the write starts, and the whole of it goes to the charger. A second
+        # write begun before the first was read back carries the first's byte
+        # as it was before, and puts it back.
+        turbo = dict(self.state["dc_turbo"] or {})
+        await asyncio.sleep(0.05)
+        asked = {"voltage": voltage, "always_on": always_on}
+        asked = {name: value for name, value in asked.items() if value is not None}
+        self.turbo_writes.append(asked)
+        self.state = {**self.state, "dc_turbo": {**turbo, **asked}}
         self.stale = True
 
     def mode_params_snapshot(self) -> dict[str, str]:

@@ -98,6 +98,9 @@
       },
       "priority_port": {
         "name": "{port} charged first"
+      },
+      "dc_always_on": {
+        "name": "DC always on"
       }
     },
     "update": {
@@ -144,6 +147,14 @@
         "name": "Wallpaper",
         "state": {
           "none": "None"
+        }
+      },
+      "dc_voltage": {
+        "name": "DC port voltage",
+        "state": {
+          "12": "12 V",
+          "15": "15 V",
+          "20": "20 V"
         }
       }
     },
@@ -221,6 +232,9 @@
     },
     "priority_needs_a_port": {
       "message": "At least one port has to be charged first in Priority. Turn another one on before turning this one off."
+    },
+    "dc_turbo_not_running": {
+      "message": "The charger is not in DC turbo, so the DC port's settings cannot be changed. Choose DC turbo first."
     }
   }
 }

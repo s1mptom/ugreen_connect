@@ -5,8 +5,9 @@
  * the doorway; the bar under it is the same budget cut into the ports taking
  * it, each in its own colour, so "who is drawing what" and "how much is left"
  * are one glance. The mode sits under the budget because the mode is what
- * divides it, and a mode's own settings sit beside it -- under `priority`,
- * the ports it charges first, which can be changed from here.
+ * divides it, and a mode's own settings sit beside it: the ports `priority`
+ * charges first and the DC port's voltage and Always On under `dc_turbo`,
+ * both of which can be changed from here.
  *
  * Config:
  *   type: custom:ugreen-charger-card
@@ -35,6 +36,10 @@ const TEXT = {
     first: 'Charged first',
     firstHint: 'Any of the three, or all of them. The rest share what is left.',
     lastFirst: 'One port always goes first',
+    dcVoltage: 'DC port voltage',
+    alwaysOn: 'Always on, even with nothing plugged in',
+    turboSome: 'Only C1–C3 charge beside it.',
+    turboNone: 'The USB ports are off at 20 V.',
     adaptive_power: 'Shares power by what each device asks for.',
     thermal_safe: 'Lowers output as the charger warms up.',
     dc_turbo: 'Gives the DC port its full output.',
@@ -56,6 +61,10 @@ const TEXT = {
     first: 'Zuerst geladen',
     firstHint: 'Einer der drei oder alle. Die übrigen teilen sich den Rest.',
     lastFirst: 'Ein Anschluss wird immer zuerst geladen',
+    dcVoltage: 'Spannung am DC-Anschluss',
+    alwaysOn: 'Immer an, auch wenn nichts angeschlossen ist',
+    turboSome: 'Daneben laden nur C1–C3.',
+    turboNone: 'Bei 20 V sind die USB-Anschlüsse aus.',
     adaptive_power: 'Verteilt die Leistung nach dem Bedarf jedes Geräts.',
     thermal_safe: 'Senkt die Leistung, wenn das Ladegerät warm wird.',
     dc_turbo: 'Gibt dem DC-Anschluss die volle Leistung.',
@@ -77,6 +86,10 @@ const TEXT = {
     first: 'Заряжаются первыми',
     firstHint: 'Любой из трёх или все сразу. Остальные делят то, что осталось.',
     lastFirst: 'Хотя бы один порт всегда заряжается первым',
+    dcVoltage: 'Напряжение DC-порта',
+    alwaysOn: 'Всегда включён, даже если ничего не подключено',
+    turboSome: 'Рядом заряжают только C1–C3.',
+    turboNone: 'При 20 В USB-порты выключены.',
     adaptive_power: 'Делит мощность по запросу каждого устройства.',
     thermal_safe: 'Снижает мощность, когда зарядка нагревается.',
     dc_turbo: 'Отдаёт DC-порту полную мощность.',
@@ -121,6 +134,13 @@ const STYLE = `
   .first .u-pill i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
   .first .u-pill[aria-disabled="true"] { cursor: default; }
   .first .hint { font-size: 12px; color: var(--secondary-text-color); }
+  .turbo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+  .turbo .label { color: var(--secondary-text-color); }
+  .turbo .u-seg button { height: 26px; padding: 0 12px; border-radius: 7px; }
+  .turbo .sw { display: flex; align-items: center; gap: 8px; margin-left: 8px; cursor: pointer;
+               color: var(--secondary-text-color); }
+  .turbo .hint { font-size: 12px; color: var(--secondary-text-color); }
+  .turbo .hint.off { color: var(--warning-color, #ff9800); }
   .empty { color: var(--secondary-text-color); }
   :host { display: block; container-type: inline-size; }
   .modepick { display: none; position: relative; flex: 1 1 auto; color: var(--secondary-text-color); }
@@ -134,9 +154,10 @@ const STYLE = `
      hid the one in use. Narrow, the modes are a list. */
   @container (max-width: 640px) {
     .status { width: 100%; justify-content: space-between; }
-    .modes .u-seg { display: none; }
+    .modes > .u-seg { display: none; }
     .modepick { display: block; }
     .first .hint { display: none; }
+    .turbo .sw { margin-left: 0; }
   }
 `;
 
@@ -331,10 +352,12 @@ class UgreenChargerCard extends HTMLElement {
   }
 
   /* What the current mode is doing with the budget: the ports `priority`
-   * charges first, which can be changed here, and the custom limits, which
-   * only the app sets. For the rest, a line on what the mode is for. */
+   * charges first and the DC port's settings under `dc_turbo`, which can be
+   * changed here, and the custom limits, which only the app sets. For the
+   * rest, a line on what the mode is for. */
   _syncParams(current) {
     if (current === 'priority' && this._syncFirst()) return;
+    if (current === 'dc_turbo' && this._syncTurbo()) return;
     if (current === 'custom') {
       const limits = findAll(this._hass, this._config.device_id, 'sensor', '_custom_mode_limit')
         .filter((id) => !['unavailable', 'unknown'].includes(this._hass.states[id]?.state))
@@ -373,10 +396,7 @@ class UgreenChargerCard extends HTMLElement {
    * the switch refuses it, and a pill that looked like it would turn off and
    * then did not is worse than one that says why it does not.
    *
-   * A press shows at once and holds until its call is done, not until the
-   * switch first agrees: pressed twice quickly, the second press's value can
-   * be the one the switch still has from before the first, and agreeing with
-   * that let the first press's result show through in between. */
+   * A press shows at once and holds until its call is done (see `_send`). */
   _syncFirst() {
     const switches = findAll(this._hass, this._config.device_id, 'switch', '_charged_first')
       .filter((id) => ['on', 'off'].includes(this._hass.states[id]?.state))
@@ -384,8 +404,7 @@ class UgreenChargerCard extends HTMLElement {
       .sort((a, b) => a.name.localeCompare(b.name));
     if (!switches.length) return false;
     const all = ports(this._hass, this._config.device_id);
-    const on = (s) => (this._flying.get(s.id)?.value
-      ?? this._asked.read(`first:${s.id}`, this._hass.states[s.id].state)) === 'on';
+    const on = (s) => this._shown(s.id) === 'on';
     const count = switches.filter(on).length;
 
     const row = document.createElement('div');
@@ -407,21 +426,7 @@ class UgreenChargerCard extends HTMLElement {
       }
       pill.addEventListener('click', () => {
         if (last) return;
-        const value = pressed ? 'off' : 'on';
-        const flight = this._flying.get(s.id) || { calls: 0 };
-        flight.value = value;
-        flight.calls += 1;
-        this._flying.set(s.id, flight);
-        this._syncParams('priority');
-        // Home Assistant says why a call failed on its own, in a toast.
-        this._hass.callService('switch', pressed ? 'turn_off' : 'turn_on', { entity_id: s.id })
-          .then(() => { if (flight.calls === 1) this._asked.set(`first:${s.id}`, flight.value); })
-          .catch(() => {})
-          .finally(() => {
-            flight.calls -= 1;
-            if (!flight.calls) this._flying.delete(s.id);
-            this._sync();
-          });
+        this._send(s.id, pressed ? 'off' : 'on', 'switch', pressed ? 'turn_off' : 'turn_on');
       });
       row.appendChild(pill);
     }
@@ -431,6 +436,102 @@ class UgreenChargerCard extends HTMLElement {
     row.appendChild(hint);
     this._els.params.replaceChildren(row);
     return true;
+  }
+
+  /* The DC port under `dc_turbo`: its voltage, one of the three the app offers,
+   * and whether it stays live with nothing plugged in. Each is its own entity,
+   * unavailable under any other mode, when this draws nothing.
+   *
+   * And what the voltage costs the USB ports, said beside it, because it is
+   * not said anywhere else: at 12 or 15 V only C1 to C3 stay on, at 20 V none
+   * do. That is UGREEN's rule as the Notebookcheck review of this charger
+   * gives it, and what an X783 did here -- C5 went dark the moment DC turbo
+   * came on at 12 V. Choosing 20 V from a dashboard stops a laptop charging
+   * on C1, and the person choosing should know before, not after. */
+  _syncTurbo() {
+    const volts = this._find('select', '_dc_port_voltage');
+    const always = this._find('switch', '_dc_always_on');
+    const vs = volts && this._hass.states[volts];
+    const on = always && ['on', 'off'].includes(this._hass.states[always]?.state);
+    const live = vs && vs.state !== 'unavailable';
+    if (!live && !on) return false;
+
+    const row = document.createElement('div');
+    row.className = 'turbo';
+    if (live) {
+      const label = document.createElement('span');
+      label.className = 'label';
+      label.textContent = this._t('dcVoltage');
+      const seg = document.createElement('div');
+      seg.className = 'u-seg';
+      seg.setAttribute('role', 'radiogroup');
+      seg.setAttribute('aria-label', this._t('dcVoltage'));
+      const current = this._shown(volts);
+      for (const option of vs.attributes.options || []) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.setAttribute('role', 'radio');
+        button.setAttribute('aria-checked', String(option === current));
+        button.textContent = optionLabel(this._hass, volts, option);
+        button.addEventListener('click', () => {
+          if (option !== this._shown(volts)) this._send(volts, option, 'select', 'select_option', { option });
+        });
+        seg.appendChild(button);
+      }
+      row.append(label, seg);
+      const chosen = Number(this._shown(volts));
+      if ([12, 15, 20].includes(chosen)) {
+        const hint = document.createElement('span');
+        hint.className = chosen === 20 ? 'hint off' : 'hint';
+        hint.textContent = this._t(chosen === 20 ? 'turboNone' : 'turboSome');
+        row.appendChild(hint);
+      }
+    }
+    if (on) {
+      const sw = document.createElement('label');
+      sw.className = 'sw';
+      const toggle = document.createElement('ha-switch');
+      toggle.checked = this._shown(always) === 'on';
+      toggle.setAttribute('aria-label', this._t('alwaysOn'));
+      toggle.addEventListener('change', () => {
+        this._send(always, toggle.checked ? 'on' : 'off', 'switch', toggle.checked ? 'turn_on' : 'turn_off');
+      });
+      sw.append(toggle, document.createTextNode(this._t('alwaysOn')));
+      row.appendChild(sw);
+    }
+    this._els.params.replaceChildren(row);
+    return true;
+  }
+
+  /* What a control shows: the value last asked of it while its call runs,
+   * then the entity's own. */
+  _shown(entityId) {
+    return this._flying.get(entityId)?.value ?? this._asked.read(entityId, this._hass.states[entityId]?.state);
+  }
+
+  /* Ask for a value, and show it at once.
+   *
+   * Held until the call is done rather than until the entity first agrees:
+   * pressed twice quickly, the second press's value can be the one the entity
+   * still has from before the first, and agreeing with that let the first
+   * press's result show through in between. The call is done once the
+   * integration has read the charger back, and the last one's value is then
+   * held a little longer, until the new state reaches this card. */
+  _send(entityId, value, domain, service, data = {}) {
+    const flight = this._flying.get(entityId) || { calls: 0 };
+    flight.value = value;
+    flight.calls += 1;
+    this._flying.set(entityId, flight);
+    this._sync();
+    // Home Assistant says why a call failed on its own, in a toast.
+    this._hass.callService(domain, service, { entity_id: entityId, ...data })
+      .then(() => { if (flight.calls === 1) this._asked.set(entityId, flight.value); })
+      .catch(() => {})
+      .finally(() => {
+        flight.calls -= 1;
+        if (!flight.calls) this._flying.delete(entityId);
+        this._sync();
+      });
   }
 
   _moreInfo(entityId) {

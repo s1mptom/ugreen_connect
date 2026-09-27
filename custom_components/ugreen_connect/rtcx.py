@@ -50,6 +50,8 @@ from .const import (
     SETTING_SETTLE_SECONDS,
 )
 from .protocol import (
+    DC_TURBO_MODE,
+    DC_VOLTAGE_BYTE,
     FRAME_QUERY,
     FRAME_SETTING,
     PRIORITY_MODE,
@@ -66,6 +68,7 @@ from .protocol import (
     build_frame,
     frame_body,
     parse_custom_mode,
+    parse_dc_turbo,
     parse_power_frame,
     parse_priority,
     priority_mask,
@@ -511,6 +514,7 @@ class RtcxClient:
             "charging_mode": CHARGING_MODES.get(body[STATE_CHARGING_MODE]),
             "custom": parse_custom_mode(body, model),
             "priority": parse_priority(body, model),
+            "dc_turbo": parse_dc_turbo(body, model),
             "screensaver": bool(body[layout.screensaver]),
             "screensaver_theme": body[layout.screensaver + 1],
             "screensaver_flag": body[layout.screensaver + 2],
@@ -716,19 +720,65 @@ class RtcxClient:
         mask = priority_mask(ports)
         if not mask:
             raise UgreenError("at least one port has to be charged first")
-        if not state_layout_measured(model):
-            raise UgreenError(
-                f"refusing to set priority ports on an unrecognised model: "
-                f"the parameter block's length is not known for {model or 'it'}"
-            )
-        expected = state_layout(model).screensaver - STATE_MODE_PARAMS
-        block = bytearray(self._mode_params.get((iot_id, PRIORITY_MODE)) or bytes(expected))
-        if len(block) != expected:
-            block = bytearray(expected)
+        block = self._mode_block(iot_id, PRIORITY_MODE, model, "priority ports")
         block[0] = mask
         await self._setting(
             iot_id, SETTING_SET_CHARGING_MODE, bytes([PRIORITY_MODE]) + bytes(block)
         )
+
+    async def async_set_dc_turbo(
+        self,
+        iot_id: str,
+        model: str | None = None,
+        *,
+        voltage: int | None = None,
+        always_on: bool | None = None,
+    ) -> None:
+        """Change the DC port's voltage or its Always On switch under `dc_turbo`.
+
+        The same frame as selecting the mode, carrying the block `dc_turbo` was
+        last seen with and only the byte asked about changed -- the first for
+        the voltage, the second for Always On -- since in the app the two move
+        independently. The other one goes back as the charger reported it.
+
+        The block has to have been seen: the controls are only offered while
+        the charger runs `dc_turbo`, which is when it is read. Without it, the
+        byte not being changed would go out as 0, and a voltage of 0 is the
+        empty block an X783 refuses outright.
+        """
+        if voltage is not None and voltage not in DC_VOLTAGE_BYTE:
+            raise ValueError(f"not a DC turbo voltage: {voltage}")
+        block = self._mode_block(iot_id, DC_TURBO_MODE, model, "DC turbo")
+        learned = self._mode_params.get((iot_id, DC_TURBO_MODE))
+        if learned is None or len(learned) != len(block):
+            raise UgreenError(
+                "DC turbo has not been seen running on this charger, so there is "
+                "no block to change one setting in"
+            )
+        if voltage is not None:
+            block[0] = DC_VOLTAGE_BYTE[voltage]
+        if always_on is not None:
+            block[1] = int(always_on)
+        await self._setting(
+            iot_id, SETTING_SET_CHARGING_MODE, bytes([DC_TURBO_MODE]) + bytes(block)
+        )
+
+    def _mode_block(self, iot_id: str, mode: int, model: str | None, what: str) -> bytearray:
+        """A mode's block as last seen, at this model's length, to change a byte in.
+
+        Zeros where it has not been seen, or was seen at another length. Refused
+        on a model whose length nobody has measured, as `async_set_charging_mode`
+        refuses it: the block ends where the screensaver group starts, and on a
+        guessed layout the bytes past it would land on that group.
+        """
+        if not state_layout_measured(model):
+            raise UgreenError(
+                f"refusing to set {what} on an unrecognised model: "
+                f"the parameter block's length is not known for {model or 'it'}"
+            )
+        expected = state_layout(model).screensaver - STATE_MODE_PARAMS
+        block = bytearray(self._mode_params.get((iot_id, mode)) or bytes(expected))
+        return block if len(block) == expected else bytearray(expected)
 
     async def async_set_screensaver(
         self, iot_id: str, enabled: bool, theme: int, flag: int, wallpaper: str | None
