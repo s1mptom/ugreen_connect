@@ -84,13 +84,43 @@ def test_a_value_is_matched_whole():
     assert logsafe.scrub("Lab-2G-Network") == "Lab-2G-Network"
 
 
-@pytest.mark.parametrize("value", ["Home", "Wi-Fi", "1402", "lab"])
-def test_a_short_value_is_not_hunted_as_written(value):
-    """An SSID of `Home` would rewrite "Home Assistant", one of `1402` every
-    such number -- and each rewrite would give it away."""
+@pytest.mark.parametrize(
+    "value", ["Home", "Wi-Fi", "1402", "lab", "Password", "Firmware", "STARLINK", "Wirelessabc"]
+)
+def test_what_could_be_an_ordinary_word_is_not_hunted_as_written(value):
+    """An SSID of `Home` would rewrite "Home Assistant", a password `Password`
+    every "password", one of `1402` every such number -- and each rewrite would
+    give the value away."""
     logsafe.remember(value, "<wifi>")
-    text = f"Home Assistant took 1402 ms on Wi-Fi at the lab, {value}"
+    text = (
+        "Home Assistant took 1402 ms on Wi-Fi at the lab: wrong password, "
+        f"firmware on starlink, wirelessabc, {value}"
+    )
     assert logsafe.scrub(text) == text
+
+
+@pytest.mark.parametrize(
+    ("value", "hunted"),
+    [("Lab-2Gx", False), ("Lab-2G-N", True), ("Wirelessabcd", True), ("Wirelessabc", False)],
+)
+def test_where_hunting_as_written_begins(value, hunted):
+    """Eight characters with a non-letter in them, or twelve letters."""
+    logsafe.remember(value, "<wifi>")
+    assert (logsafe.scrub(f"on {value} now") == "on <wifi> now") is hunted
+
+
+def test_a_number_s_hex_is_not_hunted_inside_other_numbers():
+    """`1402` spelled in hex is `31343032`, which is also part of a timestamp."""
+    logsafe.remember("1402", "<wifi>")
+    text = "PT_data for charger abc123 is stale (1727431343032)"
+    assert logsafe.scrub(text) == text
+
+
+def test_hex_is_hunted_from_three_bytes():
+    logsafe.remember("yz", "<x>")
+    logsafe.remember("xyz", "<y>")
+    assert logsafe.scrub("ff797aff") == "ff797aff"
+    assert logsafe.scrub("ff78797aff") == "ff<y>ff"
 
 
 def test_a_short_value_is_still_caught_as_bytes():
@@ -223,6 +253,44 @@ def test_a_record_made_while_compiling_does_not_hang(installed, monkeypatch):
     worker = threading.Thread(target=_run, daemon=True)
     worker.start()
     assert done.wait(5), "scrub never came back"
+
+
+def test_a_record_made_while_remembering_does_not_hang(installed):
+    """The garbage collector can run while the list is being written, under
+    the lock, and a finalizer can log -- on the same thread, back through
+    here, and into the lock again."""
+    logsafe.remember_charger(IOT, UNIT)
+
+    class _Noisy(dict):
+        def __setitem__(self, key, value):
+            logging.getLogger(SCOPE).warning("from a finalizer about %s", UNIT)
+            super().__setitem__(key, value)
+
+    noisy = _Noisy(logsafe._known)
+    was, lock = logsafe._known, logsafe._lock
+    logsafe._known = noisy
+    # A lock of the module's own kind, but this test's: one left held by a
+    # thread stuck on it must not hang every test after this one.
+    logsafe._lock = type(lock)()
+    done = threading.Event()
+
+    def _run():
+        logsafe.remember("another-value-9", "<x>")
+        done.set()
+
+    try:
+        threading.Thread(target=_run, daemon=True).start()
+        assert done.wait(5), "remember never came back"
+    finally:
+        logsafe._known, logsafe._lock = was, lock
+        logsafe._known.update(noisy)
+
+
+def test_a_record_built_without_a_name_is_left_alone(installed):
+    """`logging.makeLogRecord` builds one with no name and fills it in after."""
+    logsafe.remember_charger(IOT, UNIT)
+    record = logging.makeLogRecord({"name": SCOPE, "msg": f"about {UNIT}"})
+    assert record.name == SCOPE
 
 
 def test_it_goes_in_once():

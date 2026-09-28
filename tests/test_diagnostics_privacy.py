@@ -331,3 +331,19 @@ def test_what_logsafe_knows_is_gone_from_every_string_in_the_file():
     assert mac_bytes not in text.lower()
     assert "0004<mac>" in text
     assert MAC not in text and '"<mac>": -61' in text
+
+
+def test_two_keys_that_clean_alike_both_stay():
+    """Two chargers' MACs both become `<mac>`, and neither may replace the other."""
+    module = _module()
+    logsafe = module.logsafe
+    logsafe._known.clear()
+    logsafe._compiled = None
+    try:
+        logsafe.remember_charger("first-iot-id", "FIRSTUNIT0001", "AA:AA:AA:AA:AA:01")
+        logsafe.remember_charger("second-iot-id", "SECONDUNIT002", "AA:AA:AA:AA:AA:02")
+        out = module._scrubbed({"AA:AA:AA:AA:AA:01": -61, "AA:AA:AA:AA:AA:02": -70})
+    finally:
+        logsafe._known.clear()
+        logsafe._compiled = None
+    assert out == {"<mac>": -61, "<mac> (2)": -70}

@@ -588,3 +588,26 @@ def test_a_power_report_is_logged_when_it_changes(caplog):
     c.client._note_power(IOT, "X776", frame)
     assert caplog.text.count("power report of X776") == 1
     assert IOT not in caplog.text
+
+
+
+def test_a_wi_fi_name_is_read_as_utf8_and_hidden_from_then_on():
+    """A network can be named in any script, and it is the household's own."""
+    from conftest import logsafe
+
+    name = "Дом_WiFi_5G"
+    frame = rtcx_module.build_frame(
+        rtcx_module.FRAME_QUERY, rtcx_module.QUERY_GET_WIFI_SSID, name.encode()
+    )
+    logsafe._known.clear()
+    logsafe._compiled = None
+    try:
+        c = _Client({IOT: frame})
+        text = asyncio.run(c.client.async_text_query(IOT, rtcx_module.QUERY_GET_WIFI_SSID))
+        assert text == name
+        assert logsafe.scrub(f"joined {name}; frame {frame}") == (
+            f"joined <wifi>; frame {frame[:8]}<wifi>{frame[8 + 2 * len(name.encode()):]}"
+        )
+    finally:
+        logsafe._known.clear()
+        logsafe._compiled = None

@@ -7,9 +7,12 @@ here writes -- an error message the cloud sent back, an exception's own words
 -- and for a line added later by somebody who forgot.
 
 Every identifier of the household the integration comes to know is kept here:
-the account's e-mail, password and tokens, and each charger's unit code, cloud
-id, MAC and Wi-Fi network name, each also in the hex spelling it has inside a
-frame. Two places use them:
+the account's e-mail, password and user id, and each charger's unit code,
+cloud id, MAC and Wi-Fi network name, each also in the hex spelling it has
+inside a frame. Not the tokens: a new one arrives every twenty minutes or so,
+and kept they would make this list, and the pattern built from it, grow for as
+long as Home Assistant runs. Nothing here writes a token anywhere, and no
+error quotes a cloud answer (see `describe`). Two places use the list:
 
 - every record made on this integration's loggers is cleaned as it is made,
   and only those: a hook on every record in Home Assistant would be this
@@ -32,14 +35,17 @@ import re
 import threading
 from typing import Any, Final
 
-# How long a value has to be before it is hunted as written. A short one is
-# too likely to be an ordinary word or number -- an SSID of "Home" would rewrite
-# "Home Assistant", one of "1402" every such number, and each rewrite would give
-# the SSID away. None of the identifiers that matter are that short: a unit
-# code is 17 characters, a cloud id 40, a MAC 17.
+# When a value is hunted as written. One that could be an ordinary word or
+# number is not: an SSID of "Home" would rewrite "Home Assistant", a password
+# of "Password" every "password", one of "1402" every such number -- and each
+# rewrite would give the value away. So eight characters with something other
+# than a letter in them, or twelve letters. The identifiers that matter all
+# qualify: a unit code, a cloud id, a MAC, an e-mail address.
 MIN_PLAIN: Final = 8
-# Its hex spelling is hunted from three bytes up: inside a frame it is a run of
-# hex digits, where six or more in a row matching by chance is not a worry.
+MIN_PLAIN_WORD: Final = 12
+# Its hex spelling is hunted from three bytes up, inside a frame's run of hex
+# digits -- unless that spelling is all decimal digits, as it is for a value
+# made of digits, when it would be found inside ordinary numbers.
 MIN_BYTES: Final = 3
 
 # Put in place of a line of this integration's that could not be checked.
@@ -87,9 +93,9 @@ def remember(value: Any, stand_in: str) -> None:
         return
     raw = value.encode()
     with _lock:
-        if len(value) >= MIN_PLAIN:
+        if len(value) >= (MIN_PLAIN_WORD if value.isalpha() else MIN_PLAIN):
             _add(value, stand_in, True)
-        if len(raw) >= MIN_BYTES:
+        if len(raw) >= MIN_BYTES and not raw.hex().isdigit():
             _add(raw.hex(), stand_in, False)
 
 
@@ -100,7 +106,7 @@ def remember_bytes(raw: bytes | None, stand_in: str) -> None:
     same bytes again: a name that is not UTF-8 comes back with replacement
     characters, whose hex matches nothing in any frame.
     """
-    if isinstance(raw, bytes) and len(raw) >= MIN_BYTES:
+    if isinstance(raw, bytes) and len(raw) >= MIN_BYTES and not raw.hex().isdigit():
         with _lock:
             _add(raw.hex(), stand_in, False)
 
@@ -184,7 +190,9 @@ def describe(value: Any) -> str:
             if isinstance(value.get(key), str | int)
         ]
         keys = f"an object with keys {sorted(map(str, value))}"
-        return scrub(", ".join([keys, *said]))
+        # Not cleaned here: it only ever goes into an error, which cleans its
+        # own message, or a record of this integration's, which is cleaned.
+        return ", ".join([keys, *said])
     if isinstance(value, list):
         return f"a list of {len(value)}"
     if value is None:
@@ -201,11 +209,13 @@ def _clean(record: logging.LogRecord) -> None:
         if record.exc_info:
             text = record.exc_text or logging.Formatter().formatException(record.exc_info)
             clean = scrub(text)
+            # Kept either way, so a handler does not format it a second time.
+            record.exc_text = clean
             if clean != text:
-                # The cleaned text goes out, and the exception itself does not:
-                # a handler that formats it afresh -- Home Assistant's log
-                # viewer does -- would put the original words back.
-                record.exc_text, record.exc_info = clean, None
+                # The exception itself does not go out: a handler that formats
+                # it afresh -- Home Assistant's log viewer does -- would put the
+                # original words back.
+                record.exc_info = None
         if record.stack_info:
             record.stack_info = scrub(record.stack_info)
     except Exception:  # noqa: BLE001 - nothing here may break the caller
@@ -231,7 +241,9 @@ def install(scope: str) -> None:
 
     def _factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
         record = make(*args, **kwargs)
-        if _known and (record.name == scope or record.name.startswith(prefix)):
+        # `makeLogRecord` builds a record with no name and fills it in after.
+        name = record.name
+        if _known and isinstance(name, str) and (name == scope or name.startswith(prefix)):
             _clean(record)
         return record
 

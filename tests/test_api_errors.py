@@ -92,19 +92,20 @@ def test_a_login_answer_without_a_token_is_described_not_quoted(_forgetful):
 
 
 def test_a_login_teaches_the_log_its_secrets(_forgetful):
-    """The tokens and the password, once they exist, are scrubbed wherever they go."""
+    """The password and the user id, once known, are scrubbed wherever they go.
+
+    Not the tokens: one arrives every twenty minutes, and remembered they would
+    make the list grow for as long as Home Assistant runs.
+    """
     client = _answering(
         {
             "code": api_module.CODE_OK,
-            "data": {
-                "accessToken": "eyJaccess-token-value",
-                "refreshToken": "eyJrefresh-token-value",
-            },
+            "data": {"accessToken": "eyJaccess-token-value", "userId": 1234567890123},
         }
     )
     asyncio.run(client.login("someone@example.com", "hunter2-password"))
-    text = _forgetful.scrub("eyJaccess-token-value eyJrefresh-token-value hunter2-password")
-    assert text == "<token> <token> <password>"
+    assert _forgetful.scrub("hunter2-password 1234567890123") == "<password> <user>"
+    assert _forgetful.scrub("eyJaccess-token-value") == "eyJaccess-token-value"
 
 
 def test_an_error_cleans_its_own_message(_forgetful):
@@ -113,3 +114,26 @@ def test_an_error_cleans_its_own_message(_forgetful):
     err = api_module.UgreenError("gateway refused FF7J0000000000001")
     assert "FF7J0000000000001" not in str(err)
     assert "FF7J0000000000001" not in repr(err)
+
+
+def test_a_network_error_does_not_carry_aiohttp_s_own_along(_forgetful, monkeypatch):
+    """aiohttp's message is the URL, and a GET's query can name the charger.
+
+    The text goes into the error, cleaned. The original is not chained, since
+    Home Assistant would print it under the error, uncleaned.
+    """
+    import aiohttp
+
+    unit = "FF7J0000000000001"
+    _forgetful.remember_charger("an-iot-id-long", unit)
+    monkeypatch.setattr(api_module, "RETRY_DELAY", 0)
+
+    class _Session:
+        def request(self, *_args, **_kwargs):
+            raise aiohttp.InvalidURL(f"https://example.invalid/list?deviceUniqueCode={unit}")
+
+    client = api_module.UgreenApi(session=_Session(), base_url="https://example.invalid")
+    with pytest.raises(api_module.UgreenError) as err:
+        asyncio.run(client._call("/list", {"deviceUniqueCode": unit}, "GET", auth=False))
+    assert unit not in str(err.value)
+    assert err.value.__cause__ is None and err.value.__suppress_context__

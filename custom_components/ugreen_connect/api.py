@@ -250,7 +250,9 @@ class UgreenApi:
                     _LOGGER.debug("%s failed (%s), retrying", path, err)
                     await asyncio.sleep(RETRY_DELAY * (attempt + 1))
                     continue
-                raise UgreenError(f"{path}: {err}") from err
+                # Not chained: aiohttp's own message is the URL, and a GET's
+                # query can name the charger. The text is kept, and cleaned.
+                raise UgreenError(f"{path}: {err}") from None
             else:
                 if not isinstance(payload, dict):
                     raise UgreenError(f"{path}: unexpected response, {describe(payload)}")
@@ -356,13 +358,9 @@ class UgreenApi:
         self._token = _find_first(data, ("accessToken", "access_token", "token"))
         self._refresh_token = _find_first(data, ("refreshToken", "refresh_token"))
         self._user_id = _find_first(data, ("userId", "user_id", "uid"))
-        for secret, stand_in in (
-            (self._token, "<token>"),
-            (self._refresh_token, "<token>"),
-            (self._user_id, "<user>"),
-            (password, "<password>"),
-        ):
-            remember(str(secret) if secret is not None else None, stand_in)
+        # Not the tokens, which change every twenty minutes (see logsafe).
+        remember(str(self._user_id) if self._user_id is not None else None, "<user>")
+        remember(password, "<password>")
         if not self._token:
             # The answer's shape, not the answer: it is the tokens.
             raise UgreenError(f"login succeeded but no access token found in {describe(data)}")

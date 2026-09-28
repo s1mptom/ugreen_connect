@@ -728,28 +728,39 @@ async def test_the_setup_form_hides_the_account_before_it_tries_it(hass, caplog,
     The cloud's answer to a failed login is logged at debug, and nothing stops
     the cloud from saying the address back.
     """
-    from custom_components.ugreen_connect import config_flow
+    import logging as logging_
+
+    from custom_components.ugreen_connect import config_flow, logsafe
     from custom_components.ugreen_connect.api import UgreenError
 
-    email, password = "new.owner@example.invalid", "correct-horse-battery"
+    email, password = "new.owner@example.invalid", "correct-horse-battery-9"
 
     class _Api:
         def __init__(self, *_args, **_kwargs):
             pass
 
         async def login(self, *_args, **_kwargs):
-            raise UgreenError(f"no account for {email}")
+            # Both, as the cloud might say them back.
+            raise UgreenError(f"no account for {email} with {password}")
 
+    # As on a fresh start: nothing installed until the form is filled in.
+    make, scope = logging_.getLogRecordFactory(), logsafe._scope
+    logsafe._scope = None
     monkeypatch.setattr(config_flow, "UgreenApi", _Api)
     caplog.set_level(logging.DEBUG, logger="custom_components.ugreen_connect")
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"email": email, "password": password, "region": "europe"}
     )
-    assert result["errors"] == {"base": "cannot_connect"}
-    assert "Cannot connect to UGREEN cloud" in caplog.text
-    assert email not in caplog.text
-    assert password not in caplog.text
+    try:
+        assert result["errors"] == {"base": "cannot_connect"}
+        assert "Cannot connect to UGREEN cloud" in caplog.text
+        assert email not in caplog.text
+        assert password not in caplog.text
+        assert logsafe._scope == "custom_components.ugreen_connect", "the form installs it"
+    finally:
+        logging_.setLogRecordFactory(make)
+        logsafe._scope = scope
 
 
 async def test_a_stored_block_under_a_bare_cloud_id_is_still_hidden(

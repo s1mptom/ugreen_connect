@@ -70,7 +70,15 @@ def _scrubbed(value: Any) -> Any:
     if isinstance(value, str):
         return logsafe.scrub(value)
     if isinstance(value, dict):
-        return {_scrubbed(key): _scrubbed(item) for key, item in value.items()}
+        # Two keys can clean to the same stand-in -- two chargers' MACs -- and
+        # neither may silently replace the other.
+        out: dict[Any, Any] = {}
+        for key, item in value.items():
+            clean, n = _scrubbed(key), 2
+            while clean in out:
+                clean, n = f"{_scrubbed(key)} ({n})", n + 1
+            out[clean] = _scrubbed(item)
+        return out
     if isinstance(value, list | tuple):
         return [_scrubbed(item) for item in value]
     return value

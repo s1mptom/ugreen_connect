@@ -566,7 +566,6 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
         # Keep whatever was already known if the device declined to answer.
         info = {k: v if v is not None else cached.get(k) for k, v in info.items()}
-        logsafe.remember(info.get("ssid"), "<wifi>")
         self._static[key] = (info, time.time())
         return info
 

@@ -292,7 +292,6 @@ class RtcxClient:
                     f"third/login returned no accessToken: {describe(payload)}"
                 )
             self._token = token
-            remember(token, "<token>")
             self._expires_at = _jwt_expiry(token) or (time.time() + 3600)
             _LOGGER.debug("RTCX login ok, token valid until %s", self._expires_at)
 
@@ -352,7 +351,8 @@ class RtcxClient:
                     raise UgreenError(f"{path}: HTTP {resp.status}")
                 payload = await resp.json(content_type=None)
         except (aiohttp.ClientError, TimeoutError) as err:
-            raise UgreenError(f"{path}: {err}") from err
+            # Not chained, as in api.py: aiohttp's message is the URL.
+            raise UgreenError(f"{path}: {err}") from None
 
         if not isinstance(payload, dict):
             raise UgreenError(f"{path}: unexpected response, {describe(payload)}")

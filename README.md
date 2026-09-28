@@ -474,17 +474,20 @@ pictures.
 
 The log Home Assistant downloads is **its whole log**, with every other
 integration's messages in it. Post it only if you are asked to. Before you do,
-keep only the lines with `ugreen_connect` in them. A text editor's search
-works, or on a terminal: `grep ugreen_connect home-assistant_*.log`. In this
-integration's lines, and in the messages of its errors wherever Home Assistant
-writes them, your account e-mail, password and tokens, your charger's serial,
-cloud id and MAC, and your Wi-Fi name are replaced: a charger becomes a tag
-such as `charger 3fa9c1`, the rest `<account>`, `<mac>`, `<wifi>` and so on. A
-value shorter than eight characters, such as a Wi-Fi name `Home`, is replaced
-only inside a frame's bytes, not as a word, since replacing the word would
-rewrite every "Home Assistant" too. Home Assistant's own lines and other
-integrations' are not changed, which is the other reason to keep only this
-integration's.
+keep only this integration's own lines, the ones with
+`[custom_components.ugreen_connect` in them. A text editor's search works, or
+on a terminal:
+
+    grep -F '[custom_components.ugreen_connect' home-assistant_*.log
+
+That leaves out Home Assistant's own lines about the integration too, which is
+on purpose: they can name the account by its e-mail, since that is the title
+of its entry. In this integration's lines, your e-mail, password and user id,
+your charger's serial, cloud id and MAC, and your Wi-Fi name are replaced: a
+charger becomes a tag such as `charger 3fa9c1`, the rest `<account>`, `<mac>`,
+`<wifi>` and so on. A value that could be an ordinary word or number, such as
+a Wi-Fi name `Home` or `1402`, is not replaced as a word, since that would
+rewrite every "Home Assistant" too and give the name away.
 
 Do not post `ugreen_connect_debug.json` from the *Debug snapshot* option. It is
 the unedited cloud payload, written for this integration's own development,
