@@ -42,7 +42,6 @@ import aiohttp
 
 from .api import UgreenApi, UgreenAuthError, UgreenError
 from .const import (
-    CHARGING_MODES,
     GATEWAY_LANGUAGE,
     GATEWAY_OK,
     POWER_POLL_ATTEMPTS,
@@ -50,6 +49,7 @@ from .const import (
     PT_DATA_MAX_AGE,
     RTCX_TOKEN_MARGIN,
     SETTING_SETTLE_SECONDS,
+    charging_modes,
 )
 from .logsafe import charger_tag, describe, private_bytes, remember, remember_bytes
 from .protocol import (
@@ -73,6 +73,7 @@ from .protocol import (
     frame_body,
     parse_custom_mode,
     parse_dc_turbo,
+    parse_port_outputs,
     parse_power_frame,
     parse_priority,
     priority_mask,
@@ -537,7 +538,8 @@ class RtcxClient:
             )
 
         image = body[layout.image_id : layout.image_id + IMAGE_ID_LEN]
-        # A count byte nobody has watched counting is not read at all.
+        # A count byte nobody has watched counting is not read at all. Where
+        # there is none, the ids run to the end of the reply.
         wallpapers: list[str] = []
         if layout.wallpaper_count is not None and len(body) > layout.wallpaper_count:
             count = body[layout.wallpaper_count]
@@ -549,13 +551,21 @@ class RtcxClient:
                 for i in range(count)
                 if len(body) >= start + IMAGE_ID_LEN * (i + 1)
             ]
+        elif layout.wallpaper_start is not None:
+            last = len(body) - IMAGE_ID_LEN + 1
+            wallpapers = [
+                chunk.decode("ascii", "replace")
+                for at in range(layout.wallpaper_start, last, IMAGE_ID_LEN)
+                if (chunk := body[at : at + IMAGE_ID_LEN]) != b"\xff" * IMAGE_ID_LEN
+            ]
         state = {
             "brightness": body[STATE_BRIGHTNESS],
             "sleep_time": body[STATE_SLEEP_TIME],
-            "charging_mode": CHARGING_MODES.get(body[STATE_CHARGING_MODE]),
+            "charging_mode": charging_modes(model).get(body[STATE_CHARGING_MODE]),
             "custom": parse_custom_mode(body, model),
             "priority": parse_priority(body, model),
             "dc_turbo": parse_dc_turbo(body, model),
+            "port_outputs": parse_port_outputs(body, model),
             "screensaver": bool(body[layout.screensaver]),
             "screensaver_theme": body[layout.screensaver + 1],
             "screensaver_flag": body[layout.screensaver + 2],
@@ -878,7 +888,7 @@ class RtcxClient:
             if _byte_at(before, offset) != _byte_at(body, offset)
         ]
         mode = (
-            CHARGING_MODES.get(body[STATE_CHARGING_MODE])
+            charging_modes(model).get(body[STATE_CHARGING_MODE])
             if len(body) > STATE_CHARGING_MODE
             else None
         )

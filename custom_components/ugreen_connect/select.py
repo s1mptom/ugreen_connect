@@ -13,20 +13,19 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import UgreenConfigEntry
 from .const import (
-    CHARGING_MODES,
     CLOCK_STYLES,
     DOMAIN,
     PICTURE_SETTLE_SECONDS,
-    SELECTABLE_MODES,
     SLEEP_OPTIONS,
     TIME_FORMATS,
+    charging_modes,
+    selectable_modes,
 )
 from .coordinator import UgreenCoordinator, device_key
 from .entity import UgreenDeviceEntity, cloud_errors
 from .image_proxy import wallpaper_path
 from .protocol import DC_VOLTAGE_BYTE
 
-MODE_VALUE = {name: value for value, name in CHARGING_MODES.items()}
 CLOCK_STYLE_VALUE = {name: value for value, name in CLOCK_STYLES.items()}
 TIME_FORMAT_VALUE = {name: value for value, name in TIME_FORMATS.items()}
 
@@ -107,10 +106,11 @@ class UgreenChargingMode(UgreenDeviceEntity, SelectEntity):
         the options fall back to the presets. Rare either way, but it is a
         registry write, not a free one.
         """
+        presets = selectable_modes(self.coordinator.model_for(self._key))
         mode = (self._reading or {}).get("charging_mode")
-        if mode and mode not in SELECTABLE_MODES:
-            return [*SELECTABLE_MODES, mode]
-        return list(SELECTABLE_MODES)
+        if mode and mode not in presets:
+            return [*presets, mode]
+        return list(presets)
 
     @property
     def available(self) -> bool:
@@ -121,7 +121,8 @@ class UgreenChargingMode(UgreenDeviceEntity, SelectEntity):
         return (self._reading or {}).get("charging_mode")
 
     async def async_select_option(self, option: str) -> None:
-        if option not in SELECTABLE_MODES:
+        model = self.coordinator.model_for(self._key)
+        if option not in selectable_modes(model):
             # Reported above, refused here. Home Assistant sets presets only:
             # a custom block is composed in the app's editor, and the client
             # can only replay one it has watched running, or send an empty one
@@ -135,22 +136,23 @@ class UgreenChargingMode(UgreenDeviceEntity, SelectEntity):
             # The message has no placeholder. Home Assistant would put the key
             # in as it is, untranslated, and drops any localized string whose
             # placeholders differ from English's. So each language names the
-            # mode itself, which holds while `custom` is the only name in
-            # CHARGING_MODES outside SELECTABLE_MODES -- a test pins that.
+            # mode itself, which holds while `custom` is the only name in any
+            # model's mode table outside its presets -- a test pins that.
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key="mode_not_selectable",
             )
         iot_id = self._iot_id
-        if not iot_id or option not in MODE_VALUE:
+        # The byte for the name, on this model: the same name is 3 on an X783
+        # and 2 on a 160W.
+        value = {name: byte for byte, name in charging_modes(model).items()}.get(option)
+        if not iot_id or value is None:
             return
         self._require_writable("charging_mode")
         # In turn with the mode's own settings, which go out in this frame too.
         async with self.coordinator.mode_turns(self._key):
             with cloud_errors():
-                await self.coordinator.rtcx.async_set_charging_mode(
-                    iot_id, MODE_VALUE[option], self.coordinator.model_for(self._key)
-                )
+                await self.coordinator.rtcx.async_set_charging_mode(iot_id, value, model)
             await self.coordinator.async_read_back(self._key, iot_id)
 
 

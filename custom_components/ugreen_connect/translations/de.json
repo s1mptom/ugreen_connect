@@ -26,11 +26,19 @@
         "data": {
           "password": "Passwort"
         }
+      },
+      "chargers": {
+        "title": "Ladegeräte in diesem Konto",
+        "description": "Die Ladegeräte ankreuzen, die hinzugefügt werden sollen. Jedes wird als sein eigenes Modell gelesen, wie das Konto es angibt, und das Dashboard schaltet zwischen ihnen um. Die übrigen lassen sich später unter Konfigurieren hinzufügen.",
+        "data": {
+          "chargers": "Ladegeräte"
+        }
       }
     },
     "error": {
       "cannot_connect": "Die UGREEN-Cloud war nicht erreichbar.",
-      "invalid_auth": "Konto oder Passwort wurde abgelehnt."
+      "invalid_auth": "Konto oder Passwort wurde abgelehnt.",
+      "no_charger": "Mindestens ein Ladegerät ankreuzen."
     },
     "abort": {
       "already_configured": "Dieses Konto ist bereits eingerichtet.",
@@ -101,6 +109,9 @@
       },
       "dc_always_on": {
         "name": "DC immer an"
+      },
+      "port_output": {
+        "name": "{port} Ausgang"
       }
     },
     "update": {
@@ -203,7 +214,8 @@
           "debug_dump": "Rohen Cloud-Schnappschuss in den Konfigurationsordner schreiben",
           "nominal_voltage": "Akkuspannung",
           "efficiency": "Ladeeffizienz",
-          "session_idle_end": "Ladevorgang endet nach"
+          "session_idle_end": "Ladevorgang endet nach",
+          "chargers": "Ladegeräte"
         },
         "data_description": {
           "scan_interval": "Wie oft ein Messwert eintrifft. Von Start zu Start gemessen, die Wartezeit auf die Antwort des Ladegeräts geht also davon ab, statt oben drauf zu kommen. 5 s hält die Wattzahl lebendig; höhere Werte belasten UGREENs Server weniger.",
@@ -211,13 +223,15 @@
           "debug_dump": "Speichert ugreen_connect_debug.json bei jeder Aktualisierung. Es ist die unbearbeitete Antwort der Cloud.",
           "nominal_voltage": "Wird nur benutzt, um die Wattstunden eines Ladevorgangs als Milliamperestunden zu lesen. 3,85 V ist die Nennspannung der Zellen in Handys, Kopfhörern und Handhelds; der Akku eines Laptops liegt weit darüber, und dessen Milliamperestunden-Wert bedeutet nichts, solange dieser Wert nicht dazu passt.",
           "efficiency": "Wie viel von dem, was den Port verlässt, in der Zelle ankommt. Der Rest wird zu Wärme im Kabel und im Wandler des Geräts.",
-          "session_idle_end": "Wie lange ein Port nichts liefern muss, bevor sein Ladevorgang als beendet gilt und der nächste beginnen darf. Das Ladegerät hält einen Port auch für ein bloßes Kabel aktiv, deshalb ist das das Einzige, was einen Ladevorgang beenden kann. Lang genug, dass ein Handy, das sich bei 100 % nachlädt, ein einziger Ladevorgang bleibt; kürzer, wenn am selben Kabel innerhalb weniger Stunden Geräte gewechselt werden."
+          "session_idle_end": "Wie lange ein Port nichts liefern muss, bevor sein Ladevorgang als beendet gilt und der nächste beginnen darf. Das Ladegerät hält einen Port auch für ein bloßes Kabel aktiv, deshalb ist das das Einzige, was einen Ladevorgang beenden kann. Lang genug, dass ein Handy, das sich bei 100 % nachlädt, ein einziger Ladevorgang bleibt; kürzer, wenn am selben Kabel innerhalb weniger Stunden Geräte gewechselt werden.",
+          "chargers": "Die Ladegeräte dieses Kontos, die Home Assistant abfragt und anzeigt. Wird eines abgewählt, verschwinden sein Gerät und seine Entitäten; wieder angekreuzt, kommen sie zurück."
         }
       }
     },
     "error": {
       "cannot_connect": "Die UGREEN-Cloud war nicht erreichbar.",
-      "invalid_auth": "Konto oder Passwort wurde in dieser Region abgelehnt."
+      "invalid_auth": "Konto oder Passwort wurde in dieser Region abgelehnt.",
+      "no_charger": "Mindestens ein Ladegerät ankreuzen."
     }
   },
   "exceptions": {
@@ -235,6 +249,15 @@
     },
     "dc_turbo_not_running": {
       "message": "Das Ladegerät ist nicht im DC-Turbo, daher lassen sich die Einstellungen des DC-Anschlusses nicht ändern. Zuerst DC-Turbo wählen."
+    },
+    "port_output_app_only": {
+      "message": "Die Anschlüsse des 160W werden vorerst in der UGREEN-App ein- und ausgeschaltet. Home Assistant zeigt sie an, schaltet sie aber noch nicht."
+    }
+  },
+  "issues": {
+    "new_charger": {
+      "title": "Ein neues Ladegerät ist in deinem UGREEN-Konto",
+      "description": "{names} ist in deinem UGREEN-Konto, aber noch nicht in Home Assistant. Zum Hinzufügen Einstellungen → Geräte & Dienste → UGREEN Connect → Konfigurieren öffnen und es ankreuzen. Speichern ohne es lässt diese Meldung verschwinden."
     }
   }
 }

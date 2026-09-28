@@ -8,23 +8,27 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 
 from . import logsafe
 from .api import UgreenApi, UgreenAuthError, UgreenError
 from .const import (
+    CONF_CHARGERS,
     CONF_DEBUG_DUMP,
     CONF_REGION,
     DEFAULT_LANGUAGE,
     DEFAULT_REGION,
+    DOMAIN,
     MODEL_STORE_KEY,
     MODEL_STORE_VERSION,
     PARAMS_STORE_KEY,
     PARAMS_STORE_VERSION,
     REGIONS,
 )
-from .coordinator import UgreenCoordinator
+from .coordinator import UgreenCoordinator, charger_keys, device_key
 from .frontend import async_register_card
 from .image_proxy import async_register_view
 from .rtcx import RtcxClient
@@ -126,6 +130,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
     await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = coordinator
+    _forget_left_out(hass, entry)
     await async_register(hass)
     async_register_view(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -133,6 +138,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
     # option only takes effect once the entry is set up again.
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     return True
+
+
+def _forget_left_out(hass: HomeAssistant, entry: UgreenConfigEntry) -> None:
+    """Take the chargers that are no longer added out of Home Assistant.
+
+    Their entities go with the device. Not polled any more, they would only sit
+    there unavailable, which reads as a charger that broke rather than one
+    that was taken out on purpose.
+    """
+    added = entry.options.get(CONF_CHARGERS)
+    if added is None:
+        return
+    registry = dr.async_get(hass)
+    for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+        keys = charger_keys(device.identifiers)
+        # Only a device that is this entry's alone; one another entry also
+        # holds is not this entry's to remove.
+        if keys and not keys & set(added) and device.config_entries == {entry.entry_id}:
+            registry.async_remove_device(device.id)
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: UgreenConfigEntry, device: dr.DeviceEntry
+) -> bool:
+    """Let a charger that has left the account be deleted from its page.
+
+    One still on it is refused: it would come back on the next poll. To stop
+    one of those showing, untick it under Configure.
+    """
+    coordinator = getattr(entry, "runtime_data", None)
+    if coordinator is None:
+        # Not loaded, so which chargers the account has is not known, and a
+        # yes could delete one that comes straight back.
+        return False
+    present = {device_key(d) for d in coordinator.account_devices}
+    return not charger_keys(device.identifiers) & present
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: UgreenConfigEntry) -> None:
@@ -147,6 +188,8 @@ async def _async_options_updated(hass: HomeAssistant, entry: UgreenConfigEntry) 
 
 async def async_unload_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bool:
     """Unload a config entry."""
+    # A notice pointing at this entry's Configure means nothing without it.
+    ir.async_delete_issue(hass, DOMAIN, f"new_charger_{entry.entry_id}")
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 

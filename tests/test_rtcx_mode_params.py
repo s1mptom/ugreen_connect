@@ -665,3 +665,27 @@ def test_a_gateway_network_error_does_not_carry_aiohttp_s_own_along(monkeypatch)
     with pytest.raises(rtcx_module.UgreenError) as err:
         asyncio.run(client._call("/thing/properties/get", {}))
     assert err.value.__cause__ is None and err.value.__suppress_context__
+
+
+def _x776(body_hex: str) -> str:
+    return rtcx_module.build_frame(rtcx_module.FRAME_QUERY, 1, bytes.fromhex(body_hex))
+
+
+def test_the_160w_s_library_is_read_to_the_end_of_the_reply():
+    """No count byte to go by: six bytes a picture, and an empty slot skipped."""
+    from test_protocol import X776_NEW_PICTURE
+
+    state = _Client({IOT: _x776(X776_NEW_PICTURE.hex())}).read(model="X776")
+    assert state["wallpaper"] == "438EF2"
+    assert state["wallpapers"] == ["3E7F82", "EA1A3B", "FC1C77", "438EF2"]
+    assert state["charging_mode"] == "custom"
+    assert state["port_outputs"] == {"C-Cable": True, "C1": True, "C2 & A": True}
+    # The 59-byte reply from the start of #2: two pictures and an empty slot.
+    early = (
+        "000464010100000001efffff65000001efffff65000001efffff6100000100013333"
+        "ffffffffffff05334537463832454131413342ffffffffffff"
+    )
+    state = _Client({IOT: _x776(early)}).read(model="X776")
+    assert state["wallpapers"] == ["3E7F82", "EA1A3B"]
+    assert state["wallpaper"] is None
+    assert state["charging_mode"] == "thermal_safe"

@@ -144,10 +144,10 @@ class UgreenSessionsCard extends HTMLElement {
       // The milliamp-hours live on the session sensor, which holds the latest
       // session only: right for this row while no newer one has started over
       // it, and a dash once one has, rather than the wrong session's figure.
-      const energy = this._hass.states[`${port.base}_session_energy`];
+      const energy = this._hass.states[port.of('sensor', 'session_energy')];
       const same = energy?.attributes?.charging === false
         && Math.abs((parseFloat(energy.state) || 0) - wh) < 0.01;
-      const mah = same ? num(this._hass, `${port.base}_session_charge`, NaN) : NaN;
+      const mah = same ? num(this._hass, port.of('sensor', 'session_charge'), NaN) : NaN;
       const row = document.createElement('button');
       row.type = 'button';
       row.className = 'row';
@@ -160,7 +160,7 @@ class UgreenSessionsCard extends HTMLElement {
       row.querySelector('.n').textContent = port.name;
       row.lastElementChild.textContent = this._when(at);
       row.addEventListener('click', () => this.dispatchEvent(new CustomEvent('hass-more-info', {
-        detail: { entityId: `${port.base}_session_energy` }, bubbles: true, composed: true,
+        detail: { entityId: port.of('sensor', 'session_energy') }, bubbles: true, composed: true,
       })));
       return row;
     }));

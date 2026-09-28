@@ -26,7 +26,7 @@ const RATIO = OUT_W / OUT_H;
 const ZOOM_RANGE = 8;
 
 import {
-  applyTheme, clampOffset, coverScale, frameSpan, mount, optionLabel, pending,
+  applyTheme, clampOffset, coverScale, findOne, frameSpan, mount, optionLabel, pending, resolveDevice,
 } from './ugreen-ui.js';
 
 /* Everything the card says, in one place.
@@ -398,13 +398,7 @@ class UgreenWallpaperCard extends HTMLElement {
   /* Entities ------------------------------------------------------------ */
 
   _find(domain, suffix) {
-    const wanted = `${domain}.`;
-    return Object.keys(this._hass?.states || {}).find((id) => {
-      if (!id.startsWith(wanted) || !id.endsWith(suffix)) return false;
-      const attrs = this._hass.states[id].attributes;
-      if (!this._config.device_id) return id.includes('ugreen');
-      return attrs.device_id ? attrs.device_id === this._config.device_id : id.includes('ugreen');
-    });
+    return findOne(this._hass, this._config.device_id, domain, suffix);
   }
 
   _entities() {
@@ -1016,8 +1010,8 @@ class UgreenWallpaperCard extends HTMLElement {
 
   async _upload() {
     if (!this._image || this._busy) return;
-    const deviceId = this._config.device_id
-      || this._state(this._entities().wallpaper)?.attributes?.device_id;
+    // The charger this card shows, which is the one the picture is for.
+    const deviceId = resolveDevice(this._hass, this._config.device_id);
     if (!deviceId) {
       this._say(this._t('needDevice'), true);
       return;

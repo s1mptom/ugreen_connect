@@ -77,6 +77,14 @@ SESSION_GAP_FACTOR: Final = 4
 CONF_IDLE_END: Final = "session_idle_end"
 DEFAULT_IDLE_END: Final = 120  # minutes
 
+# Which of the account's chargers were added, by device key, and which were on
+# offer when that was chosen -- so one bound to the account later is told apart
+# from one that was left out on purpose, and announced instead of added.
+# Neither set means every charger: an entry from before the choice goes on as
+# it did until its options are next saved, which records the choice.
+CONF_CHARGERS: Final = "chargers"
+CONF_OFFERED: Final = "offered_chargers"
+
 # --- RTCX/Polaris gateway (live telemetry) ---------------------------------
 # The gateway envelope uses an underscore locale, unlike the account API header.
 GATEWAY_LANGUAGE: Final = "en_US"
@@ -159,6 +167,27 @@ CHARGING_MODES: Final[dict[int, str]] = {
 SELECTABLE_MODES: Final[tuple[str, ...]] = (
     "adaptive_power", "thermal_safe", "dc_turbo", "priority",
 )
+
+# The 160W numbers its modes without DC turbo, having no DC port for it: the
+# four the app lists, in the app's order. Reported by its owner in #2, the app
+# and Home Assistant side by side -- Priority Charging read here as DC turbo,
+# and Custom Power as priority, which is the X783's table one step off.
+CHARGING_MODES_BY_MODEL: Final[dict[str, dict[int, str]]] = {
+    "X776": {0: "adaptive_power", 1: "thermal_safe", 2: "priority", 3: "custom"},
+}
+SELECTABLE_MODES_BY_MODEL: Final[dict[str, tuple[str, ...]]] = {
+    "X776": ("adaptive_power", "thermal_safe", "priority"),
+}
+
+
+def charging_modes(model: str | None) -> dict[int, str]:
+    """What the mode byte means on this model; the X783's where not known."""
+    return CHARGING_MODES_BY_MODEL.get(model or "", CHARGING_MODES)
+
+
+def selectable_modes(model: str | None) -> tuple[str, ...]:
+    """The presets this model's app offers; the X783's where not known."""
+    return SELECTABLE_MODES_BY_MODEL.get(model or "", SELECTABLE_MODES)
 
 # The two bytes after the screensaver's on/off flag. Both were settled by
 # changing them in the app and reading the frame it sent: picking 12- or 24-hour

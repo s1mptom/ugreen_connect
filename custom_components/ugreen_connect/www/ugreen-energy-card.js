@@ -155,7 +155,7 @@ class UgreenEnergyCard extends HTMLElement {
       start.setDate(start.getDate() - weekday);
     }
     if (this._period() === 'month') start.setDate(1);
-    const ids = found.map((port) => `${port.base}_energy`);
+    const ids = found.map((port) => port.of('sensor', 'energy'));
     this._hass.callWS({
       type: 'recorder/statistics_during_period',
       start_time: start.toISOString(),
@@ -175,7 +175,7 @@ class UgreenEnergyCard extends HTMLElement {
   }
 
   _value(port) {
-    const id = `${port.base}_energy`;
+    const id = port.of('sensor', 'energy');
     if (this._period() === 'all' || !this._totals) {
       return parseFloat(this._hass.states[id]?.state) || 0;
     }
@@ -250,7 +250,7 @@ class UgreenEnergyCard extends HTMLElement {
       bar.addEventListener('pointerleave', () => this._hideTip());
       bar.addEventListener('blur', () => this._hideTip());
       bar.addEventListener('click', () => this.dispatchEvent(new CustomEvent('hass-more-info', {
-        detail: { entityId: `${port.base}_energy` }, bubbles: true, composed: true,
+        detail: { entityId: port.of('sensor', 'energy') }, bubbles: true, composed: true,
       })));
       return bar;
     }));
