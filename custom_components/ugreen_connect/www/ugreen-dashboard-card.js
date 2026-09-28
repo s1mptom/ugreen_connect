@@ -97,11 +97,26 @@ class UgreenDashboardCard extends HTMLElement {
     if (this.shadowRoot) this.shadowRoot.innerHTML = '';
   }
 
+  /* Whether to take the screen's height is settled once the card is on the
+   * page. Lovelace hands a card its first hass before inserting it, when there
+   * is no panel view above it yet to find -- so deciding only there left the
+   * screen drawn to its content's height until the next state change, seconds
+   * later, and then it grew. Checked again a frame on, in case the card is
+   * moved into place after it is connected. */
+  connectedCallback() {
+    this._fit();
+    requestAnimationFrame(() => this._fit());
+  }
+
+  _fit() {
+    if (this._config) this.toggleAttribute('fill', this._config.fill !== false && this._inPanel());
+  }
+
   set hass(hass) {
     this._hass = hass;
     this._t = translator(TEXT, hass);
     applyTheme(this, hass);
-    this.toggleAttribute('fill', this._config.fill !== false && this._inPanel());
+    this._fit();
     // Pinned by its config, or the viewer's choice among those added.
     const list = this._config.device_id ? [] : chargers(hass);
     this._several = list.length > 1;
