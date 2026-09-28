@@ -763,6 +763,35 @@ async def test_the_setup_form_hides_the_account_before_it_tries_it(hass, caplog,
         logsafe._scope = scope
 
 
+async def test_a_new_password_is_hidden_before_it_is_tried(hass, entry, caplog, monkeypatch):
+    """Re-authenticating, the new password goes to the cloud before any entry
+    has it -- and a refusal is logged at debug."""
+    from custom_components.ugreen_connect import config_flow
+    from custom_components.ugreen_connect.api import UgreenError
+
+    password = "a-brand-new-password-7"
+
+    class _Api:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def login(self, *_args, **_kwargs):
+            raise UgreenError(f"refused {password}")
+
+    monkeypatch.setattr(config_flow, "UgreenApi", _Api)
+    entry.add_to_hass(hass)
+    caplog.set_level(logging.DEBUG, logger="custom_components.ugreen_connect")
+    result = await entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"password": password}
+    )
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert password not in caplog.text
+    from custom_components.ugreen_connect import logsafe
+
+    assert logsafe.scrub(password) == "<password>"
+
+
 async def test_a_stored_block_under_a_bare_cloud_id_is_still_hidden(
     hass, entry, api, rtcx, hass_storage
 ):

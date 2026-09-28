@@ -305,3 +305,50 @@ def test_it_goes_in_once():
     finally:
         logging.setLogRecordFactory(make)
         logsafe._scope = was
+
+
+
+def test_a_name_whose_hex_is_digits_is_hunted_from_five_bytes():
+    """`Guest` spells 4775657374 -- all digits, but ten of them."""
+    logsafe.remember("Guest", "<wifi>")
+    assert logsafe.scrub("aa08" + b"Guest".hex()) == "aa08<wifi>"
+
+
+def test_bytes_follow_the_same_rules_as_text():
+    logsafe.remember_bytes(b"1402", "<wifi>")
+    logsafe.remember_bytes(b"AP", "<wifi>")
+    for text in ("stale (1727431343032)", "xx4150yy"):
+        assert logsafe.scrub(text) == text
+    logsafe.remember_bytes(b"Guest", "<wifi>")
+    assert logsafe.scrub(b"Guest".hex()) == "<wifi>"
+
+
+def test_a_mac_that_is_not_one_hunts_nothing():
+    """A cloud that says `N/A` for the MAC would otherwise take every `a`."""
+    logsafe.remember_charger(IOT, UNIT, "N/A")
+    assert logsafe.scrub("a banana, a cable") == "a banana, a cable"
+
+
+def test_the_same_value_again_does_not_rebuild_the_pattern():
+    """Every poll remembers every charger; the pattern is built once."""
+    logsafe.remember_charger(IOT, UNIT, MAC)
+    before = logsafe._version
+    logsafe.remember_charger(IOT, UNIT, MAC)
+    assert logsafe._version == before
+
+
+def test_the_bytes_of_an_identifier_are_found_in_a_body():
+    logsafe.remember_charger(IOT, UNIT, MAC)
+    body = bytes.fromhex("0004" + "ec1ac3000001" + "ff")
+    assert logsafe.private_bytes(body) == {2, 3, 4, 5, 6, 7}
+    assert logsafe.private_bytes(bytes.fromhex("0004ff")) == set()
+
+
+def test_a_clean_traceback_keeps_its_formatted_text(installed):
+    """Formatted once for checking, so no handler formats it again."""
+    logsafe.remember_charger(IOT, UNIT)
+    try:
+        raise RuntimeError("nothing private")
+    except RuntimeError:
+        record = _record(SCOPE, "failed", exc_info=sys.exc_info())
+    assert record.exc_info is not None and record.exc_text

@@ -211,6 +211,8 @@ class UgreenConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         entry = self._get_reauth_entry()
 
         if user_input is not None:
+            # The new password, before the cloud can say it back (see logsafe).
+            logsafe.remember(user_input[CONF_PASSWORD], "<password>")
             region = entry.data[CONF_REGION]
             api = UgreenApi(
                 async_get_clientsession(self.hass), REGIONS[region], DEFAULT_LANGUAGE

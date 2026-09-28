@@ -51,7 +51,7 @@ from .const import (
     RTCX_TOKEN_MARGIN,
     SETTING_SETTLE_SECONDS,
 )
-from .logsafe import charger_tag, describe, remember, remember_bytes
+from .logsafe import charger_tag, describe, private_bytes, remember, remember_bytes
 from .protocol import (
     DC_TURBO_MODE,
     DC_VOLTAGE_BYTE,
@@ -864,8 +864,16 @@ class RtcxClient:
         if before == body:
             return
         self._state_bodies[iot_id] = body
+        # A byte that belongs to an identifier logsafe knows -- a MAC inside the
+        # body of a charger nobody has mapped -- is shown as ??, on either side:
+        # listed one by one, the bytes would spell it out again.
+        hidden = private_bytes(before or b"") | private_bytes(body)
+
+        def _shown(frame: bytes, offset: int) -> str | None:
+            return "??" if offset in hidden and offset < len(frame) else _byte_at(frame, offset)
+
         moved = None if before is None else [
-            [offset, _byte_at(before, offset), _byte_at(body, offset)]
+            [offset, _shown(before, offset), _shown(body, offset)]
             for offset in range(max(len(before), len(body)))
             if _byte_at(before, offset) != _byte_at(body, offset)
         ]

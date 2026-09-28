@@ -611,3 +611,57 @@ def test_a_wi_fi_name_is_read_as_utf8_and_hidden_from_then_on():
     finally:
         logsafe._known.clear()
         logsafe._compiled = None
+
+
+
+def test_a_wi_fi_name_that_is_not_utf8_is_hidden_as_its_bytes():
+    from conftest import logsafe
+
+    raw = b"\xff\xfeNet\x80"
+    frame = rtcx_module.build_frame(rtcx_module.FRAME_QUERY, rtcx_module.QUERY_GET_WIFI_SSID, raw)
+    logsafe._known.clear()
+    logsafe._compiled = None
+    try:
+        c = _Client({IOT: frame})
+        asyncio.run(c.client.async_text_query(IOT, rtcx_module.QUERY_GET_WIFI_SSID))
+        assert raw.hex() not in logsafe.scrub(frame.lower())
+    finally:
+        logsafe._known.clear()
+        logsafe._compiled = None
+
+
+def test_the_bytes_of_an_identifier_are_not_listed_one_by_one(caplog):
+    """A MAC inside a body, spread over the list of what moved, is the MAC."""
+    from conftest import logsafe
+
+    mac = "EC:1A:C3:00:00:01"
+    logsafe._known.clear()
+    logsafe._compiled = None
+    try:
+        logsafe.remember_charger(IOT, "FF7J0000000000001", mac)
+        caplog.set_level(logging.DEBUG, logger=rtcx_module.__name__)
+        c = _Client()
+        c.client._note_state(IOT, "X999", bytes.fromhex("0004000000000000ff"))
+        c.client._note_state(IOT, "X999", bytes.fromhex("0004ec1ac3000001ff"))
+        moved = c.client.state_changes[IOT][-1]["moved"]
+    finally:
+        logsafe._known.clear()
+        logsafe._compiled = None
+    assert moved == [[2, "??", "??"], [3, "??", "??"], [4, "??", "??"], [7, "??", "??"]]
+    for byte in ("ec", "1a", "c3"):
+        assert f">{byte}" not in caplog.text
+
+
+def test_a_gateway_network_error_does_not_carry_aiohttp_s_own_along(monkeypatch):
+    """aiohttp's message is the URL; Home Assistant would print it under the error."""
+    import aiohttp
+
+    class _Session:
+        def post(self, url, **_kwargs):
+            raise aiohttp.InvalidURL(url + "?secret=1")
+
+    client = rtcx_module.RtcxClient(_Session(), _Api())
+    client._app = {"appKey": "k", "appSecret": "s", "appGatewayDomain": "gw.example"}
+    with pytest.raises(rtcx_module.UgreenError) as err:
+        asyncio.run(client._call("/thing/properties/get", {}))
+    assert err.value.__cause__ is None and err.value.__suppress_context__

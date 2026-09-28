@@ -137,3 +137,25 @@ def test_a_network_error_does_not_carry_aiohttp_s_own_along(_forgetful, monkeypa
         asyncio.run(client._call("/list", {"deviceUniqueCode": unit}, "GET", auth=False))
     assert unit not in str(err.value)
     assert err.value.__cause__ is None and err.value.__suppress_context__
+
+
+def test_an_upload_error_does_not_carry_the_signed_slot_along(_forgetful):
+    """The slot is a signed URL to the owner's photo, which logsafe never learns."""
+    import aiohttp
+
+    signed = "https://oss.example/u/1/me.jpg?Signature=abc&Expires=1"
+
+    class _Session:
+        def put(self, url, **_kwargs):
+            raise aiohttp.InvalidURL(url)
+
+    client = api_module.UgreenApi(session=_Session(), base_url="https://example.invalid")
+
+    async def _post(*_args, **_kwargs):
+        return {"data": {"uploadUrl": signed, "fileKey": "k"}}
+
+    client._post = _post
+    with pytest.raises(api_module.UgreenError) as err:
+        asyncio.run(client.upload_wallpaper(b"\xff\xd8", "a.jpg", "FF7J0000000000001", "030002"))
+    assert signed not in str(err.value)
+    assert err.value.__cause__ is None and err.value.__suppress_context__

@@ -44,9 +44,12 @@ from typing import Any, Final
 MIN_PLAIN: Final = 8
 MIN_PLAIN_WORD: Final = 12
 # Its hex spelling is hunted from three bytes up, inside a frame's run of hex
-# digits -- unless that spelling is all decimal digits, as it is for a value
-# made of digits, when it would be found inside ordinary numbers.
+# digits. A spelling that is all decimal digits -- a value of digits, but also
+# one of letters from A to I and P to Y, "Guest" say -- could be found inside an
+# ordinary number, so it waits for five bytes, ten digits, which a timestamp
+# does not happen to contain.
 MIN_BYTES: Final = 3
+MIN_DIGIT_BYTES: Final = 5
 
 # Put in place of a line of this integration's that could not be checked.
 # Losing the line is the lesser failure: let through unchecked, it is the one
@@ -74,6 +77,12 @@ def charger_tag(iot_id: str) -> str:
     return hashlib.sha256(iot_id.encode()).hexdigest()[:6]
 
 
+def _hex_worth_hunting(raw: bytes) -> bool:
+    if len(raw) < MIN_BYTES:
+        return False
+    return len(raw) >= MIN_DIGIT_BYTES or not raw.hex().isdigit()
+
+
 def _add(spelling: str, stand_in: str, whole: bool) -> None:
     global _version
     key = spelling.lower()
@@ -95,7 +104,7 @@ def remember(value: Any, stand_in: str) -> None:
     with _lock:
         if len(value) >= (MIN_PLAIN_WORD if value.isalpha() else MIN_PLAIN):
             _add(value, stand_in, True)
-        if len(raw) >= MIN_BYTES and not raw.hex().isdigit():
+        if _hex_worth_hunting(raw):
             _add(raw.hex(), stand_in, False)
 
 
@@ -106,7 +115,7 @@ def remember_bytes(raw: bytes | None, stand_in: str) -> None:
     same bytes again: a name that is not UTF-8 comes back with replacement
     characters, whose hex matches nothing in any frame.
     """
-    if isinstance(raw, bytes) and len(raw) >= MIN_BYTES and not raw.hex().isdigit():
+    if isinstance(raw, bytes) and _hex_worth_hunting(raw):
         with _lock:
             _add(raw.hex(), stand_in, False)
 
@@ -173,6 +182,22 @@ def scrub(text: str) -> str:
     pattern, stand_ins = compiled
     # Every alternative is a named group, so one of them is always the match.
     return pattern.sub(lambda match: stand_ins[int(str(match.lastgroup)[1:])], text)
+
+
+def private_bytes(body: bytes) -> set[int]:
+    """Which bytes of a frame body are part of a remembered identifier.
+
+    For anything that takes a body apart byte by byte -- the state record's
+    list of what moved -- where cleaning the body's hex as a whole never sees
+    the identifier: a MAC spread over six entries is six harmless bytes each.
+    """
+    compiled = _pattern() if body and _known else None
+    if compiled is None:
+        return set()
+    hidden: set[int] = set()
+    for match in compiled[0].finditer(body.hex()):
+        hidden.update(range(match.start() // 2, (match.end() + 1) // 2))
+    return hidden
 
 
 def describe(value: Any) -> str:
