@@ -39,6 +39,13 @@ Sign in with your normal UGREEN account e-mail and password, and pick the region
 your account belongs to — the same one the app shows. Accounts are not shared
 between regions.
 
+With more than one charger on the account, the next step lists them: tick the
+ones to add. Each is read as its own model, which the account names, so a 160W
+beside a 300W needs nothing set by hand. Change the choice later under
+*Configure*: unticking a charger removes its device and entities. A charger
+bound to the account afterwards is not added by itself; Home Assistant raises a
+repair notice saying it is there, and it shows up unticked under *Configure*.
+
 Requires Home Assistant **2024.7** or newer.
 
 ## What you get
@@ -69,7 +76,7 @@ e.g. `sensor.ugreen_nexode_pro_x783_c1_power`.
 |---|---|
 | `number.<device>_screen_brightness` | 0–100 % |
 | `select.<device>_screen_off_time` | 1, 5, 10, 30 minutes, or always on |
-| `select.<device>_charging_mode` | adaptive power, thermal safe, DC turbo, priority |
+| `select.<device>_charging_mode` | adaptive power, thermal safe, DC turbo, priority; a 160W, which has no DC port, offers adaptive power, thermal safe and priority |
 | `switch.<device>_screensaver` | the clock the screen shows once it sleeps |
 | `switch.<device>_c1_charged_first` … | C1, C2 and C3: whether the `priority` mode charges that port first. Any of them, all three included, but never none -- turning off the last one is refused. Unavailable under any other mode |
 | `select.<device>_dc_port_voltage` | 12, 15 or 20 V: what DC turbo gives the DC port. Unavailable under any other mode |
@@ -77,6 +84,7 @@ e.g. `sensor.ugreen_nexode_pro_x783_c1_power`.
 | `select.<device>_time_format` | 12- or 24-hour |
 | `select.<device>_clock_style` | the two faces the charger draws |
 | `select.<device>_wallpaper` | any picture in your UGREEN library, or none |
+| `switch.<device>_c_cable_output` … | a 160W's port switches: C-Cable, C1, and C2 & A, which the app switches together. Shown, not set yet: the app switches them with a command nobody has watched go out |
 
 The choices match the app's own, and nothing here shows a value because it was
 asked for: a write is followed by a read of the charger, and what comes back is
@@ -182,7 +190,8 @@ charger, not both: together they count every watt-hour twice.
 
 These ship with the integration and are registered for you, so there is nothing
 to install and no resource to add by hand. Each finds the charger's entities
-itself; with two chargers set up, give them `device_id`.
+itself. With two or more chargers, a card without `device_id` shows the first,
+and the dashboard card lets you switch; give a card `device_id` to pin it to one.
 
 | Card | What it draws |
 |---|---|
@@ -192,7 +201,7 @@ itself; with two chargers set up, give them `device_id`.
 | `custom:ugreen-power-card` | power over the last hour, three hours or day, per port and in total, read from the recorder |
 | `custom:ugreen-energy-card` | kilowatt-hours per port for a day, a week, a month or all time |
 | `custom:ugreen-wallpaper-card` | the charger's screen: screensaver, brightness and screen-off, with an editor for the clock and the picture |
-| `custom:ugreen-dashboard-card` | all of the above as one screen, for a view given over to the charger |
+| `custom:ugreen-dashboard-card` | all of the above as one screen, for a view given over to the charger. With several chargers and no `device_id`, the chosen one's name heads the screen, with the others in a list behind it |
 
 A port keeps one colour on every card, picked to stay apart in light and dark
 themes and for common kinds of colour blindness; a theme can set
@@ -429,7 +438,8 @@ the reviews, which caught rather more of mine than the other way round.
 
 The 160W's field offsets came from its owner in
 [#2](https://github.com/s1mptom/ugreen_connect/issues/2), mapped one setting at a
-time on hardware nobody here has.
+time on hardware nobody here has: its screen settings, its own numbering of the
+charging modes, its port switches and its picture library.
 
 ## Contributing
 

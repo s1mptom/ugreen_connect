@@ -20,23 +20,27 @@
  */
 
 import {
-  SERIES, SHARED_CSS, applyTheme, bucket, defineCard, duration, findOne, mount, num, ports, translator,
+  SERIES, SHARED_CSS, applyTheme, bucket, defineCard, duration, findAll, findOne, mount, num, ports,
+  translator,
 } from './ugreen-ui.js';
 
 const TEXT = {
   en: {
     energy: 'Energy', charge: 'Charge', time: 'Charging for', first: 'First', firstTitle: 'Charged first',
     idle: 'Not charging', cable: 'Cable only', onPort: '{v} V on the port', turboOff: 'Off in DC turbo',
+    switchedOff: 'Output off',
     noPorts: 'No charger entities found. Set device_id in the card config.',
   },
   de: {
     energy: 'Energie', charge: 'Ladung', time: 'Lädt seit', first: 'Zuerst', firstTitle: 'Zuerst geladen',
     idle: 'Lädt nicht', cable: 'Nur Kabel', onPort: '{v} V am Anschluss', turboOff: 'Aus im DC-Turbo',
+    switchedOff: 'Ausgang aus',
     noPorts: 'Keine Entitäten gefunden. device_id in der Kartenkonfiguration setzen.',
   },
   ru: {
     energy: 'Энергия', charge: 'Заряд', time: 'Заряжает', first: 'Первый', firstTitle: 'Заряжается первым',
     idle: 'Не заряжает', cable: 'Только кабель', onPort: 'на порту {v} В', turboOff: 'Выключен в DC turbo',
+    switchedOff: 'Выход выключен',
     noPorts: 'Сущности не найдены. Укажите device_id в настройках карточки.',
   },
 };
@@ -135,7 +139,10 @@ class UgreenPortsCard extends HTMLElement {
     this._els.empty.hidden = found.length > 0;
     this._fetch(found);
     const off = this._turboOff();
-    this._els.tiles.replaceChildren(...found.map((port, index) => this._tile(port, SERIES[index % SERIES.length], off)));
+    const cut = this._switchedOff();
+    this._els.tiles.replaceChildren(
+      ...found.map((port, index) => this._tile(port, SERIES[index % SERIES.length], off, cut)),
+    );
   }
 
   /* The last hour of every port, once a minute: the line is a shape, not a
@@ -192,19 +199,31 @@ class UgreenPortsCard extends HTMLElement {
     return () => false;
   }
 
-  _tile(port, colour, off = () => false) {
+  /* The ports switched off in the app, on a charger that has switches for them
+   * -- the 160W, where C2 and A share one. Each switch lists its ports. */
+  _switchedOff() {
+    const cut = new Set();
+    for (const id of findAll(this._hass, this._config.device_id, 'switch', '_output')) {
+      const state = this._hass.states[id];
+      if (state?.state === 'off') for (const name of state.attributes.ports || []) cut.add(name);
+    }
+    return cut;
+  }
+
+  _tile(port, colour, off = () => false, cut = new Set()) {
     const s = this._hass.states;
     const watts = num(this._hass, port.id);
-    const volts = num(this._hass, `${port.base}_voltage`);
-    const amps = num(this._hass, `${port.base}_current`);
-    const protocol = s[`${port.base}_protocol`]?.state;
+    const volts = num(this._hass, port.of('sensor', 'voltage'));
+    const amps = num(this._hass, port.of('sensor', 'current'));
+    const protocol = s[port.of('sensor', 'protocol')]?.state;
     const drawing = s[port.charging]?.state === 'on';
-    const energy = s[`${port.base}_session_energy`];
+    const energy = s[port.of('sensor', 'session_energy')];
     const inSession = drawing && energy?.attributes?.charging !== false;
     // On only while `priority` runs: the switch is unavailable under any other
     // mode, and unavailable is not on.
-    const first = s[`switch.${port.base.split('.')[1]}_charged_first`]?.state === 'on';
+    const first = s[port.of('switch', 'charged_first')]?.state === 'on';
     const dark = !drawing && off(port.name);
+    const switchedOff = !drawing && !dark && cut.has(port.name);
 
     const tile = document.createElement('button');
     tile.type = 'button';
@@ -216,7 +235,7 @@ class UgreenPortsCard extends HTMLElement {
     let body;
     if (drawing) {
       const wh = parseFloat(energy?.state);
-      const mah = num(this._hass, `${port.base}_session_charge`, NaN);
+      const mah = num(this._hass, port.of('sensor', 'session_charge'), NaN);
       const seconds = Number(energy?.attributes?.duration) || 0;
       body = `
         <div class="watts"><b>${watts.toFixed(1)}</b><span>W</span></div>
@@ -232,8 +251,9 @@ class UgreenPortsCard extends HTMLElement {
       const cable = volts > 0.5;
       body = `
         <div class="grow"></div>
-        <div class="note">${dark ? this._t('turboOff') : cable ? this._t('cable') : this._t('idle')}</div>
-        <div class="detail">${!dark && cable ? this._t('onPort', { v: volts.toFixed(1) }) : ''}</div>`;
+        <div class="note">${dark ? this._t('turboOff') : switchedOff ? this._t('switchedOff')
+          : cable ? this._t('cable') : this._t('idle')}</div>
+        <div class="detail">${!dark && !switchedOff && cable ? this._t('onPort', { v: volts.toFixed(1) }) : ''}</div>`;
     }
     tile.innerHTML = `
       <div class="head"><span class="dot"></span><span class="name"></span><span class="grow"></span>
@@ -244,7 +264,8 @@ class UgreenPortsCard extends HTMLElement {
     tile.querySelector('.proto').textContent = proto;
     tile.setAttribute('aria-label', drawing
       ? `${port.name}, ${watts.toFixed(1)} W${proto ? `, ${proto}` : ''}`
-      : `${port.name}, ${dark ? this._t('turboOff') : volts > 0.5 ? this._t('cable') : this._t('idle')}`);
+      : `${port.name}, ${dark ? this._t('turboOff') : switchedOff ? this._t('switchedOff')
+        : volts > 0.5 ? this._t('cable') : this._t('idle')}`);
     tile.addEventListener('click', () => this.dispatchEvent(new CustomEvent('hass-more-info', {
       detail: { entityId: port.id }, bubbles: true, composed: true,
     })));

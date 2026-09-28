@@ -150,9 +150,12 @@ def test_the_tail_moves_with_the_parameter_block():
 
 
 def test_a_count_nobody_has_watched_counting_is_not_read():
+    """The 160W's byte there read 5 with three ids after it, and with four."""
     assert p.state_layout("X783").wallpaper_count == 49
     assert p.state_layout("X776").wallpaper_count is None
-    assert "wallpapers" not in p.state_fields("X776")
+    # Its library is read to the end of the reply instead, six bytes a picture.
+    assert p.state_layout("X776").wallpaper_start == 41
+    assert "wallpapers" in p.state_fields("X776")
 
 
 def test_a_model_nobody_has_read_gets_no_screen_at_all():
@@ -174,7 +177,7 @@ def test_reading_a_field_is_not_permission_to_write_it():
     # writes them, and a one-limit edit could leave a limit and a mask paired
     # the way the app never sends. It was in this table only because it rode
     # STATE_FIELDS_ALL.
-    assert p.state_writable("X783") == p.STATE_FIELDS_ALL - {"custom"}
+    assert p.state_writable("X783") == p.STATE_FIELDS_ALL - {"custom", "port_outputs"}
     assert "custom" in p.state_fields("X783"), "read, though -- that is the point"
     assert p.state_writable("X999") == frozenset()
 
@@ -509,3 +512,58 @@ def test_a_frame_that_stops_inside_the_block_is_not_decoded():
     # a value one too high refuses a frame that carries the whole block.
     assert p.parse_custom_mode(block(40), "X783") is not None
 
+
+
+# --- what the 160W's owner sent in #2 --------------------------------------
+#
+# Two state bodies off a 160W, as the integration logged them: the first after
+# turning off the built-in cable, C1 and A in the app; the second after putting
+# a new picture on it, in Custom Power.
+X776_OUTPUTS_OFF = bytes.fromhex(
+    "000408010202000000efffff65000000efffff65000000efffff6100000100010101"
+    "30383031324505334537463832454131413342464331433737303830313245"
+)
+X776_NEW_PICTURE = bytes.fromhex(
+    "00040805030f0f1701efffff65000001efffff65000001efffff6100000100010001"
+    "34333845463205334537463832454131413342464331433737343338454632"
+)
+
+
+def test_the_160w_numbers_its_modes_without_dc_turbo():
+    """Its app lists four presets, no DC turbo; the owner had it in Priority
+    Charging for the first frame and in Custom Power for the second."""
+    modes = const.charging_modes("X776")
+    assert modes[X776_OUTPUTS_OFF[p.STATE_CHARGING_MODE]] == "priority"
+    assert modes[X776_NEW_PICTURE[p.STATE_CHARGING_MODE]] == "custom"
+    assert "dc_turbo" not in modes.values()
+    assert const.selectable_modes("X776") == ("adaptive_power", "thermal_safe", "priority")
+    # The 300W's table stays what it was, and is the answer for a stranger.
+    assert const.charging_modes("X783") is const.CHARGING_MODES
+    assert const.charging_modes(None) is const.CHARGING_MODES
+
+
+def test_custom_is_the_only_mode_no_model_offers():
+    """The refusal names `custom` outright, so it has to be the only one."""
+    for model in (None, "X783", "X776"):
+        assert set(const.charging_modes(model).values()) - set(const.selectable_modes(model)) == {
+            "custom"
+        }
+
+
+def test_the_160w_s_port_switches_are_three_bytes():
+    assert p.parse_port_outputs(X776_OUTPUTS_OFF, "X776") == {
+        "C-Cable": False, "C1": False, "C2 & A": False,
+    }
+    assert p.parse_port_outputs(X776_NEW_PICTURE, "X776") == {
+        "C-Cable": True, "C1": True, "C2 & A": True,
+    }
+    names = [(name, ports) for name, ports, _ in p.port_output_groups("X776")]
+    assert names == [("C-Cable", ("C-Cable",)), ("C1", ("C1",)), ("C2 & A", ("C2", "A"))]
+
+
+def test_a_charger_without_port_switches_has_none_to_read():
+    assert p.parse_port_outputs(X776_NEW_PICTURE, "X783") is None
+    assert p.parse_port_outputs(X776_NEW_PICTURE, None) is None
+    assert p.parse_port_outputs(X776_NEW_PICTURE[:22], "X776") is None
+    assert "port_outputs" not in p.state_fields("X783")
+    assert "port_outputs" not in p.state_writable("X776")

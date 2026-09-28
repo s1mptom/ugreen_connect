@@ -165,6 +165,11 @@ class UgreenPortSensor(UgreenDeviceEntity, SensorEntity):
         self._attr_translation_key = f"port_{kind}"
         self._attr_translation_placeholders = {"port": port}
         self._attr_unique_id = f"{key}_{port}_{kind}"
+        # The port's name as data, for the cards: the entity's own name is
+        # translated, "C1 Leistung" or "C1: мощность", and no card should be
+        # parsing a sentence to find out which port it is looking at.
+        if kind == "power":
+            self._attr_extra_state_attributes = {"port": port}
 
     @property
     def available(self) -> bool:
@@ -329,6 +334,8 @@ class UgreenCustomLimitSensor(UgreenDeviceEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         group = self._group or {}
         return {
+            # Which group, as data -- the name is translated (see the power sensor).
+            "port": self._group_name,
             "protocols": group.get("protocols") or [],
             # The raw mask as well as the names read out of it: a bit nobody
             # has put a name to yet would otherwise be invisible here, and this

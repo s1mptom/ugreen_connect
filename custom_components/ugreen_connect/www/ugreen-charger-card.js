@@ -17,7 +17,7 @@
  */
 
 import {
-  SERIES, SHARED_CSS, applyTheme, defineCard, findAll, findOne, mount, num, optionLabel,
+  SERIES, SHARED_CSS, applyTheme, bare, budget, defineCard, findAll, findOne, mount, num, optionLabel,
   pending, ports, translator,
 } from './ugreen-ui.js';
 
@@ -143,13 +143,7 @@ const STYLE = `
   .turbo .hint.off { color: var(--warning-color, #ff9800); }
   .empty { color: var(--secondary-text-color); }
   :host { display: block; container-type: inline-size; }
-  .modepick { display: none; position: relative; flex: 1 1 auto; color: var(--secondary-text-color); }
-  .modepick select { appearance: none; -webkit-appearance: none; margin: 0; width: 100%; height: 36px;
-                     box-sizing: border-box; padding: 0 34px 0 14px; font: inherit; font-size: 14px;
-                     color: var(--primary-text-color); background: var(--secondary-background-color);
-                     border: 1px solid transparent; border-radius: 18px; }
-  .modepick select:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
-  .modepick svg { position: absolute; right: 14px; top: 50%; margin-top: -3px; pointer-events: none; }
+  .modepick { display: none; flex: 1 1 auto; }
   /* Five modes do not fit across a phone, and a row of them scrolled sideways
      hid the one in use. Narrow, the modes are a list. */
   @container (max-width: 640px) {
@@ -207,7 +201,7 @@ class UgreenChargerCard extends HTMLElement {
         </div>
         <div class="modes">
           <div class="u-seg" role="radiogroup" aria-label="${this._t('mode')}"></div>
-          <label class="modepick"><select aria-label="${this._t('mode')}"></select><svg width="10" height="6"
+          <label class="u-pick modepick"><select aria-label="${this._t('mode')}"></select><svg width="10" height="6"
             viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor"
             stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg></label>
           <div class="params"></div>
@@ -253,7 +247,8 @@ class UgreenChargerCard extends HTMLElement {
     const all = ports(this._hass, this._config.device_id);
     const watts = totalId ? num(this._hass, totalId) : all.reduce((s, p) => s + num(this._hass, p.id), 0);
     this._peak = Math.max(this._peak, watts, 1);
-    const max = Number(this._config.max_power) || 0;
+    // The config's figure, else the model's own: a 160W is not out of 300.
+    const max = Number(this._config.max_power) || budget(this._hass, this._config.device_id);
     const scale = max || this._peak;
     this._els.watts.textContent = watts.toFixed(1);
     this._els.of.textContent = max ? this._t('of', { max }) : '';
@@ -368,7 +363,7 @@ class UgreenChargerCard extends HTMLElement {
         row.innerHTML = `<span class="label">${this._t('limits')}</span>`;
         for (const id of limits) {
           const s = this._hass.states[id];
-          const name = (s.attributes.friendly_name || id)
+          const name = s.attributes.port || (s.attributes.friendly_name || id)
             .replace(/\s*custom[- ]mode limit$/i, '').split(' ').pop();
           const cell = document.createElement('span');
           cell.className = 'limit';
@@ -400,7 +395,7 @@ class UgreenChargerCard extends HTMLElement {
   _syncFirst() {
     const switches = findAll(this._hass, this._config.device_id, 'switch', '_charged_first')
       .filter((id) => ['on', 'off'].includes(this._hass.states[id]?.state))
-      .map((id) => ({ id, name: id.split('.')[1].slice(0, -'_charged_first'.length).split('_').pop().toUpperCase() }))
+      .map((id) => ({ id, name: bare(id).split('.')[1].slice(0, -'_charged_first'.length).split('_').pop().toUpperCase() }))
       .sort((a, b) => a.name.localeCompare(b.name));
     if (!switches.length) return false;
     const all = ports(this._hass, this._config.device_id);

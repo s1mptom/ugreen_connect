@@ -1,4 +1,4 @@
-"""Switch platform: the screensaver, the ports `priority` charges first, and DC Always On."""
+"""Switch platform: the screensaver, priority ports, DC Always On and the 160W's port outputs."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from . import UgreenConfigEntry
 from .const import DOMAIN
 from .coordinator import UgreenCoordinator, device_key
 from .entity import UgreenDeviceEntity, cloud_errors
-from .protocol import PRIORITY_PORTS
+from .protocol import PRIORITY_PORTS, port_output_groups
 
 
 async def async_setup_entry(
@@ -48,6 +48,12 @@ async def async_setup_entry(
             if "dc_turbo" in reading and (key, "dc_turbo") not in known:
                 known.add((key, "dc_turbo"))
                 new.append(UgreenDcAlwaysOn(coordinator, key))
+            if "port_outputs" in reading and (key, "port_outputs") not in known:
+                known.add((key, "port_outputs"))
+                new.extend(
+                    UgreenPortOutput(coordinator, key, name, ports)
+                    for name, ports, _ in port_output_groups(coordinator.model_for(key))
+                )
         if new:
             async_add_entities(new)
 
@@ -233,3 +239,50 @@ class UgreenDcAlwaysOn(UgreenDeviceEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self._async_set(False)
+
+
+class UgreenPortOutput(UgreenDeviceEntity, SwitchEntity):
+    """Whether one of the 160W's ports, or pair of them, is switched on.
+
+    Shown and not set, as this integration shows what it reads and cannot yet
+    write: the app switches them with SET_PORT_CONTROL, and nobody has watched
+    that frame go out. The ports a switch covers are an attribute, so a card can
+    find the switch for a port -- C2 and A share one.
+    """
+
+    _attr_translation_key = "port_output"
+    _attr_icon = "mdi:power-socket"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(
+        self, coordinator: UgreenCoordinator, key: str, name: str, ports: tuple[str, ...]
+    ) -> None:
+        super().__init__(coordinator, key)
+        self._group = name
+        self._attr_translation_placeholders = {"port": name}
+        self._attr_unique_id = f"{key}_{name}_output"
+        self._attr_extra_state_attributes = {"ports": list(ports)}
+
+    @property
+    def _outputs(self) -> dict[str, bool] | None:
+        return (self._reading or {}).get("port_outputs")
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._group in (self._outputs or {})
+
+    @property
+    def is_on(self) -> bool | None:
+        return (self._outputs or {}).get(self._group)
+
+    async def _async_refuse(self) -> None:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="port_output_app_only",
+        )
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._async_refuse()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._async_refuse()

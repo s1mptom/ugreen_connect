@@ -12,26 +12,109 @@
 
 /* Entities -------------------------------------------------------------- */
 
-/* Whether this entity belongs to the charger a card was pointed at.
+/* The chargers set up in Home Assistant: one entry per device that owns this
+ * integration's total-power sensor, named as the device page names it.
  *
- * `device_id` is on the state object for entities that carry it; where it is
- * not, the entity id is all there is to go on, which is why a setup with two
- * chargers wants `device_id` in the card config. */
+ * Read from `hass.entities`, the entity registry the frontend keeps, which is
+ * where Home Assistant says which device an entity belongs to. Worked out
+ * once per registry: the object is replaced when the registry changes, and a
+ * card asks on every update. */
+const CHARGERS = new WeakMap();
+
+export function chargers(hass) {
+  const entities = hass?.entities;
+  if (!entities) return [];
+  const cached = CHARGERS.get(entities);
+  if (cached && cached.devices === hass.devices) return cached.list;
+  const list = [];
+  const seen = new Set();
+  for (const [id, entry] of Object.entries(entities)) {
+    if (entry?.platform !== 'ugreen_connect' || !entry.device_id || seen.has(entry.device_id)) continue;
+    if (!id.startsWith('sensor.') || !bare(id).endsWith('_total_power')) continue;
+    seen.add(entry.device_id);
+    const device = hass.devices?.[entry.device_id] || {};
+    list.push({
+      id: entry.device_id,
+      name: device.name_by_user || device.name || id,
+      own: device.name_by_user || '',
+      app: device.name || '',
+      product: device.model || '',
+      model: device.model_id || '',
+      total: id,
+    });
+  }
+  list.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+  CHARGERS.set(entities, { devices: hass.devices, list });
+  return list;
+}
+
+/* The charger a card shows: the one in its config, else the first there is --
+ * never all of them at once. One that answers, before one that has left the
+ * account and sits there unavailable. */
+export function resolveDevice(hass, deviceId) {
+  if (deviceId) return deviceId;
+  const list = chargers(hass);
+  const live = list.find((c) => !['unavailable', 'unknown'].includes(hass.states?.[c.total]?.state));
+  return (live || list[0])?.id;
+}
+
+/* How a charger is called on screen. The name given in Home Assistant, else
+ * the one given in the UGREEN app, else -- where the app's is still its
+ * default, "UGREEN Nexode Pro X783" -- the product without the maker's name,
+ * "Nexode Pro 300W". Two that would read the same are numbered. */
+export function chargerNames(list) {
+  const base = list.map((c) => {
+    if (c.own) return c.own;
+    const standard = /^UGREEN\b/i.test(c.app) && (!c.model || c.app.endsWith(c.model));
+    if (c.app && !standard) return c.app;
+    return (c.product || c.app || c.name).replace(/^UGREEN\s+/i, '');
+  });
+  return base.map((name, i) => (base.indexOf(name) === base.lastIndexOf(name)
+    ? name : `${name} (${base.slice(0, i + 1).filter((n) => n === name).length})`));
+}
+
+/* What each model can deliver in all, for a card that was not told. */
+const BUDGET = { X783: 300, X776: 160 };
+
+export function budget(hass, deviceId) {
+  const id = resolveDevice(hass, deviceId);
+  return BUDGET[hass?.devices?.[id]?.model_id] || 0;
+}
+
+/* Whether this entity belongs to that charger.
+ *
+ * By the entity registry. It used to look for `device_id` on the state
+ * object, where nothing puts it, so `device_id` in a card's config filtered
+ * nothing and two chargers ran together on every card. The entity id is
+ * still the fallback where the registry has not arrived. */
 export function belongs(hass, entityId, deviceId) {
-  const device = hass.states[entityId]?.attributes?.device_id;
-  if (!deviceId) return entityId.includes('ugreen');
-  return device ? device === deviceId : entityId.includes('ugreen');
+  const device = hass.entities?.[entityId]?.device_id ?? hass.states?.[entityId]?.attributes?.device_id;
+  if (deviceId && device) return device === deviceId;
+  return entityId.includes('ugreen');
+}
+
+/* An entity id without the number Home Assistant adds when a name is taken:
+ * two chargers that nobody renamed are both "UGREEN Nexode Pro X783", and the
+ * second one's entities end `_power_2`. */
+export function bare(id) {
+  return id.replace(/_\d+$/, '');
+}
+
+function tailOf(id) {
+  return (id.match(/_\d+$/) || [''])[0];
 }
 
 export function findOne(hass, deviceId, domain, suffix) {
+  const wanted = resolveDevice(hass, deviceId);
   return Object.keys(hass?.states || {}).find(
-    (id) => id.startsWith(`${domain}.`) && id.endsWith(suffix) && belongs(hass, id, deviceId),
+    (id) => id.startsWith(`${domain}.`) && bare(id).endsWith(suffix) && belongs(hass, id, wanted),
   );
 }
 
 export function findAll(hass, deviceId, domain, suffix) {
+  const wanted = resolveDevice(hass, deviceId);
   return Object.keys(hass?.states || {}).filter(
-    (id) => id.startsWith(`${domain}.`) && id.endsWith(suffix) && belongs(hass, id, deviceId),
+    (id) => id.startsWith(`${domain}.`) && bare(id).endsWith(suffix) && belongs(hass, id, wanted),
   );
 }
 
@@ -45,16 +128,22 @@ export function ports(hass, deviceId) {
   return findAll(hass, deviceId, 'sensor', '_power')
     .filter((id) => id !== total)
     .map((id) => {
-      const base = id.slice(0, -'_power'.length);
+      const tail = tailOf(id);
+      const base = bare(id).slice(0, -'_power'.length);
       const object = base.split('.')[1];
-      const name = (hass.states[id].attributes.friendly_name || object)
-        .replace(/\s*power$/i, '').split(' ').pop();
+      // The port's name as the integration gives it. The friendly name is
+      // translated -- "C1 Leistung", "C1: мощность" -- so its last word is
+      // only right in English; it is the fallback for an older release.
+      const name = hass.states[id].attributes.port
+        || (hass.states[id].attributes.friendly_name || object).replace(/\s*power$/i, '').split(' ').pop();
       return {
         id,
         base,
         name,
-        charging: `binary_sensor.${object}_charging`,
-        event: `event.${object}_charging`,
+        charging: `binary_sensor.${object}_charging${tail}`,
+        event: `event.${object}_charging${tail}`,
+        // Another entity of this port, by what follows its name.
+        of: (domain, what) => `${domain}.${object}_${what}${tail}`,
       };
     });
 }
@@ -66,13 +155,14 @@ export function ports(hass, deviceId) {
  * is one port, and both end `_energy`. */
 export function prefix(hass, deviceId) {
   const total = findOne(hass, deviceId, 'sensor', '_total_power');
-  return total ? total.split('.')[1].slice(0, -'_total_power'.length) : undefined;
+  return total ? bare(total).split('.')[1].slice(0, -'_total_power'.length) : undefined;
 }
 
 /* An entity of the charger itself, by the name that follows its prefix. */
 export function chargerEntity(hass, deviceId, domain, name) {
   const base = prefix(hass, deviceId);
-  const id = base && `${domain}.${base}_${name}`;
+  const total = findOne(hass, deviceId, 'sensor', '_total_power');
+  const id = base && `${domain}.${base}_${name}${total ? tailOf(total) : ''}`;
   return id && hass.states[id] ? id : undefined;
 }
 
@@ -359,6 +449,14 @@ export const SHARED_CSS = `
   .u-pill[aria-pressed="true"] { font-weight: 500;
             border-color: color-mix(in srgb, var(--primary-color) 55%, transparent);
             background: color-mix(in srgb, var(--primary-color) 16%, transparent); }
+  /* A choice of one as a list, where a row of segments does not fit. */
+  .u-pick { position: relative; display: inline-block; color: var(--secondary-text-color); }
+  .u-pick select { appearance: none; -webkit-appearance: none; margin: 0; width: 100%; height: 36px;
+                   box-sizing: border-box; padding: 0 34px 0 14px; font: inherit; font-size: 14px;
+                   color: var(--primary-text-color); background: var(--secondary-background-color);
+                   border: 1px solid transparent; border-radius: 18px; }
+  .u-pick select:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+  .u-pick svg { position: absolute; right: 14px; top: 50%; margin-top: -3px; pointer-events: none; }
   .u-card-title { margin: 0; font-size: 15px; font-weight: 500; }
   @media (max-width: 520px) { .u-narrow-hide { display: none; } }
 `;

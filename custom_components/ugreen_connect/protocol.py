@@ -119,9 +119,9 @@ def ports_for(model: str | None, body_length: int) -> tuple[str, ...]:
 #
 # Per field rather than per model, because a model does not arrive understood
 # all at once. The X776's owner mapped its brightness, screen timeout, charging
-# mode, screensaver group and current wallpaper by hand, one change at a time;
-# its wallpaper library is still not understood. Under an all-or-nothing rule
-# that knowledge would sit unused until the last byte fell.
+# mode, screensaver group, wallpaper library and port outputs by hand, one
+# change at a time, over several evenings. Under an all-or-nothing rule that
+# knowledge would have sat unused until the last byte fell.
 STATE_FIELDS_ALL: Final[frozenset[str]] = frozenset(
     {
         "brightness",
@@ -135,22 +135,23 @@ STATE_FIELDS_ALL: Final[frozenset[str]] = frozenset(
         "screensaver_flag",
         "wallpaper",
         "wallpapers",
+        "port_outputs",
     }
 )
 
 STATE_FIELDS_BY_MODEL: Final[dict[str, frozenset[str]]] = {
-    "X783": STATE_FIELDS_ALL,
-    # `wallpapers` is missing on purpose: the byte where the X783 counts its
-    # library reads 5 on a 160W whether three ids follow or four, so whatever
-    # it counts, it is not them. `custom` likewise: five wattages, a shared
-    # pair in steps and six masks is the X783's shape, and the 160W's block is
-    # 26 bytes where this shape needs 35, with nobody having mapped what it
-    # holds.
+    # The 300W has no per-port switches in its app, so nothing to read.
+    "X783": STATE_FIELDS_ALL - {"port_outputs"},
+    # `custom` is missing on purpose: five wattages, a shared pair in steps and
+    # six masks is the X783's shape, and the 160W's block is 26 bytes where
+    # this shape needs 35, with nobody having mapped what it holds. Its
+    # wallpaper library is read without the X783's count byte (see
+    # StateLayout).
     # `priority` too: its mask is the first byte of a block nobody has mapped
     # on this model, and a port choice read from the wrong byte is a control
     # that sets the wrong ports. And `dc_turbo`, for the same reason: the 160W
     # has no DC port for its first two bytes to be about.
-    "X776": STATE_FIELDS_ALL - {"wallpapers", "custom", "priority", "dc_turbo"},
+    "X776": STATE_FIELDS_ALL - {"custom", "priority", "dc_turbo"},
 }
 
 # Reading a byte and writing it are separate permissions, because the commands
@@ -176,7 +177,7 @@ STATE_WRITABLE_BY_MODEL: Final[dict[str, frozenset[str]]] = {
     # could leave a pair the app never sends. `custom` arrived in this table by
     # riding STATE_FIELDS_ALL, so it is refused rather than left to say yes by
     # accident the day somebody builds the entity that asks.
-    "X783": STATE_FIELDS_ALL - {"custom"},
+    "X783": STATE_FIELDS_ALL - {"custom", "port_outputs"},
     "X776": frozenset({"brightness", "sleep_time"}),
 }
 
@@ -192,17 +193,21 @@ class StateLayout(NamedTuple):
 
     ``wallpaper_count`` is None where that byte has been seen and not
     understood -- reading a list from a count that does not count is worse than
-    publishing no list.
+    publishing no list. The 160W's byte in that place read 5 with three ids
+    after it, with four, and after its owner put a new picture on it, so it
+    counts something else. Its list is read from ``wallpaper_start`` to the end
+    of the reply instead: the reply grows six bytes a picture.
     """
 
     screensaver: int          # then clock style at +1 and time format at +2
     image_id: int             # six ASCII bytes naming the picture on screen
     wallpaper_count: int | None
+    wallpaper_start: int | None = None  # where the ids start, when uncounted
 
 
 STATE_LAYOUT_BY_MODEL: Final[dict[str, StateLayout]] = {
     "X783": StateLayout(screensaver=40, image_id=43, wallpaper_count=49),
-    "X776": StateLayout(screensaver=31, image_id=34, wallpaper_count=None),
+    "X776": StateLayout(screensaver=31, image_id=34, wallpaper_count=None, wallpaper_start=41),
 }
 
 
@@ -464,6 +469,41 @@ def parse_dc_turbo(body: bytes, model: str | None = None) -> dict[str, Any] | No
         "voltage": DC_VOLTAGES.get(body[STATE_MODE_PARAMS]),
         "always_on": bool(body[STATE_MODE_PARAMS + 1]),
     }
+
+
+# --- The 160W's port outputs -----------------------------------------------
+#
+# The 160W's app turns ports off one by one, which the 300W's does not. Its
+# owner turned off the built-in cable, then C1, then A, and exactly three bytes
+# of the state reply went from 01 to 00: 8, 15 and 22. They sit seven bytes
+# apart, one per group of the parameter block. C2 and A are one switch in the
+# app, and so one byte here.
+#
+# Read only. The app sets them with SET_PORT_CONTROL, whose payload nobody has
+# watched go out, and a guessed frame is not something to send a charger.
+PortGroup = tuple[str, tuple[str, ...], int]
+PORT_OUTPUTS_BY_MODEL: Final[dict[str, tuple[PortGroup, ...]]] = {
+    "X776": (
+        ("C-Cable", ("C-Cable",), 8),
+        ("C1", ("C1",), 15),
+        ("C2 & A", ("C2", "A"), 22),
+    ),
+}
+
+
+def port_output_groups(model: str | None) -> tuple[PortGroup, ...]:
+    """This model's port switches: a name, the ports it covers, its byte."""
+    return PORT_OUTPUTS_BY_MODEL.get(model or "", ())
+
+
+def parse_port_outputs(body: bytes, model: str | None = None) -> dict[str, bool] | None:
+    """Whether each of this model's port switches is on; None where it has none."""
+    groups = port_output_groups(model)
+    if "port_outputs" not in state_fields(model) or not groups:
+        return None
+    if len(body) <= max(offset for _, _, offset in groups):
+        return None
+    return {name: bool(body[offset]) for name, _, offset in groups}
 
 
 def crc16_modbus(data: bytes) -> int:

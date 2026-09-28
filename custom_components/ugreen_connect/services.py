@@ -18,13 +18,14 @@ import aiohttp
 import voluptuous as vol
 from homeassistant.const import CONF_DEVICE_ID
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN, WALLPAPER_SIZE
-from .coordinator import device_key
+from .coordinator import charger_keys, device_key
 from .logsafe import charger_tag
+from .protocol import state_writable
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -98,16 +99,24 @@ async def async_register(hass: HomeAssistant) -> None:
         if coordinator is None:
             raise HomeAssistantError("That device does not belong to UGREEN Connect")
 
-        key = next(
-            (i for domain, i in device.identifiers if domain == DOMAIN),
-            None,
-        )
+        key = next(iter(charger_keys(device.identifiers)), None)
         record = next(
             (d for d in coordinator.data.get("devices", []) if device_key(d) == key),
             None,
         )
         if record is None:
             raise HomeAssistantError("That charger is not in the account's device list")
+        # Putting a picture on the screen writes the screensaver group, which
+        # is only settable where it has been set and read back. On the 160W it
+        # is read and not written yet, and a frame shaped for the 300W is not
+        # something to try on it.
+        model = coordinator.model_for(key)
+        if not {"wallpaper", "screensaver"} <= state_writable(model):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="not_writable_on_model",
+                translation_placeholders={"model": model or "?"},
+            )
 
         if path := call.data.get(ATTR_PATH):
             if not hass.config.is_allowed_path(path):

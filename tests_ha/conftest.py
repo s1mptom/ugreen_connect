@@ -48,6 +48,36 @@ PRODUCT: dict[str, Any] = {
     "productKey": "a-product-key",
 }
 
+# A second charger on the same account, a 160W, for the tests about choosing
+# which to add. Its state is the one its owner logged in #2 after putting a new
+# picture on it, in Custom Power, every port switched on.
+SECOND_CODE = "FF7K0000000000002"
+SECOND_IOT_ID = "another-iot-id"
+SECOND: dict[str, Any] = {
+    "productSerialNo": "030007",
+    "deviceUniqueCode": SECOND_CODE,
+    "deviceName": "UGREEN Nexode Pro X776",
+    "deviceMac": "EC:1A:C3:00:00:02",
+    "deviceType": "smart_charger",
+    "extra": {"iotId": SECOND_IOT_ID, "networkStatus": 1, "onlineStatus": 1},
+}
+SECOND_PRODUCT: dict[str, Any] = {
+    "productNo": "X776",
+    "name": "UGREEN Nexode Pro 160W",
+    "productKey": "another-product-key",
+}
+SECOND_STATE: dict[str, Any] = {
+    "brightness": 8,
+    "sleep_time": 5,
+    "charging_mode": "custom",
+    "screensaver": True,
+    "screensaver_theme": 0,
+    "screensaver_flag": 1,
+    "wallpaper": "438EF2",
+    "wallpapers": ["3E7F82", "EA1A3B", "FC1C77", "438EF2"],
+    "port_outputs": {"C-Cable": True, "C1": True, "C2 & A": False},
+}
+
 # 0xFD is every box the app offers, ticked at once -- bit 1 is the one it has
 # nothing to put in.
 ALL_PROTOCOLS = [
@@ -114,11 +144,16 @@ X783_REPORT = (
     "aa06003f00330000000001003300000000010117000900fb010000000000000000000000"
     "00000000000000000000000000000000000000000000000000000500000000541b"
 )
+# And the 160W's, from its owner in #2: the built-in cable and C2 in use.
+X776_REPORT = (
+    "aa06002000c70005006301000000000000000035001f00a401"
+    "00000000000000050005005c4d"
+)
 
 
 def _reading(model: str | None) -> dict[str, Any]:
     """What the real client builds out of a report, names and all."""
-    ports = parse_power_frame(X783_REPORT, model)
+    ports = parse_power_frame(X776_REPORT if model == "X776" else X783_REPORT, model)
     assert ports is not None
     return {
         "ports": ports,
@@ -136,16 +171,20 @@ class FakeApi:
     def __init__(self) -> None:
         self.product_answers = True
         self.product_calls = 0
+        # What the account holds; a test adds SECOND to put two on it.
+        self.devices: list[dict[str, Any]] = [dict(DEVICE)]
 
     async def login(self, *_args: Any) -> None:
         return None
 
     async def get_devices(self) -> list[dict[str, Any]]:
-        return [dict(DEVICE)]
+        return [dict(device) for device in self.devices]
 
-    async def get_product_model(self, **_kwargs: Any) -> dict[str, Any] | None:
+    async def get_product_model(self, **kwargs: Any) -> dict[str, Any] | None:
         self.product_calls += 1
-        return dict(PRODUCT) if self.product_answers else None
+        if not self.product_answers:
+            return None
+        return dict(SECOND_PRODUCT if kwargs.get("serialNo") == "030007" else PRODUCT)
 
     async def get_wallpapers(self, *_args: Any) -> list[dict[str, Any]]:
         return []
@@ -176,16 +215,21 @@ class FakeRtcx:
         self.priority_writes: list[tuple[str, list[str], str | None]] = []
         self.turbo_writes: list[dict[str, Any]] = []
         self.state_reads = 0
+        # Which chargers were asked for a reading, in order: a charger that was
+        # not added must never appear here.
+        self.polled: list[str] = []
+        self.second_state: dict[str, Any] = dict(SECOND_STATE)
 
     async def async_login(self) -> None:
         return None
 
-    async def async_power(self, _iot_id: str, model: str | None = None) -> dict[str, Any] | None:
+    async def async_power(self, iot_id: str, model: str | None = None) -> dict[str, Any] | None:
+        self.polled.append(iot_id)
         return _reading(model) if self.power_answers else None
 
-    async def async_device_state(self, _iot_id: str, _model: str | None = None) -> dict[str, Any]:
+    async def async_device_state(self, iot_id: str, _model: str | None = None) -> dict[str, Any]:
         self.state_reads += 1
-        return dict(self.state)
+        return dict(self.second_state if iot_id == SECOND_IOT_ID else self.state)
 
     async def async_set_charging_mode(
         self, iot_id: str, mode: int, model: str | None = None

@@ -26,11 +26,19 @@
         "data": {
           "password": "Password"
         }
+      },
+      "chargers": {
+        "title": "Chargers on this account",
+        "description": "Tick the chargers to add. Each is read as its own model, which the account says, and the dashboard switches between them. The rest can be added later under Configure.",
+        "data": {
+          "chargers": "Chargers"
+        }
       }
     },
     "error": {
       "cannot_connect": "Could not reach the UGREEN cloud.",
-      "invalid_auth": "The account or password was rejected."
+      "invalid_auth": "The account or password was rejected.",
+      "no_charger": "Tick at least one charger."
     },
     "abort": {
       "already_configured": "This account is already set up.",
@@ -95,6 +103,15 @@
     "switch": {
       "screensaver": {
         "name": "Screensaver"
+      },
+      "priority_port": {
+        "name": "{port} charged first"
+      },
+      "dc_always_on": {
+        "name": "DC always on"
+      },
+      "port_output": {
+        "name": "{port} output"
       }
     },
     "update": {
@@ -141,6 +158,14 @@
         "name": "Wallpaper",
         "state": {
           "none": "None"
+        }
+      },
+      "dc_voltage": {
+        "name": "DC port voltage",
+        "state": {
+          "12": "12 V",
+          "15": "15 V",
+          "20": "20 V"
         }
       }
     },
@@ -189,7 +214,8 @@
           "debug_dump": "Write a raw cloud snapshot to the config folder",
           "nominal_voltage": "Battery voltage",
           "efficiency": "Charging efficiency",
-          "session_idle_end": "Session ends after"
+          "session_idle_end": "Session ends after",
+          "chargers": "Chargers"
         },
         "data_description": {
           "scan_interval": "How often a reading arrives. Measured start to start, so the wait for the charger to answer comes out of this rather than being added to it. 5 s keeps the wattage live; raise it to lean less on UGREEN's servers.",
@@ -197,13 +223,15 @@
           "debug_dump": "Saves ugreen_connect_debug.json on every refresh. It is the unedited cloud payload.",
           "nominal_voltage": "Used only to read a session's watt-hours back as milliamp-hours. 3.85 V is the nominal cell voltage of phones, earbuds and handhelds; a laptop's pack is far higher, and its milliamp-hour figure means nothing until this matches it.",
           "efficiency": "How much of what leaves the port reaches the cell. The rest becomes heat in the cable and the device's own converter.",
-          "session_idle_end": "How long a port must deliver nothing before its charging session is called finished and the next one may start. The charger keeps a port live for a bare cable, so this is the only thing that can end a session. Long enough that a phone topping itself up at 100% stays one session; shorter if you swap devices on the same cable within a couple of hours."
+          "session_idle_end": "How long a port must deliver nothing before its charging session is called finished and the next one may start. The charger keeps a port live for a bare cable, so this is the only thing that can end a session. Long enough that a phone topping itself up at 100% stays one session; shorter if you swap devices on the same cable within a couple of hours.",
+          "chargers": "The chargers on this account that Home Assistant polls and shows. Unticking one removes its device and entities; ticking it again brings them back."
         }
       }
     },
     "error": {
       "cannot_connect": "Could not reach the UGREEN cloud.",
-      "invalid_auth": "The account or password was rejected in that region."
+      "invalid_auth": "The account or password was rejected in that region.",
+      "no_charger": "Tick at least one charger."
     }
   },
   "exceptions": {
@@ -212,6 +240,24 @@
     },
     "mode_not_selectable": {
       "message": "Custom can only be set in the UgreenConnect app. Home Assistant sets the presets; the Custom mode is configured and chosen in the app's own editor."
+    },
+    "priority_not_running": {
+      "message": "The charger is not in Priority, so which ports it charges first cannot be set. Choose Priority first."
+    },
+    "priority_needs_a_port": {
+      "message": "At least one port has to be charged first in Priority. Turn another one on before turning this one off."
+    },
+    "dc_turbo_not_running": {
+      "message": "The charger is not in DC turbo, so the DC port's settings cannot be changed. Choose DC turbo first."
+    },
+    "port_output_app_only": {
+      "message": "The 160W's ports are switched on and off in the UGREEN app for now. Home Assistant shows them but does not set them yet."
+    }
+  },
+  "issues": {
+    "new_charger": {
+      "title": "A new charger is on your UGREEN account",
+      "description": "{names} is on your UGREEN account but not in Home Assistant yet. To add it, open Settings → Devices & Services → UGREEN Connect → Configure and tick it. Saving without it makes this message go away."
     }
   }
 }

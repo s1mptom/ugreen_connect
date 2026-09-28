@@ -13,13 +13,16 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from . import logsafe
 from .api import UgreenApi, UgreenAuthError, UgreenError
 from .const import (
+    CONF_CHARGERS,
     CONF_IDLE_END,
+    CONF_OFFERED,
     DEBUG_DUMP_FILE,
     DEFAULT_IDLE_END,
     DEFAULT_SCAN_INTERVAL,
@@ -124,6 +127,9 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._mode_turns: dict[str, asyncio.Lock] = {}
         # How each charger is named in the log: its tag, never its unit code.
         self._tags: dict[str, str] = {}
+        # Every charger on the account, added or not, as the device list gave
+        # it last. The options form offers these.
+        self.account_devices: list[dict[str, Any]] = []
 
     async def _async_update_data(self) -> dict[str, Any]:
         started = time.monotonic()
@@ -169,7 +175,8 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(str(err)) from err
 
         # Every charger's own identifiers, the moment they are known, so no
-        # line from here on carries them (see logsafe).
+        # line from here on carries them (see logsafe) -- the ones left out
+        # included, whose ids are in the same list.
         for device in devices:
             key = device_key(device)
             tag = logsafe.remember_charger(
@@ -177,6 +184,12 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             if key and tag:
                 self._tags[key] = tag
+
+        # The whole account, for the options form to offer; then only the
+        # chargers that were added, so the rest are never asked anything and
+        # get no entities.
+        self.account_devices = [d for d in devices if device_key(d)]
+        devices = self._added(self.account_devices)
 
         # Product metadata rarely changes, so it is fetched once and kept --
         # but only once it has actually arrived. An empty answer used to be
@@ -357,6 +370,37 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     retained[0].update(settled)
 
         return data
+
+    def _added(self, devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """The chargers this entry was set up with, and word of any new one.
+
+        One bound to the account after the choice was made is not added by
+        itself -- adding it is the owner's call, as it was for the rest -- but
+        it is not kept quiet either: a repair issue says it is there and where
+        to add it, and goes once it is added or the choice is saved without it.
+        """
+        options = self.config_entry.options
+        added = options.get(CONF_CHARGERS)
+        if added is None:
+            return devices
+        offered = set(options.get(CONF_OFFERED, added))
+        new = [d for d in devices if device_key(d) not in offered]
+        issue = f"new_charger_{self.config_entry.entry_id}"
+        if new:
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="new_charger",
+                translation_placeholders={
+                    "names": ", ".join(d.get("deviceName") or "UGREEN" for d in new)
+                },
+            )
+        else:
+            ir.async_delete_issue(self.hass, DOMAIN, issue)
+        return [d for d in devices if device_key(d) in added]
 
     def _tag(self, key: str) -> str:
         """This charger as the log names it."""
@@ -654,6 +698,11 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.warning("Could not write %s: %s", path, err)
         else:
             _LOGGER.info("Wrote raw UGREEN cloud snapshot to %s", path)
+
+
+def charger_keys(identifiers: set[tuple[str, str]]) -> set[str]:
+    """The charger keys in a Home Assistant device's identifiers."""
+    return {key for domain, key in identifiers if domain == DOMAIN}
 
 
 def device_key(device: dict[str, Any]) -> str | None:
