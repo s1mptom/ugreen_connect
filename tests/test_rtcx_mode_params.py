@@ -10,6 +10,7 @@ byte was overwritten.
 """
 
 import asyncio
+import logging
 
 import pytest
 from conftest import rtcx as rtcx_module
@@ -474,3 +475,193 @@ def test_dc_turbo_is_not_written_to_an_unmeasured_model():
         with pytest.raises(rtcx_module.UgreenError):
             asyncio.run(c.client.async_set_dc_turbo(IOT, unknown, voltage=12))
     assert c.sent == []
+
+
+# --- the record of state changes ---------------------------------------------
+#
+# What someone mapping a charger nobody here has sends back: change one setting
+# in the app, and the byte that moved is the answer.
+
+
+def _counting(replies: dict[str, str]):
+    """A client that also counts how often it asked the charger anything."""
+    c = _Client(replies)
+    c.asked = 0
+    ask = c.client._ask
+
+    async def _ask(*args, **kwargs):
+        c.asked += 1
+        return await ask(*args, **kwargs)
+
+    c.client._ask = _ask
+    return c
+
+
+def test_the_first_reply_is_written_down_whole():
+    c = _Client({IOT: STATE_PRIORITY})
+    c.read()
+    (entry,) = c.client.state_changes[IOT]
+    assert entry["moved"] is None
+    assert entry["model"] == "X783"
+    assert entry["mode"] == "priority"
+    body = rtcx_module.frame_body(STATE_PRIORITY, rtcx_module.FRAME_QUERY, 1)
+    assert entry["body"] == body.hex()
+    assert entry["length"] == len(body)
+
+
+def test_the_same_reply_again_is_not_a_change():
+    c = _Client({IOT: STATE_PRIORITY})
+    c.read()
+    c.read()
+    assert len(c.client.state_changes[IOT]) == 1
+
+
+def test_a_change_says_which_bytes_moved():
+    """Byte 5 is the priority mask: C2 alone, then C1 with C3."""
+    c = _Client({IOT: STATE_PRIORITY})
+    c.read()
+    c.replies[IOT] = _priority_reply(0b101)
+    c.read()
+    assert c.client.state_changes[IOT][-1]["moved"] == [[5, "02", "05"]]
+
+
+def test_a_reply_that_grows_says_so_byte_by_byte():
+    """The 160W's reply grew by six bytes when a picture was added."""
+    body = bytearray(rtcx_module.frame_body(STATE_PRIORITY, rtcx_module.FRAME_QUERY, 1))
+    longer = rtcx_module.build_frame(rtcx_module.FRAME_QUERY, 1, bytes(body) + b"ABCDEF")
+    c = _Client({IOT: STATE_PRIORITY})
+    c.read()
+    c.replies[IOT] = longer
+    c.read()
+    moved = c.client.state_changes[IOT][-1]["moved"]
+    assert moved == [[len(body) + i, None, f"{ch:02x}"] for i, ch in enumerate(b"ABCDEF")]
+
+
+def test_the_debug_log_says_the_change_and_not_whose_charger(caplog):
+    """The log is downloaded and posted in public, like the diagnostics."""
+    caplog.set_level(logging.DEBUG, logger=rtcx_module.__name__)
+    c = _Client({IOT: STATE_PRIORITY})
+    c.read()
+    c.replies[IOT] = _priority_reply(0b100)
+    c.read()
+    assert "byte 5 02>04" in caplog.text
+    assert rtcx_module.charger_tag(IOT) in caplog.text
+    assert IOT not in caplog.text
+
+
+def test_without_debug_logging_nothing_is_said(caplog):
+    caplog.set_level(logging.INFO, logger=rtcx_module.__name__)
+    c = _Client({IOT: STATE_PRIORITY})
+    c.read()
+    c.replies[IOT] = _priority_reply(0b100)
+    c.read()
+    assert "byte 5" not in caplog.text
+    assert len(c.client.state_changes[IOT]) == 2, "the record is kept either way"
+
+
+def test_a_charger_nobody_has_mapped_is_asked_only_while_debug_logging(caplog):
+    """Read for the record and nothing else: no state comes back from it."""
+    caplog.set_level(logging.INFO, logger=rtcx_module.__name__)
+    c = _counting({IOT: STATE_PRIORITY})
+    assert c.read(model="X999") is None
+    assert c.asked == 0
+
+    caplog.set_level(logging.DEBUG, logger=rtcx_module.__name__)
+    assert c.read(model="X999") is None
+    assert c.asked == 1
+    assert c.client.state_changes[IOT][-1]["model"] == "X999"
+
+
+def test_the_record_is_a_session_long_not_a_history():
+    c = _Client({IOT: STATE_PRIORITY})
+    for mask in range(1, rtcx_module.STATE_CHANGES_KEPT + 10):
+        c.replies[IOT] = _priority_reply(mask % 256)
+        c.read()
+    assert len(c.client.state_changes[IOT]) == rtcx_module.STATE_CHANGES_KEPT
+
+
+def test_a_power_report_is_logged_when_it_changes(caplog):
+    caplog.set_level(logging.DEBUG, logger=rtcx_module.__name__)
+    c = _Client()
+    frame = "aa06002000c70005006301000000000000000035001f00a40100000000000000050005005c4d"
+    c.client._note_power(IOT, "X776", frame)
+    c.client._note_power(IOT, "X776", frame)
+    assert caplog.text.count("power report of X776") == 1
+    assert IOT not in caplog.text
+
+
+
+def test_a_wi_fi_name_is_read_as_utf8_and_hidden_from_then_on():
+    """A network can be named in any script, and it is the household's own."""
+    from conftest import logsafe
+
+    name = "Дом_WiFi_5G"
+    frame = rtcx_module.build_frame(
+        rtcx_module.FRAME_QUERY, rtcx_module.QUERY_GET_WIFI_SSID, name.encode()
+    )
+    logsafe._known.clear()
+    logsafe._compiled = None
+    try:
+        c = _Client({IOT: frame})
+        text = asyncio.run(c.client.async_text_query(IOT, rtcx_module.QUERY_GET_WIFI_SSID))
+        assert text == name
+        assert logsafe.scrub(f"joined {name}; frame {frame}") == (
+            f"joined <wifi>; frame {frame[:8]}<wifi>{frame[8 + 2 * len(name.encode()):]}"
+        )
+    finally:
+        logsafe._known.clear()
+        logsafe._compiled = None
+
+
+
+def test_a_wi_fi_name_that_is_not_utf8_is_hidden_as_its_bytes():
+    from conftest import logsafe
+
+    raw = b"\xff\xfeNet\x80"
+    frame = rtcx_module.build_frame(rtcx_module.FRAME_QUERY, rtcx_module.QUERY_GET_WIFI_SSID, raw)
+    logsafe._known.clear()
+    logsafe._compiled = None
+    try:
+        c = _Client({IOT: frame})
+        asyncio.run(c.client.async_text_query(IOT, rtcx_module.QUERY_GET_WIFI_SSID))
+        assert raw.hex() not in logsafe.scrub(frame.lower())
+    finally:
+        logsafe._known.clear()
+        logsafe._compiled = None
+
+
+def test_the_bytes_of_an_identifier_are_not_listed_one_by_one(caplog):
+    """A MAC inside a body, spread over the list of what moved, is the MAC."""
+    from conftest import logsafe
+
+    mac = "EC:1A:C3:00:00:01"
+    logsafe._known.clear()
+    logsafe._compiled = None
+    try:
+        logsafe.remember_charger(IOT, "FF7J0000000000001", mac)
+        caplog.set_level(logging.DEBUG, logger=rtcx_module.__name__)
+        c = _Client()
+        c.client._note_state(IOT, "X999", bytes.fromhex("0004000000000000ff"))
+        c.client._note_state(IOT, "X999", bytes.fromhex("0004ec1ac3000001ff"))
+        moved = c.client.state_changes[IOT][-1]["moved"]
+    finally:
+        logsafe._known.clear()
+        logsafe._compiled = None
+    assert moved == [[2, "??", "??"], [3, "??", "??"], [4, "??", "??"], [7, "??", "??"]]
+    for byte in ("ec", "1a", "c3"):
+        assert f">{byte}" not in caplog.text
+
+
+def test_a_gateway_network_error_does_not_carry_aiohttp_s_own_along(monkeypatch):
+    """aiohttp's message is the URL; Home Assistant would print it under the error."""
+    import aiohttp
+
+    class _Session:
+        def post(self, url, **_kwargs):
+            raise aiohttp.InvalidURL(url + "?secret=1")
+
+    client = rtcx_module.RtcxClient(_Session(), _Api())
+    client._app = {"appKey": "k", "appSecret": "s", "appGatewayDomain": "gw.example"}
+    with pytest.raises(rtcx_module.UgreenError) as err:
+        asyncio.run(client._call("/thing/properties/get", {}))
+    assert err.value.__cause__ is None and err.value.__suppress_context__

@@ -14,6 +14,7 @@ import io
 import logging
 import time
 
+import aiohttp
 import voluptuous as vol
 from homeassistant.const import CONF_DEVICE_ID
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -23,6 +24,7 @@ from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN, WALLPAPER_SIZE
 from .coordinator import device_key
+from .logsafe import charger_tag
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -109,7 +111,8 @@ async def async_register(hass: HomeAssistant) -> None:
 
         if path := call.data.get(ATTR_PATH):
             if not hass.config.is_allowed_path(path):
-                raise HomeAssistantError(f"{path} is outside allowlist_external_dirs")
+                # Not the path: it is the owner's own, and errors are logged.
+                raise HomeAssistantError("that path is outside allowlist_external_dirs")
             raw = await hass.async_add_executor_job(_read, path)
         elif url := call.data.get(ATTR_URL):
             raw = await _fetch(hass, url)
@@ -164,7 +167,9 @@ async def async_register(hass: HomeAssistant) -> None:
             reading.get("screensaver_flag", 0),
             wallpaper_id,
         )
-        _LOGGER.info("Wallpaper %s is now on %s", wallpaper_id, device.name)
+        # The tag rather than the device's name, which its owner may have
+        # given their own name to.
+        _LOGGER.info("Wallpaper %s is now on charger %s", wallpaper_id, charger_tag(iot_id))
         await coordinator.async_request_refresh()
 
     hass.services.async_register(DOMAIN, SERVICE_SET_WALLPAPER, _handle, schema=SCHEMA)
@@ -179,8 +184,14 @@ def _decode(encoded: str) -> bytes:
 
 
 def _read(path: str) -> bytes:
-    with open(path, "rb") as handle:
-        return handle.read()
+    try:
+        with open(path, "rb") as handle:
+            return handle.read()
+    except OSError as err:
+        # Not chained: the original names the path, which is the owner's own.
+        raise HomeAssistantError(
+            f"Could not read the picture: {err.strerror or type(err).__name__}"
+        ) from None
 
 
 async def _fetch(hass: HomeAssistant, url: str) -> bytes:
@@ -188,7 +199,12 @@ async def _fetch(hass: HomeAssistant, url: str) -> bytes:
         async_get_clientsession,
     )
 
-    async with async_get_clientsession(hass).get(url, timeout=30) as resp:
-        if resp.status != 200:
-            raise HomeAssistantError(f"Could not fetch {url}: HTTP {resp.status}")
-        return await resp.read()
+    # Never the URL, which can carry a token of its own -- and aiohttp puts it
+    # in the message of every error it raises, so those are not chained.
+    try:
+        async with async_get_clientsession(hass).get(url, timeout=30) as resp:
+            if resp.status != 200:
+                raise HomeAssistantError(f"Could not fetch the picture: HTTP {resp.status}")
+            return await resp.read()
+    except (aiohttp.ClientError, TimeoutError) as err:
+        raise HomeAssistantError(f"Could not fetch the picture: {type(err).__name__}") from None

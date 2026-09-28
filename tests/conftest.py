@@ -51,6 +51,8 @@ const = _load(f"{_PKG}.const", "const.py")
 # it as ``.protocol`` and two copies of it under different names would let a test
 # assert against constants the code under test is not using.
 protocol = _load(f"{_PKG}.protocol", "protocol.py", package=_PKG)
+# ``logsafe`` too: ``rtcx`` names chargers with its tag, and it needs nothing.
+logsafe = _load(f"{_PKG}.logsafe", "logsafe.py", package=_PKG)
 
 # It does need aiohttp and cryptography, which the other two do not. Where they
 # are absent the module is simply not loaded and the tests over it skip, so the

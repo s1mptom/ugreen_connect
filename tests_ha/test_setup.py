@@ -8,6 +8,7 @@ when they were written and neither had ever been run.
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from types import SimpleNamespace
 
@@ -682,6 +683,204 @@ async def test_outside_dc_turbo_the_dc_settings_write_nothing(hass, started, rtc
     )
     assert rtcx.turbo_writes == []
     assert hass.states.get(DC_VOLTAGE).state == STATE_UNAVAILABLE
+
+
+async def test_the_debug_log_carries_nothing_of_the_household(hass, started, rtcx, caplog):
+    """What people mapping a charger are asked to post.
+
+    Debug logging on, a poll, a write, and a failure whose message the cloud
+    wrote -- with the charger's unit code in it, which no line here would put
+    there on purpose. None of the account, the unit code, the cloud id or the
+    MAC may come out.
+    """
+    from custom_components.ugreen_connect.api import UgreenError
+    from custom_components.ugreen_connect.logsafe import charger_tag
+
+    caplog.set_level(logging.DEBUG, logger="custom_components.ugreen_connect")
+    await started.runtime_data.async_refresh()
+    await hass.services.async_call(
+        "select", "select_option", {"entity_id": CHARGING_MODE_SELECT, "option": "thermal_safe"},
+        blocking=True,
+    )
+
+    # Every identifier at once, in words the cloud wrote: no line here would put
+    # them there, so only the net under the lines can take them out.
+    async def _fails(*_args, **_kwargs):
+        raise UgreenError(
+            f"gateway refused {DEVICE_CODE} ({IOT_ID}) at EC:1A:C3:00:00:01 "
+            "for someone@example.invalid"
+        )
+
+    rtcx.async_power = _fails
+    await started.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    text = caplog.text
+    assert "Live power unavailable" in text, "the failure has to have been logged"
+    for secret in (DEVICE_CODE, IOT_ID, "EC:1A:C3:00:00:01", "someone@example.invalid"):
+        assert secret not in text, f"{secret} is in the log"
+    assert charger_tag(IOT_ID) in text, "a line still says which charger"
+
+
+async def test_the_setup_form_hides_the_account_before_it_tries_it(hass, caplog, monkeypatch):
+    """The first attempt is logged before any entry exists to learn it from.
+
+    The cloud's answer to a failed login is logged at debug, and nothing stops
+    the cloud from saying the address back.
+    """
+    import logging as logging_
+
+    from custom_components.ugreen_connect import config_flow, logsafe
+    from custom_components.ugreen_connect.api import UgreenError
+
+    email, password = "new.owner@example.invalid", "correct-horse-battery-9"
+
+    class _Api:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def login(self, *_args, **_kwargs):
+            # Both, as the cloud might say them back.
+            raise UgreenError(f"no account for {email} with {password}")
+
+    # As on a fresh start: nothing installed until the form is filled in.
+    make, scope = logging_.getLogRecordFactory(), logsafe._scope
+    logsafe._scope = None
+    monkeypatch.setattr(config_flow, "UgreenApi", _Api)
+    caplog.set_level(logging.DEBUG, logger="custom_components.ugreen_connect")
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"email": email, "password": password, "region": "europe"}
+    )
+    try:
+        assert result["errors"] == {"base": "cannot_connect"}
+        assert "Cannot connect to UGREEN cloud" in caplog.text
+        assert email not in caplog.text
+        assert password not in caplog.text
+        assert logsafe._scope == "custom_components.ugreen_connect", "the form installs it"
+    finally:
+        logging_.setLogRecordFactory(make)
+        logsafe._scope = scope
+
+
+async def test_a_new_password_is_hidden_before_it_is_tried(hass, entry, caplog, monkeypatch):
+    """Re-authenticating, the new password goes to the cloud before any entry
+    has it -- and a refusal is logged at debug."""
+    from custom_components.ugreen_connect import config_flow
+    from custom_components.ugreen_connect.api import UgreenError
+
+    password = "a-brand-new-password-7"
+
+    class _Api:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def login(self, *_args, **_kwargs):
+            raise UgreenError(f"refused {password}")
+
+    monkeypatch.setattr(config_flow, "UgreenApi", _Api)
+    entry.add_to_hass(hass)
+    caplog.set_level(logging.DEBUG, logger="custom_components.ugreen_connect")
+    result = await entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"password": password}
+    )
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert password not in caplog.text
+    from custom_components.ugreen_connect import logsafe
+
+    assert logsafe.scrub(password) == "<password>"
+
+
+async def test_a_stored_block_under_a_bare_cloud_id_is_still_hidden(
+    hass, entry, api, rtcx, hass_storage
+):
+    """A key with no colon in the mode store is a cloud id whole."""
+    from unittest.mock import patch
+
+    from custom_components.ugreen_connect import logsafe
+
+    bare = "JuSTiZWwzabFoehKLgWT8Uoju"
+    params_key = f"{DOMAIN}.mode_params.{entry.entry_id}"
+    hass_storage[params_key] = {
+        "version": 1, "minor_version": 1, "key": params_key, "data": {bare: "00" * 35},
+    }
+    entry.add_to_hass(hass)
+    with (
+        patch("custom_components.ugreen_connect.async_get_clientsession"),
+        patch("custom_components.ugreen_connect.UgreenApi", return_value=api),
+        patch("custom_components.ugreen_connect.RtcxClient", return_value=rtcx),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    assert logsafe.scrub(bare) == f"charger {logsafe.charger_tag(bare)}"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("path", "/config/www/pavels-family.jpg"), ("url", "https://cdn.example/me.jpg?Signature=abc")],
+)
+async def test_the_wallpaper_service_does_not_say_what_it_was_given(
+    hass, started, monkeypatch, field, value
+):
+    """A path and a URL are the owner's own, and a URL can carry a token."""
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.ugreen_connect import services
+
+    monkeypatch.setattr(hass.config, "is_allowed_path", lambda _path: True)
+
+    class _Session:
+        def get(self, *_args, **_kwargs):
+            raise services.aiohttp.InvalidURL(value)
+
+    monkeypatch.setattr(
+        "homeassistant.helpers.aiohttp_client.async_get_clientsession", lambda _hass: _Session()
+    )
+    device = next(
+        d
+        for d in dr.async_entries_for_config_entry(dr.async_get(hass), started.entry_id)
+        if (DOMAIN, DEVICE_CODE) in d.identifiers
+    )
+    with pytest.raises(HomeAssistantError) as err:
+        await hass.services.async_call(
+            DOMAIN, "set_wallpaper", {"device_id": device.id, field: value}, blocking=True
+        )
+    assert value not in str(err.value)
+    assert err.value.__cause__ is None and err.value.__suppress_context__
+
+
+async def test_idle_the_poll_slows_but_not_while_debug_logging(hass, started, caplog):
+    """Mapping a setting is done with nothing plugged in, a few seconds apart."""
+    coordinator = started.runtime_data
+    coordinator._drawing = False
+    # Said outright: asking for `caplog` puts the root logger at DEBUG here.
+    caplog.set_level(logging.INFO, logger="custom_components.ugreen_connect")
+    coordinator._reschedule(0)
+    slow = coordinator.update_interval
+    caplog.set_level(logging.DEBUG, logger="custom_components.ugreen_connect")
+    coordinator._reschedule(0)
+    assert coordinator.update_interval < slow
+    assert coordinator.update_interval.total_seconds() == coordinator._target_period
+
+
+async def test_the_state_is_read_once_a_minute(hass, started, rtcx):
+    before = rtcx.state_reads
+    for _ in range(3):
+        await started.runtime_data.async_refresh()
+    assert rtcx.state_reads == before
+
+
+async def test_while_debug_logging_the_state_is_read_every_poll(hass, started, rtcx, caplog):
+    """Somebody mapping their charger changes one setting in the app at a time.
+
+    A minute between reads would put several of those into one diff.
+    """
+    caplog.set_level(logging.DEBUG, logger="custom_components.ugreen_connect")
+    before = rtcx.state_reads
+    for _ in range(3):
+        await started.runtime_data.async_refresh()
+    assert rtcx.state_reads == before + 3
 
 
 @pytest.mark.parametrize(

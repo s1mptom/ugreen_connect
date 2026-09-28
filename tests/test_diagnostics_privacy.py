@@ -82,11 +82,12 @@ def _module():
     coordinator.device_key = device_key
     sys.modules["ugc.coordinator"] = coordinator
 
-    for stem in ("protocol", "diagnostics"):
+    for stem in ("logsafe", "protocol", "diagnostics"):
         source = (_COMPONENT / f"{stem}.py").read_text()
         module = types.ModuleType(f"ugc.{stem}")
         module.__package__ = "ugc"
         sys.modules[f"ugc.{stem}"] = module
+        setattr(package, stem, module)
         exec(compile(source, f"{stem}.py", "exec"), module.__dict__)
     return sys.modules["ugc.diagnostics"]
 
@@ -98,6 +99,9 @@ MAC = "AA:BB:CC:DD:EE:FF"
 UNIT = "FF7H0039306100089"
 IOT_ID = "JuSTiZWwzabFoehKLgWT8UojudBS3LQjz7YOnQvH"
 SSID = "PavelHomeWiFi"
+OWNERS_NAME = "Pavel's desk charger"
+SIGNED_URL = "https://cdn.example/u/12345/me.jpg?Signature=abc&Expires=1"
+PHOTO_NAME = "IMG_2024_family.jpg"
 EMAIL = "someone@example.com"
 PASSWORD = "hunter2"
 SSID_FRAME = "AA0800" + b"MyWifi123".hex().upper()
@@ -112,7 +116,8 @@ def _payload():
                 # Despite the name this is the *model* code, not the unit's, and
                 # it is the one identifier a report is useless without.
                 "productSerialNo": "030002",
-                "deviceName": "UGREEN Nexode Pro X783",
+                "deviceName": OWNERS_NAME,
+                "roomName": "Pavel's study",
                 "deviceMac": MAC,
                 "extra": {"iotId": IOT_ID, "onlineStatus": 1},
             }
@@ -124,10 +129,30 @@ def _payload():
                 "ssid": SSID,
                 "firmware": "1.2.1",
                 "ports": {"C3": {"voltage": 27.9, "current": 1.4, "power": 39.0}},
+                "wallpaper_list": [
+                    {
+                        "id": "5D7BEC",
+                        "url": SIGNED_URL,
+                        "name": PHOTO_NAME,
+                        "size": 81234,
+                        "stock": False,
+                    }
+                ],
             }
         },
         "power_errors": {},
     }
+
+
+# One entry of the state record, as the client writes it: no ids in it.
+CHANGE = {
+    "at": "2026-09-27T20:00:00+00:00",
+    "model": "X783",
+    "length": 74,
+    "mode": "priority",
+    "moved": [[5, "02", "03"]],
+    "body": "0037640103030000",
+}
 
 
 def _download(payload=None, frames=None):
@@ -144,7 +169,8 @@ def _download(payload=None, frames=None):
             }
             if frames is None
             else frames
-        }
+        },
+        state_changes={IOT_ID: [CHANGE]},
     )
     entry = types.SimpleNamespace(
         runtime_data=types.SimpleNamespace(data=payload, rtcx=rtcx),
@@ -162,6 +188,10 @@ def _download(payload=None, frames=None):
         ("its cloud id", IOT_ID),
         ("its unit code", UNIT),
         ("the household's network name", SSID),
+        ("the name the owner gave the charger", OWNERS_NAME),
+        ("a field nobody has looked at", "Pavel's study"),
+        ("the signed link to the owner's photo", SIGNED_URL),
+        ("the photo's file name", PHOTO_NAME),
     ],
 )
 def test_nothing_identifying_travels(what, value):
@@ -227,7 +257,8 @@ def test_a_second_charger_does_not_get_the_first_one_s_frames():
         last_frames={
             IOT_ID: {"AA/6": "AA06003F0033"},
             second_iot: {"AA/6": "AA0600200C7"},
-        }
+        },
+        state_changes={second_iot: [{**CHANGE, "model": "X776"}]},
     )
     entry = types.SimpleNamespace(
         runtime_data=types.SimpleNamespace(data=payload, rtcx=rtcx),
@@ -238,6 +269,16 @@ def test_a_second_charger_does_not_get_the_first_one_s_frames():
     assert frames["device_0"]["AA/6"] == "AA06003F0033"
     assert frames["device_1"]["AA/6"] == "AA0600200C7"
 
+    # And the state record the same way: the 160W's mapping session under the
+    # 160W, and nothing under the charger that was not being mapped.
+    changes = asyncio.run(module.async_get_config_entry_diagnostics(None, entry))["state_changes"]
+    assert changes == {"device_0": [], "device_1": [{**CHANGE, "model": "X776"}]}
+
+
+def test_the_state_record_travels_with_the_file():
+    """What an owner mapping a setting sends back, so it has to be in there."""
+    assert asyncio.run(_download())["state_changes"] == {"device_0": [CHANGE]}
+
 
 def test_the_coordinator_s_own_payload_is_not_mutated():
     """The download is a copy; redacting in place would blank the running data."""
@@ -246,3 +287,63 @@ def test_the_coordinator_s_own_payload_is_not_mutated():
 
     assert payload["power"][UNIT]["ssid"] == SSID
     assert payload["devices"][0]["deviceMac"] == MAC
+
+
+def test_a_device_keeps_the_model_and_the_names_of_the_rest():
+    device = asyncio.run(_download())["data"]["devices"][0]
+    assert device["productSerialNo"] == "030002"
+    assert device["extra"] == {"onlineStatus": 1}
+    assert "deviceName" in device["other_fields"], "a new field is still noticed"
+    assert "roomName" in device["other_fields"]
+
+
+def test_a_picture_keeps_its_id_and_loses_its_link():
+    (picture,) = asyncio.run(_download())["data"]["power"]["device_0"]["wallpaper_list"]
+    assert picture == {"id": "5D7BEC", "size": 81234, "stock": False}
+
+
+def test_what_logsafe_knows_is_gone_from_every_string_in_the_file():
+    """A charger nobody has mapped is read while debug logging is on, and its
+    state bodies travel as they came -- with its MAC inside them, if it keeps
+    one there. The bytes are as good as the MAC itself."""
+    module = _module()
+    logsafe = module.logsafe
+    logsafe._known.clear()
+    logsafe._compiled = None
+    try:
+        logsafe.remember_charger(IOT_ID, UNIT, MAC)
+        mac_bytes = MAC.replace(":", "").lower()
+        payload = _payload()
+        rtcx = types.SimpleNamespace(
+            last_frames={IOT_ID: {"AA/1": "aa01000b00" + mac_bytes + "ffff"}},
+            state_changes={IOT_ID: [{**CHANGE, "body": "0004" + mac_bytes}]},
+        )
+        # A key can be an identifier too, in a section nobody thought to rename.
+        payload["power"][UNIT]["neighbours"] = {MAC: -61}
+        entry = types.SimpleNamespace(
+            runtime_data=types.SimpleNamespace(data=payload, rtcx=rtcx),
+            data={"email": EMAIL, "password": PASSWORD, "region": "europe"},
+        )
+        text = json.dumps(asyncio.run(module.async_get_config_entry_diagnostics(None, entry)))
+    finally:
+        logsafe._known.clear()
+        logsafe._compiled = None
+    assert mac_bytes not in text.lower()
+    assert "0004<mac>" in text
+    assert MAC not in text and '"<mac>": -61' in text
+
+
+def test_two_keys_that_clean_alike_both_stay():
+    """Two chargers' MACs both become `<mac>`, and neither may replace the other."""
+    module = _module()
+    logsafe = module.logsafe
+    logsafe._known.clear()
+    logsafe._compiled = None
+    try:
+        logsafe.remember_charger("first-iot-id", "FIRSTUNIT0001", "AA:AA:AA:AA:AA:01")
+        logsafe.remember_charger("second-iot-id", "SECONDUNIT002", "AA:AA:AA:AA:AA:02")
+        out = module._scrubbed({"AA:AA:AA:AA:AA:01": -61, "AA:AA:AA:AA:AA:02": -70})
+    finally:
+        logsafe._known.clear()
+        logsafe._compiled = None
+    assert out == {"<mac>": -61, "<mac> (2)": -70}

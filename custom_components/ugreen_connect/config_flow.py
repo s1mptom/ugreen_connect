@@ -28,6 +28,7 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
+from . import logsafe
 from .api import UgreenApi, UgreenAuthError, UgreenError
 from .const import (
     CONF_DEBUG_DUMP,
@@ -153,6 +154,10 @@ class UgreenConnectConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             email = user_input[CONF_EMAIL].strip()
+            # Before anything can be logged about the attempt (see logsafe).
+            logsafe.install(__package__)
+            logsafe.remember(email, "<account>")
+            logsafe.remember(user_input[CONF_PASSWORD], "<password>")
             region = user_input[CONF_REGION]
             api = UgreenApi(
                 async_get_clientsession(self.hass), REGIONS[region], DEFAULT_LANGUAGE
@@ -206,6 +211,8 @@ class UgreenConnectConfigFlow(ConfigFlow, domain=DOMAIN):
         entry = self._get_reauth_entry()
 
         if user_input is not None:
+            # The new password, before the cloud can say it back (see logsafe).
+            logsafe.remember(user_input[CONF_PASSWORD], "<password>")
             region = entry.data[CONF_REGION]
             api = UgreenApi(
                 async_get_clientsession(self.hass), REGIONS[region], DEFAULT_LANGUAGE

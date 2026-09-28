@@ -16,6 +16,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from . import logsafe
 from .api import UgreenApi, UgreenAuthError, UgreenError
 from .const import (
     CONF_IDLE_END,
@@ -121,6 +122,8 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Always On toggle together would leave only one of them. In turn, each
         # starts from what the one before it read back.
         self._mode_turns: dict[str, asyncio.Lock] = {}
+        # How each charger is named in the log: its tag, never its unit code.
+        self._tags: dict[str, str] = {}
 
     async def _async_update_data(self) -> dict[str, Any]:
         started = time.monotonic()
@@ -144,7 +147,11 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         which is the one way this could make things worse rather than better.
         """
         period = self._target_period
-        if not self._drawing:
+        # Idle, the rate drops -- but not while debug logging is on: somebody
+        # mapping a setting changes one in the app every few seconds, usually
+        # with nothing plugged in, and a poll every half minute would put
+        # several changes into one diff.
+        if not self._drawing and not _LOGGER.isEnabledFor(logging.DEBUG):
             period = min(period * IDLE_SCAN_FACTOR, IDLE_SCAN_MAX)
             # ...unless the owner already asked for something slower.
             period = max(period, self._target_period)
@@ -160,6 +167,16 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise ConfigEntryAuthFailed(str(err)) from err
         except UgreenError as err:
             raise UpdateFailed(str(err)) from err
+
+        # Every charger's own identifiers, the moment they are known, so no
+        # line from here on carries them (see logsafe).
+        for device in devices:
+            key = device_key(device)
+            tag = logsafe.remember_charger(
+                (device.get("extra") or {}).get("iotId"), key, device.get("deviceMac")
+            )
+            if key and tag:
+                self._tags[key] = tag
 
         # Product metadata rarely changes, so it is fetched once and kept --
         # but only once it has actually arrived. An empty answer used to be
@@ -203,7 +220,7 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 _LOGGER.warning(
                     "No model for %s after %d attempts; its ports will be "
                     "numbered rather than named",
-                    key, tries,
+                    self._tag(key), tries,
                 )
                 self._models[key] = None
 
@@ -223,7 +240,7 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # them should produce P1..Pn. Waiting a poll costs a few
                 # seconds; guessing costs a duplicate set of entities that keeps
                 # the history of neither.
-                _LOGGER.debug("waiting for the model of %s before naming ports", key)
+                _LOGGER.debug("waiting for the model of %s before naming ports", self._tag(key))
                 continue
             try:
                 # productNo is the account API's name for the model, and it is
@@ -259,7 +276,7 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # Warn rather than debug: without this the entities simply never
                 # appear, with nothing anywhere saying why.
                 if self._power_errors.get(key) != str(err):
-                    _LOGGER.warning("Live power unavailable for %s: %s", key, err)
+                    _LOGGER.warning("Live power unavailable for %s: %s", self._tag(key), err)
                 errors[key] = str(err)
                 power[key] = self._carry(key)
         self._power_errors = errors
@@ -341,6 +358,10 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return data
 
+    def _tag(self, key: str) -> str:
+        """This charger as the log names it."""
+        return self._tags.get(key, "a charger")
+
     def mode_turns(self, key: str) -> asyncio.Lock:
         """The queue this charger's charging-mode writes wait in, one at a time."""
         return self._mode_turns.setdefault(key, asyncio.Lock())
@@ -409,7 +430,13 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         cached, fetched_at = self._state.get(key, ({}, 0.0))
         recent = cached and time.time() - fetched_at < DEVICE_STATE_INTERVAL
-        if recent and not self.rtcx.state_is_stale(iot_id):
+        # Except while debug logging is on, too. That is when somebody is
+        # mapping a charger -- one setting changed in the app, then which byte
+        # moved -- and a minute between reads would put several changes into
+        # one diff. Every poll costs a second round trip, for as long as the
+        # logging lasts.
+        mapping = _LOGGER.isEnabledFor(logging.DEBUG)
+        if recent and not self.rtcx.state_is_stale(iot_id) and not mapping:
             return cached
         state = await self.rtcx.async_device_state(iot_id, model)
         # The read may have learned this mode's parameter block, which has to
@@ -472,11 +499,11 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # Still dirty means no reply came. The next poll will say what
                 # the setting is; publishing the cached value would report the
                 # old one as confirmed, which is worse than not confirming.
-                _LOGGER.debug("no read-back for %s; leaving it to the poll", key)
+                _LOGGER.debug("no read-back for %s; leaving it to the poll", self._tag(key))
                 return
             listed = await self._wallpaper_list_for(key, state.get("wallpaper"))
         except UgreenError as err:
-            _LOGGER.debug("read-back for %s failed: %s", key, err)
+            _LOGGER.debug("read-back for %s failed: %s", self._tag(key), err)
             return
 
         # Read after those awaits, never before them: a poll finishing in that
@@ -559,7 +586,7 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 device["deviceUniqueCode"], device["productSerialNo"]
             )
         except (UgreenError, KeyError) as err:
-            _LOGGER.debug("wallpaper list for %s failed: %s", key, err)
+            _LOGGER.debug("wallpaper list for %s failed: %s", self._tag(key), err)
             return cached
         listed = [
             {

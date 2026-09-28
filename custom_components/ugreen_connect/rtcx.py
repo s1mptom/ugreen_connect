@@ -34,6 +34,8 @@ import json
 import logging
 import time
 import uuid
+from collections import deque
+from datetime import UTC, datetime
 from typing import Any, Final
 
 import aiohttp
@@ -49,6 +51,7 @@ from .const import (
     RTCX_TOKEN_MARGIN,
     SETTING_SETTLE_SECONDS,
 )
+from .logsafe import charger_tag, describe, private_bytes, remember, remember_bytes
 from .protocol import (
     DC_TURBO_MODE,
     DC_VOLTAGE_BYTE,
@@ -58,6 +61,7 @@ from .protocol import (
     QUERY_GET_DEVICE_STATE,
     QUERY_GET_POWER_INFO,
     QUERY_GET_PRODUCT_VERSION,
+    QUERY_GET_WIFI_SSID,
     SETTING_SET_BRIGHTNESS,
     SETTING_SET_CHARGING_MODE,
     SETTING_SET_SCREENSAVER,
@@ -173,11 +177,13 @@ def _unpack_params(stored: dict[str, str] | None) -> dict[tuple[str, int], bytes
             block = bytes.fromhex(value)
             key = (iot_id, int(mode))
         except (TypeError, ValueError):
-            _LOGGER.debug("dropping unreadable stored mode parameters: %s", name)
+            # Not the name, and not the part after its colon either: the name
+            # is the charger's cloud id, and one that has no colon is all id.
+            _LOGGER.debug("dropping an unreadable stored mode parameter block")
             continue
         if len(block) not in PARAM_BLOCK_LENGTHS:
             _LOGGER.debug(
-                "dropping stored mode parameters of %d bytes for %s", len(block), name
+                "dropping stored mode parameters of %d bytes for mode %s", len(block), mode
             )
             continue
         unpacked[key] = block
@@ -216,6 +222,16 @@ class RtcxClient:
         # values are only as good as offsets established on a different one, and
         # these bytes are what someone else can check them against.
         self.last_frames: dict[str, dict[str, str]] = {}
+        # Every state reply that differed from the one before it, per charger:
+        # the whole body and which bytes moved. Mapping a model nobody here has
+        # is done exactly that way -- change one setting in the app, see which
+        # byte moved -- and until this, doing it meant editing this file to log
+        # the frames by hand. Kept whatever the log level, since it costs a
+        # comparison; the diagnostics download carries it, and the debug log
+        # says each change as it happens.
+        self.state_changes: dict[str, deque[dict[str, Any]]] = {}
+        self._state_bodies: dict[str, bytes] = {}
+        self._power_bodies: dict[str, bytes] = {}
         # The parameter block last seen while each mode was the one in force,
         # keyed by charger and mode byte. Setting a mode has to carry its
         # parameters, and the only place they can be learnt is a state reply
@@ -272,7 +288,9 @@ class RtcxClient:
             data = payload.get("data") or {}
             token = data.get("accessToken")
             if not token:
-                raise UgreenAuthError(f"third/login returned no accessToken: {payload}")
+                raise UgreenAuthError(
+                    f"third/login returned no accessToken: {describe(payload)}"
+                )
             self._token = token
             self._expires_at = _jwt_expiry(token) or (time.time() + 3600)
             _LOGGER.debug("RTCX login ok, token valid until %s", self._expires_at)
@@ -333,10 +351,11 @@ class RtcxClient:
                     raise UgreenError(f"{path}: HTTP {resp.status}")
                 payload = await resp.json(content_type=None)
         except (aiohttp.ClientError, TimeoutError) as err:
-            raise UgreenError(f"{path}: {err}") from err
+            # Not chained, as in api.py: aiohttp's message is the URL.
+            raise UgreenError(f"{path}: {err}") from None
 
         if not isinstance(payload, dict):
-            raise UgreenError(f"{path}: unexpected response {payload!r}")
+            raise UgreenError(f"{path}: unexpected response, {describe(payload)}")
         return payload
 
     async def call(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -395,7 +414,7 @@ class RtcxClient:
             # The property keeps its last frame forever, so an unresponsive
             # device would otherwise look like it is still answering.
             if stamp and (time.time() * 1000 - stamp) > PT_DATA_MAX_AGE * 1000:
-                _LOGGER.debug("PT_data for %s is stale (%s)", iot_id, stamp)
+                _LOGGER.debug("PT_data for charger %s is stale (%s)", charger_tag(iot_id), stamp)
                 return None
             # Keep the rest of the map: OTA state rides along in the same
             # response, so reading it costs no extra round trip.
@@ -428,7 +447,7 @@ class RtcxClient:
             try:
                 offer = json.loads(raw)
             except json.JSONDecodeError:
-                _LOGGER.debug("OTA_ugrade is not JSON: %r", raw)
+                _LOGGER.debug("OTA_ugrade is not JSON: %d characters", len(raw))
 
         raw_progress = self.last_properties.get("OTA_status")
         try:
@@ -443,10 +462,22 @@ class RtcxClient:
         }
 
     async def async_text_query(self, iot_id: str, cmd: int) -> str | None:
-        """Queries whose reply is a plain ASCII string (SSID, serial number)."""
+        """Queries whose reply is a plain string (SSID, serial number).
+
+        Both are the household's own, so each is remembered by logsafe the
+        moment it is read -- as the bytes it came in, and as text. UTF-8
+        rather than ASCII, since a network can be named in any script.
+        """
         value = await self._ask(iot_id, FRAME_QUERY, cmd)
         body = frame_body(value, FRAME_QUERY, cmd) if value else None
-        return body.decode("ascii", "replace").strip("\x00").strip() if body else None
+        if not body:
+            return None
+        raw = body.strip(b"\x00").strip()
+        text = raw.decode("utf-8", "replace")
+        stand_in = "<wifi>" if cmd == QUERY_GET_WIFI_SSID else "<serial>"
+        remember_bytes(raw, stand_in)
+        remember(text, stand_in)
+        return text
 
     async def async_firmware_version(self, iot_id: str) -> str | None:
         """Three bytes, one per version component."""
@@ -465,16 +496,26 @@ class RtcxClient:
         read, its fields are left out rather than approximated.
         """
         fields = state_fields(model)
-        if not fields:
+        if not fields and not _LOGGER.isEnabledFor(logging.DEBUG):
             # The screen settings are offsets rather than a countable layout,
             # and they are written back as well as read. On a charger whose
             # reply has never been seen, none of them appears at all -- which
             # leaves its readings working and its screen alone.
-            _LOGGER.debug("state reply not read on model %s", model)
             return None
         layout = state_layout(model)
         value = await self._ask(iot_id, FRAME_QUERY, QUERY_GET_DEVICE_STATE)
         body = frame_body(value, FRAME_QUERY, QUERY_GET_DEVICE_STATE) if value else None
+        if body:
+            self._note_state(iot_id, model, body)
+        if not fields:
+            # Asked only for the record, while debug logging is on: a charger
+            # nobody has mapped gets its replies written down, which is how it
+            # gets mapped. Nothing in them is decoded or published.
+            if body:
+                _LOGGER.debug("state reply of model %s recorded, not decoded", model)
+            else:
+                _LOGGER.debug("no state reply from model %s to record", model)
+            return None
         if not body or len(body) < layout.image_id + IMAGE_ID_LEN:
             return None
 
@@ -802,6 +843,8 @@ class RtcxClient:
         the reply shows up as the property's new value a moment later.
         """
         value = await self._ask(iot_id, FRAME_QUERY, QUERY_GET_POWER_INFO)
+        if value and _LOGGER.isEnabledFor(logging.DEBUG):
+            self._note_power(iot_id, model, value)
         ports = parse_power_frame(value, model) if value else None
         if ports is None:
             return None
@@ -809,6 +852,84 @@ class RtcxClient:
             "ports": ports,
             "total": round(sum(port["power"] for port in ports.values()), 1),
         }
+
+
+    def _note_state(self, iot_id: str, model: str | None, body: bytes) -> None:
+        """Write a state reply down if it is not the one before it.
+
+        Offsets are body offsets, the numbering the protocol notes and issue
+        #2 use: byte 2 is the brightness, byte 4 the charging mode.
+        """
+        before = self._state_bodies.get(iot_id)
+        if before == body:
+            return
+        self._state_bodies[iot_id] = body
+        # A byte that belongs to an identifier logsafe knows -- a MAC inside the
+        # body of a charger nobody has mapped -- is shown as ??, on either side:
+        # listed one by one, the bytes would spell it out again.
+        hidden = private_bytes(before or b"") | private_bytes(body)
+
+        def _shown(frame: bytes, offset: int) -> str | None:
+            return "??" if offset in hidden and offset < len(frame) else _byte_at(frame, offset)
+
+        moved = None if before is None else [
+            [offset, _shown(before, offset), _shown(body, offset)]
+            for offset in range(max(len(before), len(body)))
+            if _byte_at(before, offset) != _byte_at(body, offset)
+        ]
+        mode = (
+            CHARGING_MODES.get(body[STATE_CHARGING_MODE])
+            if len(body) > STATE_CHARGING_MODE
+            else None
+        )
+        self.state_changes.setdefault(iot_id, deque(maxlen=STATE_CHANGES_KEPT)).append({
+            "at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "model": model,
+            "length": len(body),
+            "mode": mode,
+            "moved": moved,
+            "body": body.hex(),
+        })
+        who = f"{model or 'unknown'} charger {charger_tag(iot_id)}"
+        if moved is None:
+            _LOGGER.debug("state of %s, %d bytes, mode %s: %s", who, len(body), mode, body.hex())
+            return
+        _LOGGER.debug(
+            "state of %s changed, %d bytes, mode %s: %s -- now %s",
+            who,
+            len(body),
+            mode,
+            ", ".join(f"byte {offset} {old or '--'}>{new or '--'}" for offset, old, new in moved),
+            body.hex(),
+        )
+
+    def _note_power(self, iot_id: str, model: str | None, value: str) -> None:
+        """Log a power report's bytes when they change, for mapping ports.
+
+        Plug one device in and the record that moves is its port -- the test
+        that settled the 160W's order. Only in the debug log: a charging port
+        changes this every poll, which is too often to keep.
+        """
+        body = frame_body(value, FRAME_QUERY, QUERY_GET_POWER_INFO)
+        if body is None or self._power_bodies.get(iot_id) == body:
+            return
+        self._power_bodies[iot_id] = body
+        _LOGGER.debug(
+            "power report of %s charger %s, %d bytes: %s",
+            model or "unknown",
+            charger_tag(iot_id),
+            len(body),
+            body.hex(),
+        )
+
+
+# How many state changes a charger keeps for the diagnostics download: enough
+# for a mapping session of one setting at a time, not a history.
+STATE_CHANGES_KEPT: Final = 60
+
+
+def _byte_at(body: bytes, offset: int) -> str | None:
+    return f"{body[offset]:02x}" if offset < len(body) else None
 
 
 def _jwt_expiry(token: str) -> float:

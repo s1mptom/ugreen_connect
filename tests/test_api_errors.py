@@ -54,3 +54,108 @@ def test_rate_limited_is_not_an_auth_error():
     """Or the coordinator would turn it into a re-auth flow regardless."""
     assert issubclass(api_module.UgreenRateLimited, api_module.UgreenError)
     assert not issubclass(api_module.UgreenRateLimited, api_module.UgreenAuthError)
+
+
+# --- what an error says, which somebody will post --------------------------------
+
+
+@pytest.fixture
+def _forgetful():
+    from conftest import logsafe
+
+    logsafe._known.clear()
+    logsafe._compiled = None
+    yield logsafe
+    logsafe._known.clear()
+    logsafe._compiled = None
+
+
+def _answering(answer: dict):
+    client = api_module.UgreenApi(session=None, base_url="https://example.invalid")
+
+    async def _post(*_args, **_kwargs):
+        return answer
+
+    client._post = _post
+    return client
+
+
+def test_a_login_answer_without_a_token_is_described_not_quoted(_forgetful):
+    """The answer is the refresh token and the user id."""
+    client = _answering(
+        {"code": api_module.CODE_OK, "data": {"refresh": "eyJsecret-refresh", "userId": 9}}
+    )
+    with pytest.raises(api_module.UgreenError) as err:
+        asyncio.run(client.login("someone@example.com", "hunter2-password"))
+    assert "eyJsecret-refresh" not in str(err.value)
+    assert "keys ['refresh', 'userId']" in str(err.value)
+
+
+def test_a_login_teaches_the_log_its_secrets(_forgetful):
+    """The password and the user id, once known, are scrubbed wherever they go.
+
+    Not the tokens: one arrives every twenty minutes, and remembered they would
+    make the list grow for as long as Home Assistant runs.
+    """
+    client = _answering(
+        {
+            "code": api_module.CODE_OK,
+            "data": {"accessToken": "eyJaccess-token-value", "userId": 1234567890123},
+        }
+    )
+    asyncio.run(client.login("someone@example.com", "hunter2-password"))
+    assert _forgetful.scrub("hunter2-password 1234567890123") == "<password> <user>"
+    assert _forgetful.scrub("eyJaccess-token-value") == "eyJaccess-token-value"
+
+
+def test_an_error_cleans_its_own_message(_forgetful):
+    """Home Assistant writes the traceback, on loggers this integration does not clean."""
+    _forgetful.remember_charger("an-iot-id-long", "FF7J0000000000001")
+    err = api_module.UgreenError("gateway refused FF7J0000000000001")
+    assert "FF7J0000000000001" not in str(err)
+    assert "FF7J0000000000001" not in repr(err)
+
+
+def test_a_network_error_does_not_carry_aiohttp_s_own_along(_forgetful, monkeypatch):
+    """aiohttp's message is the URL, and a GET's query can name the charger.
+
+    The text goes into the error, cleaned. The original is not chained, since
+    Home Assistant would print it under the error, uncleaned.
+    """
+    import aiohttp
+
+    unit = "FF7J0000000000001"
+    _forgetful.remember_charger("an-iot-id-long", unit)
+    monkeypatch.setattr(api_module, "RETRY_DELAY", 0)
+
+    class _Session:
+        def request(self, *_args, **_kwargs):
+            raise aiohttp.InvalidURL(f"https://example.invalid/list?deviceUniqueCode={unit}")
+
+    client = api_module.UgreenApi(session=_Session(), base_url="https://example.invalid")
+    with pytest.raises(api_module.UgreenError) as err:
+        asyncio.run(client._call("/list", {"deviceUniqueCode": unit}, "GET", auth=False))
+    assert unit not in str(err.value)
+    assert err.value.__cause__ is None and err.value.__suppress_context__
+
+
+def test_an_upload_error_does_not_carry_the_signed_slot_along(_forgetful):
+    """The slot is a signed URL to the owner's photo, which logsafe never learns."""
+    import aiohttp
+
+    signed = "https://oss.example/u/1/me.jpg?Signature=abc&Expires=1"
+
+    class _Session:
+        def put(self, url, **_kwargs):
+            raise aiohttp.InvalidURL(url)
+
+    client = api_module.UgreenApi(session=_Session(), base_url="https://example.invalid")
+
+    async def _post(*_args, **_kwargs):
+        return {"data": {"uploadUrl": signed, "fileKey": "k"}}
+
+    client._post = _post
+    with pytest.raises(api_module.UgreenError) as err:
+        asyncio.run(client.upload_wallpaper(b"\xff\xd8", "a.jpg", "FF7J0000000000001", "030002"))
+    assert signed not in str(err.value)
+    assert err.value.__cause__ is None and err.value.__suppress_context__
