@@ -31,6 +31,13 @@ const TEXT = {
     offline: 'Cloud offline',
     firmware: 'Firmware {version}',
     update: '{version} ready, install it in the UGREEN app',
+    updateTo: 'Update to {version}',
+    pause: 'Ports may stop charging while it restarts, about two minutes.',
+    goNow: 'Update now',
+    notNow: 'Not now',
+    updating: 'Updating to {version}',
+    resumes: 'Charging resumes once it restarts',
+    failed: 'Update failed: {error}',
     mode: 'Charging mode',
     limits: 'Limits, set in the UGREEN app',
     first: 'Charged first',
@@ -56,6 +63,13 @@ const TEXT = {
     offline: 'Cloud offline',
     firmware: 'Firmware {version}',
     update: '{version} bereit, in der UGREEN-App installieren',
+    updateTo: 'Auf {version} aktualisieren',
+    pause: 'Die Anschlüsse können beim Neustart etwa zwei Minuten lang aussetzen.',
+    goNow: 'Jetzt aktualisieren',
+    notNow: 'Nicht jetzt',
+    updating: 'Aktualisierung auf {version}',
+    resumes: 'Das Laden geht nach dem Neustart weiter',
+    failed: 'Aktualisierung fehlgeschlagen: {error}',
     mode: 'Lademodus',
     limits: 'Grenzen, in der UGREEN-App gesetzt',
     first: 'Zuerst geladen',
@@ -81,6 +95,13 @@ const TEXT = {
     offline: 'Облако недоступно',
     firmware: 'Прошивка {version}',
     update: 'Готова {version}, установите в приложении UGREEN',
+    updateTo: 'Обновить до {version}',
+    pause: 'Пока зарядка перезапускается, порты могут отключиться — примерно на две минуты.',
+    goNow: 'Обновить сейчас',
+    notNow: 'Не сейчас',
+    updating: 'Обновление до {version}',
+    resumes: 'Зарядка продолжится после перезапуска',
+    failed: 'Обновление не удалось: {error}',
     mode: 'Режим зарядки',
     limits: 'Лимиты, заданные в приложении UGREEN',
     first: 'Заряжаются первыми',
@@ -121,6 +142,20 @@ const STYLE = `
   .status .offline { color: var(--warning-color, #ff9800); }
   .status .update { color: var(--primary-color); font-weight: 500; }
   .status svg { flex: none; }
+  .status { flex-wrap: wrap; row-gap: 8px; }
+  /* The row's buttons are bare text; this one is a real button again. */
+  .status .u-button { height: 28px; padding: 0 12px; border: 1px solid var(--divider-color);
+                      border-radius: 14px; color: var(--primary-color); font-weight: 500; }
+  .status .failed { color: var(--error-color, #db4437); }
+  .fwrow { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 10px 14px;
+           border-radius: 10px; font-size: 13px;
+           background: color-mix(in srgb, var(--primary-color) 9%, transparent); }
+  .fwrow .what { display: flex; flex-direction: column; gap: 2px; flex: 1 1 260px; min-width: 0; }
+  .fwrow .what b { font-weight: 500; }
+  .fwrow .what span { color: var(--secondary-text-color); font-size: 12px; }
+  .fwrow .acts { display: flex; gap: 8px; flex: none; }
+  .bar.installing { background: color-mix(in srgb, var(--primary-color) 14%, transparent); }
+  .bar.installing i { background: var(--primary-color); transition: width .6s ease; }
   .modes { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; min-height: 36px; }
   .about { font-size: 12px; color: var(--secondary-text-color); }
   .limits { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
@@ -168,6 +203,9 @@ class UgreenChargerCard extends HTMLElement {
     this._peak = 0;
     this._asked = pending();
     this._flying = new Map();
+    // The firmware install: whether its confirmation is open, whether it has
+    // been sent and not yet answered, and how it failed if it did.
+    this._fw = { ask: false, sent: false, error: '' };
     if (this.shadowRoot) this.shadowRoot.innerHTML = '';
   }
 
@@ -199,6 +237,7 @@ class UgreenChargerCard extends HTMLElement {
           </div>
           <div class="status"></div>
         </div>
+        <div class="fwrow" hidden></div>
         <div class="modes">
           <div class="u-seg" role="radiogroup" aria-label="${this._t('mode')}"></div>
           <label class="u-pick modepick"><select aria-label="${this._t('mode')}"></select><svg width="10" height="6"
@@ -214,7 +253,7 @@ class UgreenChargerCard extends HTMLElement {
       top: $('.top'), modesRow: $('.modes'), empty: $('.empty'),
       total: $('.total'), watts: $('.total .w'), of: $('.total .of'),
       bar: $('.bar'), live: $('.live'), free: $('.free'),
-      status: $('.status'), modes: $('.u-seg'), params: $('.params'),
+      status: $('.status'), modes: $('.u-seg'), params: $('.params'), fwrow: $('.fwrow'),
       pick: $('.modepick select'),
     };
     this._els.pick.addEventListener('change', () => {
@@ -250,8 +289,25 @@ class UgreenChargerCard extends HTMLElement {
     // The config's figure, else the model's own: a 160W is not out of 300.
     const max = Number(this._config.max_power) || budget(this._hass, this._config.device_id);
     const scale = max || this._peak;
-    this._els.watts.textContent = watts.toFixed(1);
+    // A total that is not a number is not zero: nothing was measured.
+    const measured = !totalId || Number.isFinite(parseFloat(this._hass.states[totalId]?.state));
+    this._els.watts.textContent = measured ? watts.toFixed(1) : '—';
     this._els.of.textContent = max ? this._t('of', { max }) : '';
+    const fw = this._firmware();
+    this._els.bar.classList.toggle('installing', Boolean(fw?.installing));
+    if (fw?.installing) {
+      // Nothing is measured while the charger installs -- an empty bar over
+      // "nothing is charging" would be a claim -- so the strip shows the
+      // install instead.
+      this._els.watts.textContent = '—';
+      const seg = document.createElement('i');
+      seg.style.width = `${fw.pct || 0}%`;
+      this._els.bar.replaceChildren(seg);
+      this._els.bar.setAttribute('aria-label', this._fwProgress(fw));
+      this._els.live.textContent = this._fwProgress(fw);
+      this._els.free.textContent = this._t('resumes');
+      return;
+    }
 
     // Charging is what the integration's charging sensor says, the same rule
     // the port tiles use: a phone topping up at half a watt is not "charging"
@@ -284,25 +340,120 @@ class UgreenChargerCard extends HTMLElement {
         cls: online ? '' : 'offline', entity: cloud,
       });
     }
-    const update = this._find('update', '_firmware');
-    const state = update && this._hass.states[update];
-    if (state) {
-      items.push({ html: this._t('firmware', { version: state.attributes.installed_version || '' }), entity: update });
-      // The integration cannot install firmware -- the cloud tells the charger
-      // to, and that path has not been seen yet -- so an update is announced
-      // with where to install it rather than drawn as a button that would not.
-      if (state.state === 'on' && state.attributes.latest_version) {
-        items.push({ html: this._t('update', { version: state.attributes.latest_version }), cls: 'update', entity: update });
-      }
-    }
-    this._els.status.replaceChildren(...items.map((item) => {
+    const fw = this._firmware();
+    if (fw) items.push({ html: this._t('firmware', { version: fw.installed || '' }), entity: fw.id });
+    const made = items.map((item) => {
       const el = document.createElement('button');
       el.type = 'button';
       el.className = item.cls || '';
       el.innerHTML = item.html;
       el.addEventListener('click', () => this._moreInfo(item.entity));
       return el;
+    });
+    this._els.status.replaceChildren(...made, ...(fw ? this._firmwareStatus(fw) : []));
+    this._syncFirmwareRow(fw);
+  }
+
+  /* Firmware ------------------------------------------------------------- */
+
+  _firmware() {
+    const id = this._find('update', '_firmware');
+    const state = id && this._hass.states[id];
+    if (!state) return null;
+    const a = state.attributes;
+    return {
+      id,
+      installed: a.installed_version,
+      latest: a.latest_version,
+      offered: state.state === 'on' && Boolean(a.latest_version),
+      // Home Assistant's own flag, once the integration has said so; until
+      // then, that the request is on its way.
+      installing: Boolean(a.in_progress) || this._fw.sent,
+      pct: Number.isFinite(a.update_percentage) ? a.update_percentage : null,
+      // INSTALL is bit 1. Without it -- the 160W -- the app is where it goes.
+      installable: (Number(a.supported_features) & 1) === 1,
+      notes: a.release_summary || '',
+    };
+  }
+
+  _fwProgress(fw) {
+    const doing = this._t('updating', { version: fw.latest });
+    return fw.pct ? `${doing} · ${Math.round(fw.pct)}%` : `${doing}…`;
+  }
+
+  _install(fw) {
+    this._fw = { ask: false, sent: true, error: '' };
+    this._sync();
+    // The call returns when the charger has finished, or says why it could
+    // not; the progress in between arrives as the entity's state.
+    Promise.resolve(this._hass.callService('update', 'install', { entity_id: fw.id }))
+      .catch((err) => {
+        // A service error arrives as {code, message}; a dropped connection as
+        // {error: {code: 3, message}} -- and a phone that loses its socket
+        // for the two minutes has lost nothing else: the charger goes on, and
+        // its progress comes back with the connection.
+        const detail = err?.error || err;
+        if (detail?.code === 3) return;
+        this._fw.error = detail?.message || String(err);
+      })
+      .finally(() => { this._fw.sent = false; this._sync(); });
+  }
+
+  _button(text, cls, onClick) {
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = cls;
+    el.textContent = text;
+    el.addEventListener('click', onClick);
+    return el;
+  }
+
+  /* What the status row says about firmware beyond its version: an offer,
+     or how an install failed. The question and the progress have rows of
+     their own. */
+  _firmwareStatus(fw) {
+    const out = [];
+    if (this._fw.error) {
+      out.push(this._button(this._t('failed', { error: this._fw.error }), 'failed', () => this._moreInfo(fw.id)));
+    }
+    if (fw.installing || !fw.offered || this._fw.ask) return out;
+    if (!fw.installable) {
+      // The 160W: nobody has watched an install on one, so the app does it.
+      out.push(this._button(this._t('update', { version: fw.latest }), 'update', () => this._moreInfo(fw.id)));
+      return out;
+    }
+    out.push(this._button(this._t('updateTo', { version: fw.latest }), 'u-button', () => {
+      this._fw.ask = true;
+      this._fw.error = '';
+      this._sync();
     }));
+    return out;
+  }
+
+  /* The question, in a row of its own under the header: what the version
+     is, what changed, and that the ports may stop for a while. */
+  _syncFirmwareRow(fw) {
+    const row = this._els.fwrow;
+    // An offer that has gone -- installed from the app, say -- takes its
+    // question and any failure with it.
+    if (!fw?.offered && !fw?.installing) this._fw = { ...this._fw, ask: false, error: '' };
+    const open = Boolean(fw && fw.offered && fw.installable && this._fw.ask && !fw.installing);
+    row.hidden = !open;
+    if (!open) { row.replaceChildren(); return; }
+    const what = document.createElement('div');
+    what.className = 'what';
+    const title = document.createElement('b');
+    title.textContent = [this._t('updateTo', { version: fw.latest }), fw.notes].filter(Boolean).join(' — ');
+    const why = document.createElement('span');
+    why.textContent = this._t('pause');
+    what.append(title, why);
+    const acts = document.createElement('div');
+    acts.className = 'acts';
+    acts.append(
+      this._button(this._t('notNow'), 'u-button', () => { this._fw.ask = false; this._sync(); }),
+      this._button(this._t('goNow'), 'u-button primary', () => this._install(fw)),
+    );
+    row.replaceChildren(what, acts);
   }
 
   _syncModes(modeId) {

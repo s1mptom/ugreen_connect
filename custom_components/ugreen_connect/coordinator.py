@@ -12,7 +12,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -28,6 +28,12 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DEVICE_STATE_INTERVAL,
     DOMAIN,
+    FIRMWARE_CHECK_INTERVAL,
+    FIRMWARE_INSTALL_TIMEOUT,
+    FIRMWARE_POLL_SECONDS,
+    FIRMWARE_RETRY_INTERVAL,
+    FIRMWARE_START_TIMEOUT,
+    FIRMWARE_VERIFY_SECONDS,
     IDLE_SCAN_FACTOR,
     IDLE_SCAN_MAX,
     MIN_POLL_GAP,
@@ -39,7 +45,13 @@ from .const import (
     WALLPAPER_LIST_INTERVAL,
     WALLPAPER_MISS_INTERVAL,
 )
-from .protocol import QUERY_GET_WIFI_SSID
+from .protocol import (
+    QUERY_GET_WIFI_SSID,
+    UPGRADE_DONE,
+    UPGRADE_FAILED,
+    UPGRADE_IDLE,
+    UPGRADE_RUNNING,
+)
 from .rtcx import RtcxClient
 from .session import MAX_GAP, SessionTracker, drawing
 
@@ -130,6 +142,18 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Every charger on the account, added or not, as the device list gave
         # it last. The options form offers these.
         self.account_devices: list[dict[str, Any]] = []
+        # The firmware the account API offered each charger, which MCU version
+        # it was asked about, and when to ask again.
+        self._offers: dict[str, tuple[dict[str, Any] | None, int, float]] = {}
+        # Chargers installing firmware right now, and how far along each is.
+        # While one is here nothing else is asked of it -- the app, too, sends
+        # it nothing but the progress question until it is done. Kept in
+        # hass.data rather than on this object, so an entry reloaded mid-install
+        # -- any options change does that -- comes back knowing the charger is
+        # busy instead of polling it and offering the install again.
+        self.installs: dict[str, dict[str, int]] = hass.data.setdefault(
+            f"{DOMAIN}_installs", {}
+        )
 
     async def _async_update_data(self) -> dict[str, Any]:
         started = time.monotonic()
@@ -247,6 +271,9 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             iot_id = (device.get("extra") or {}).get("iotId")
             if key is None or not iot_id:
                 continue
+            if key in self.installs:
+                power[key] = self._installing(key)
+                continue
             if key not in self._models:
                 # Not "this model has no table" -- "nobody has told us yet".
                 # Those arrive at the parser as the same `None`, and only one of
@@ -267,7 +294,9 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 else:
                     power[key].update(await self._device_state(key, iot_id, model))
                     power[key].update(await self._static_info(key, iot_id))
-                    power[key]["ota"] = self.rtcx.ota_state()
+                    power[key]["firmware_offer"] = await self._firmware_offer(
+                        device, key, power[key].get("mcu_version")
+                    )
                     # A picture uploaded from the phone app is on the charger the
                     # moment it is chosen, while the library was last read up to
                     # a quarter of an hour ago and has never heard of it. Seeing
@@ -604,14 +633,220 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         cached, fetched_at = self._static.get(key, ({}, 0.0))
         if cached and time.time() - fetched_at < STATIC_INFO_INTERVAL:
             return cached
-        info = {
+        fresh = {
             "firmware": await self.rtcx.async_firmware_version(iot_id),
             "ssid": await self.rtcx.async_text_query(iot_id, QUERY_GET_WIFI_SSID),
         }
         # Keep whatever was already known if the device declined to answer.
-        info = {k: v if v is not None else cached.get(k) for k, v in info.items()}
-        self._static[key] = (info, time.time())
+        info = {k: v if v is not None else cached.get(k) for k, v in fresh.items()}
+        # A version that did not arrive is asked for again in a minute rather
+        # than an hour: just after an install is when a reply goes missing,
+        # and an hour of no version is an hour of no update entity.
+        stamp = time.time()
+        if fresh["firmware"] is None:
+            stamp -= STATIC_INFO_INTERVAL - 60
+        self._static[key] = (info, stamp)
         return info
+
+    async def _firmware_offer(
+        self, device: dict[str, Any], key: str, mcu: int | None
+    ) -> dict[str, Any] | None:
+        """Newer firmware for this charger, if the account API has any.
+
+        Asked with the MCU version the charger reports, so the answer changes
+        by itself once an install lands. Only what is shown is kept: the signed
+        link to the file expires, and is asked for again at install time.
+        """
+        offer, asked_at, due = self._offers.get(key, (None, -1, 0.0))
+        if mcu is None:
+            return offer
+        if asked_at == mcu and time.time() < due:
+            return offer
+        # An offer made to a different version is not one to show.
+        kept = offer if asked_at == mcu else None
+        try:
+            data = await self.api.check_firmware(device["productSerialNo"], mcu)
+        except (UgreenError, KeyError) as err:
+            _LOGGER.debug("firmware check for %s failed: %s", self._tag(key), err)
+            self._offers[key] = (kept, mcu, time.time() + FIRMWARE_RETRY_INTERVAL)
+            return kept
+        offer = _offer(data, mcu)
+        self._offers[key] = (offer, mcu, time.time() + FIRMWARE_CHECK_INTERVAL)
+        return offer
+
+    async def async_install_firmware(self, key: str, device: dict[str, Any]) -> None:
+        """Install the offered firmware, and return once the charger has it.
+
+        The UGREEN app's path, step for step: ask for the offer afresh -- the
+        link in it is signed and short-lived -- hand the charger the file, then
+        ask it how it is going until it says it is done. Raises if it says it
+        failed, or never says either.
+        """
+        if key in self.installs:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="firmware_installing"
+            )
+        iot_id = (device.get("extra") or {}).get("iotId")
+        reading = ((self.data or {}).get("power") or {}).get(key) or {}
+        mcu = reading.get("mcu_version")
+        if not iot_id or mcu is None:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="firmware_version_unknown"
+            )
+        # Taken before the first await. A second press, another tab or an
+        # automation arriving while the offer is fetched has to find the
+        # charger busy, or it is sent two installs.
+        self.installs[key] = {"status": UPGRADE_IDLE, "progress": 0}
+        self.async_update_listeners()
+        try:
+            offer, url = await self._fresh_offer(key, device, mcu)
+            _LOGGER.info("installing firmware %s on %s", offer["version"], self._tag(key))
+            try:
+                await self.rtcx.async_start_firmware_update(
+                    iot_id, url=url, size=offer["size"], md5=offer["md5"], version=offer["code"]
+                )
+            except Exception as err:  # anything at all: see below
+                # Not proof that it did not arrive: a request that timed out
+                # may well have. What the charger says next decides, and one
+                # that never starts is caught by the start timeout -- while
+                # giving up here would reopen the button over a charger that
+                # may already be fetching the file.
+                _LOGGER.warning(
+                    "the firmware command to %s may not have arrived (%s: %s)",
+                    self._tag(key), type(err).__name__, err,
+                )
+            await self._follow_install(key, iot_id, offer)
+        finally:
+            self.installs.pop(key, None)
+            # Whatever happened, what is known about this charger's firmware is
+            # now out of date: the version, and what the cloud offers it. The
+            # version is marked for re-reading rather than forgotten, so a
+            # charger slow to answer after its restart keeps showing one.
+            self._offers.pop(key, None)
+            known, _ = self._static.get(key, ({}, 0.0))
+            self._static[key] = (known, 0.0)
+            self._state.pop(key, None)
+            await self.async_request_refresh()
+
+    async def _fresh_offer(
+        self, key: str, device: dict[str, Any], mcu: int
+    ) -> tuple[dict[str, Any], str]:
+        """The offer, asked for now, and the link to its file."""
+        try:
+            data = await self.api.check_firmware(device["productSerialNo"], mcu)
+        except (UgreenError, KeyError) as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="firmware_check_failed",
+                translation_placeholders={"error": str(err)},
+            ) from None
+        offer = _offer(data, mcu)
+        if offer is None:
+            self._offers[key] = (None, mcu, time.time() + FIRMWARE_CHECK_INTERVAL)
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="firmware_current"
+            )
+        url = data.get("fileUrl")
+        if not isinstance(url, str) or not url:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="firmware_check_failed",
+                translation_placeholders={"error": "the answer carried no link to the file"},
+            )
+        return offer, url
+
+    async def _follow_install(self, key: str, iot_id: str, offer: dict[str, Any]) -> None:
+        """Ask the charger about its install until it names an outcome.
+
+        What it says is not taken on faith at either end. "Done" is believed
+        once the version says so: the answer may be left over from the install
+        before, and one heard before this one started would end it before it
+        began. "Failed" before anything has run may be left over the same way,
+        so it only counts once the start has had its time.
+        """
+        started = time.monotonic()
+        deadline = started + FIRMWARE_INSTALL_TIMEOUT
+        running = False
+        failed_early = False
+        checked = float("-inf")
+
+        async def settled() -> bool:
+            nonlocal checked
+            if time.monotonic() - checked < FIRMWARE_VERIFY_SECONDS:
+                return False
+            checked = time.monotonic()
+            return await self._installed(iot_id, key, offer)
+
+        while time.monotonic() < deadline:
+            if not running and time.monotonic() - started > FIRMWARE_START_TIMEOUT:
+                break
+            await asyncio.sleep(FIRMWARE_POLL_SECONDS)
+            try:
+                answer = await self.rtcx.async_upgrade_status(iot_id)
+            except Exception as err:  # the flash goes on whatever this met
+                # The app sees these too, and keeps asking: the charger
+                # restarts into the new firmware partway through.
+                _LOGGER.debug("install status for %s: %s", self._tag(key), err)
+                answer = None
+            if answer is None:
+                # Gone quiet after starting is the restart, and the new
+                # firmware may not answer this question at once. Its version
+                # answers either way.
+                if running and await settled():
+                    return
+                continue
+            status, progress = answer
+            if status == UPGRADE_RUNNING:
+                running = True
+                self.installs[key] = {"status": status, "progress": progress}
+                self.async_update_listeners()
+            elif status == UPGRADE_FAILED:
+                if running:
+                    raise HomeAssistantError(
+                        translation_domain=DOMAIN, translation_key="firmware_failed"
+                    )
+                failed_early = True
+            elif (status == UPGRADE_DONE or running) and await settled():
+                # Done, or back to "not upgrading" after having been at it --
+                # and the version has moved either way.
+                _LOGGER.info("firmware %s installed on %s", offer["version"], self._tag(key))
+                return
+        if await self._installed(iot_id, key, offer):
+            return
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="firmware_failed" if failed_early else "firmware_unconfirmed",
+        )
+
+    async def _installed(self, iot_id: str, key: str, offer: dict[str, Any]) -> bool:
+        """Whether the charger now runs the MCU version it was sent.
+
+        Through the cache like every state read, but never answered from it: a
+        copy read a moment ago, mid-install, would say the old version for the
+        next minute.
+        """
+        self._state.pop(key, None)
+        try:
+            state = await self._device_state(key, iot_id, self._models.get(key))
+        except UgreenError:
+            return False
+        return bool(state) and state.get("mcu_version") == offer["code"]
+
+    def _installing(self, key: str) -> dict[str, Any] | None:
+        """This charger's reading while it installs firmware.
+
+        Nothing is measured, so no port has a value -- the last watts shown
+        again would be a charger delivering power while it restarts -- and the
+        rest is what was last known, marked carried so no session counts it.
+        """
+        reading, arrived = self._good.get(key, (None, 0.0))
+        if reading is None:
+            return None
+        return reading | {
+            "ports": {},
+            "total": None,
+            "carried_for": round(time.time() - arrived, 1),
+        }
 
     async def _wallpapers(self, device: dict[str, Any]) -> list[dict[str, Any]]:
         """The pictures available for this charger, with preview URLs.
@@ -698,6 +933,38 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.warning("Could not write %s: %s", path, err)
         else:
             _LOGGER.info("Wrote raw UGREEN cloud snapshot to %s", path)
+
+
+def _offer(data: dict[str, Any] | None, mcu: int) -> dict[str, Any] | None:
+    """What an answer from check_upgrade offers, minus the link; None if nothing.
+
+    ``versionName`` reads "V1.2.3" where the charger reports 1.2.1, so the V
+    goes. An offer of the version already running, or an older one, is none.
+    """
+    if not isinstance(data, dict):
+        return None
+    try:
+        code = int(data["versionCode"])
+        size = int(data["fileSize"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    md5 = data.get("fileMd5")
+    if code <= mcu or not isinstance(md5, str) or not md5:
+        return None
+    # Only strings are taken as text. This runs inside every poll, and a
+    # field that arrives as a list must cost its line, not the poll.
+    def text(name: str) -> str | None:
+        value = data.get(name)
+        return value.strip() or None if isinstance(value, str) else None
+
+    return {
+        "version": (text("versionName") or str(code)).lstrip("Vv"),
+        "code": code,
+        "size": size,
+        "md5": md5,
+        "notes": text("changeList"),
+        "published": text("publishTime"),
+    }
 
 
 def charger_keys(identifiers: set[tuple[str, str]]) -> set[str]:

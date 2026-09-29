@@ -396,6 +396,27 @@ class UgreenApi:
             await self._post("/app/v1/product/model/latest_issued", params)
         ).get("data")
 
+    async def check_firmware(self, product_serial: str, version_code: int) -> dict[str, Any] | None:
+        """New firmware for a charger at `version_code`, or None if it is current.
+
+        The app's own question, word for word: the model code as both serial
+        and name, the MCU version the state reply carries, and a signed file
+        URL asked for -- the charger downloads that URL itself when told to
+        update, so it has to be one it can fetch.
+        """
+        data = (
+            await self._post(
+                "/app/v1/software/version/check_upgrade",
+                {
+                    "serialNo": product_serial,
+                    "versionName": product_serial,
+                    "versionCode": version_code,
+                    "needSignUrl": True,
+                },
+            )
+        ).get("data")
+        return data if isinstance(data, dict) else None
+
     async def get_app_info(self) -> dict[str, Any]:
         """Credentials for the RTCX gateway: appKey/appSecret/oauthClientId/authFlag.
 

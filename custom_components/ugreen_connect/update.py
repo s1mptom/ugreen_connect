@@ -1,7 +1,9 @@
 """Update platform: the charger's firmware.
 
-Read-only. The device is told to install by the cloud, not by us, and that path
-was never observed, so this reports rather than acts.
+What is offered comes from the account API, asked with the MCU version the
+charger reports -- the question the UGREEN app asks. Installing is the app's
+own path, watched whole on an X783 going from 1.2.1 to 1.2.3, and is offered
+only on models where it was.
 """
 
 from __future__ import annotations
@@ -15,6 +17,10 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import UgreenConfigEntry
 from .coordinator import UgreenCoordinator, device_key
 from .entity import UgreenDeviceEntity
+from .protocol import FIRMWARE_INSTALL_MODELS
+
+# Home Assistant shows at most this much of the summary.
+SUMMARY_LIMIT = 255
 
 
 async def async_setup_entry(
@@ -45,14 +51,24 @@ async def async_setup_entry(
 
 
 class UgreenFirmware(UgreenDeviceEntity, UpdateEntity):
-    """Installed firmware, and whether the cloud is offering a newer one."""
+    """Installed firmware, what the cloud offers, and installing it."""
 
     _attr_translation_key = "firmware"
-    _attr_supported_features = UpdateEntityFeature(0)
 
     def __init__(self, coordinator: UgreenCoordinator, key: str) -> None:
         super().__init__(coordinator, key)
         self._attr_unique_id = f"{key}_firmware"
+
+    @property
+    def _offer(self) -> dict[str, Any] | None:
+        return (self._reading or {}).get("firmware_offer")
+
+    @property
+    def supported_features(self) -> UpdateEntityFeature:
+        features = UpdateEntityFeature.RELEASE_NOTES
+        if self.coordinator.model_for(self._key) in FIRMWARE_INSTALL_MODELS:
+            features |= UpdateEntityFeature.INSTALL | UpdateEntityFeature.PROGRESS
+        return features
 
     @property
     def available(self) -> bool:
@@ -66,21 +82,34 @@ class UgreenFirmware(UgreenDeviceEntity, UpdateEntity):
     def latest_version(self) -> str | None:
         # No offer means the charger is current -- saying so requires reporting
         # the installed version, since a null here reads as "unknown" instead.
-        offered = ((self._reading or {}).get("ota") or {}).get("available")
-        return offered or self.installed_version
+        offer = self._offer
+        return offer["version"] if offer else self.installed_version
+
+    @property
+    def release_summary(self) -> str | None:
+        notes = (self._offer or {}).get("notes")
+        return notes[:SUMMARY_LIMIT] if notes else None
+
+    async def async_release_notes(self) -> str | None:
+        return (self._offer or {}).get("notes")
 
     @property
     def in_progress(self) -> bool:
-        progress = ((self._reading or {}).get("ota") or {}).get("progress")
-        return progress is not None and 0 < progress < 100
+        return self._key in self.coordinator.installs
 
     @property
     def update_percentage(self) -> int | None:
-        if not self.in_progress:
-            return None
-        return ((self._reading or {}).get("ota") or {}).get("progress")
+        install = self.coordinator.installs.get(self._key)
+        # Nothing before the charger says it has started: it is still fetching
+        # the file, and a 0% bar reads as stuck.
+        return install["progress"] if install and install["progress"] else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        ota = (self._reading or {}).get("ota") or {}
-        return {"module": ota.get("module"), "size": ota.get("size")}
+        offer = self._offer or {}
+        return {"size": offer.get("size"), "published": offer.get("published")}
+
+    async def async_install(self, version: str | None, backup: bool, **kwargs: Any) -> None:
+        # Only ever the version on offer: without SPECIFIC_VERSION, Home
+        # Assistant refuses any other before this is called.
+        await self.coordinator.async_install_firmware(self._key, self._device)

@@ -67,6 +67,7 @@ SECOND_PRODUCT: dict[str, Any] = {
     "productKey": "another-product-key",
 }
 SECOND_STATE: dict[str, Any] = {
+    "mcu_version": 4,
     "brightness": 8,
     "sleep_time": 5,
     "charging_mode": "custom",
@@ -91,6 +92,8 @@ ALL_PROTOCOLS = [
 ]
 
 STATE: dict[str, Any] = {
+    # 1.2.1 on an X783, as the state reply's first two bytes say it.
+    "mcu_version": 55,
     "brightness": 100,
     "sleep_time": 0,
     "charging_mode": "custom",
@@ -151,6 +154,24 @@ X776_REPORT = (
 )
 
 
+# check_upgrade's answer for an X783 at MCU 55, as it came on 28 September
+# 2026 -- all but the link, which was signed and is not ours to keep.
+FIRMWARE_OFFER: dict[str, Any] = {
+    "id": 104,
+    "softwareSerialNo": "030002",
+    "versionCode": 58,
+    "versionName": "V1.2.3",
+    "fileName": "ota_package_X783_MV58_v1.2.3_updatepackage.bin",
+    "status": 50,
+    "fileUrl": "https://dl.example.invalid/ota_package_X783_MV58.bin?auth_key=signed",
+    "fileSize": 307704,
+    "fileMd5": "da5c01c2fa8e690e28bd3a1bcfba6094",
+    "changeList": "1. Fixed some known issues",
+    "upgradeMode": 1,
+    "publishTime": "2026-09-20 19:28:17",
+}
+
+
 def _reading(model: str | None) -> dict[str, Any]:
     """What the real client builds out of a report, names and all."""
     ports = parse_power_frame(X776_REPORT if model == "X776" else X783_REPORT, model)
@@ -173,6 +194,10 @@ class FakeApi:
         self.product_calls = 0
         # What the account holds; a test adds SECOND to put two on it.
         self.devices: list[dict[str, Any]] = [dict(DEVICE)]
+        # Firmware on offer, per product: offered to any MCU version older
+        # than its own, as the real endpoint does. Nothing by default.
+        self.firmware: dict[str, dict[str, Any]] = {}
+        self.firmware_checks: list[tuple[str, int]] = []
 
     async def login(self, *_args: Any) -> None:
         return None
@@ -188,6 +213,13 @@ class FakeApi:
 
     async def get_wallpapers(self, *_args: Any) -> list[dict[str, Any]]:
         return []
+
+    async def check_firmware(self, product_serial: str, version_code: int) -> dict[str, Any] | None:
+        self.firmware_checks.append((product_serial, version_code))
+        offer = self.firmware.get(product_serial)
+        if offer is None or offer["versionCode"] <= version_code:
+            return None
+        return dict(offer)
 
 
 class FakeRtcx:
@@ -219,12 +251,21 @@ class FakeRtcx:
         # not added must never appear here.
         self.polled: list[str] = []
         self.second_state: dict[str, Any] = dict(SECOND_STATE)
+        # What each progress question is answered with, in turn; the last one
+        # repeats. An exception in the list is raised instead. On "done", the
+        # charger comes back at the version it was sent.
+        self.upgrade_answers: list[Any] = [(0, 0), (1, 40), (1, 99), (2, 100)]
+        self.upgrade_asks = 0
+        self.firmware_sent: list[dict[str, Any]] = []
+        # Every conversation with a charger, in order, as (iot_id, what).
+        self.talk: list[tuple[str, str]] = []
 
     async def async_login(self) -> None:
         return None
 
     async def async_power(self, iot_id: str, model: str | None = None) -> dict[str, Any] | None:
         self.polled.append(iot_id)
+        self.talk.append((iot_id, "power"))
         return _reading(model) if self.power_answers else None
 
     async def async_device_state(self, iot_id: str, _model: str | None = None) -> dict[str, Any]:
@@ -285,8 +326,20 @@ class FakeRtcx:
     async def async_text_query(self, *_args: Any, **_kwargs: Any) -> str:
         return "a network"
 
-    def ota_state(self) -> dict[str, Any]:
-        return {"available": None, "progress": None, "module": None, "size": None}
+    async def async_start_firmware_update(self, iot_id: str, **sent: Any) -> None:
+        self.talk.append((iot_id, "firmware"))
+        self.firmware_sent.append({"iot_id": iot_id, **sent})
+
+    async def async_upgrade_status(self, iot_id: str) -> tuple[int, int] | None:
+        self.talk.append((iot_id, "upgrade_status"))
+        index = min(self.upgrade_asks, len(self.upgrade_answers) - 1)
+        self.upgrade_asks += 1
+        answer = self.upgrade_answers[index]
+        if isinstance(answer, Exception):
+            raise answer
+        if answer and answer[0] == 2 and self.firmware_sent:
+            self.state = {**self.state, "mcu_version": self.firmware_sent[-1]["version"]}
+        return answer
 
 
 @pytest.fixture(autouse=True)

@@ -252,6 +252,24 @@
     },
     "port_output_app_only": {
       "message": "The 160W's ports are switched on and off in the UGREEN app for now. Home Assistant shows them but does not set them yet."
+    },
+    "firmware_version_unknown": {
+      "message": "The charger has not reported its firmware version yet. Try again in a minute."
+    },
+    "firmware_check_failed": {
+      "message": "Could not ask the UGREEN cloud for the firmware file: {error}"
+    },
+    "firmware_current": {
+      "message": "The UGREEN cloud no longer offers newer firmware for this charger."
+    },
+    "firmware_failed": {
+      "message": "The charger reported that the firmware update failed. It keeps running the version it had."
+    },
+    "firmware_unconfirmed": {
+      "message": "The charger did not confirm the firmware update. Check its firmware version in a few minutes; if it has not changed, try again."
+    },
+    "firmware_installing": {
+      "message": "A firmware update is already running on this charger."
     }
   },
   "issues": {

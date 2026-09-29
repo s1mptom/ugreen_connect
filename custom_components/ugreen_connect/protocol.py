@@ -49,6 +49,7 @@ PUBLISHABLE_FRAMES: Final[frozenset[str]] = frozenset(
         QUERY_GET_DEVICE_STATE,
         QUERY_GET_POWER_INFO,
         QUERY_GET_PRODUCT_VERSION,
+        QUERY_GET_UPGRADE_STATUS,
     )
 )
 
@@ -136,6 +137,7 @@ STATE_FIELDS_ALL: Final[frozenset[str]] = frozenset(
         "wallpaper",
         "wallpapers",
         "port_outputs",
+        "mcu_version",
     }
 )
 
@@ -177,9 +179,17 @@ STATE_WRITABLE_BY_MODEL: Final[dict[str, frozenset[str]]] = {
     # could leave a pair the app never sends. `custom` arrived in this table by
     # riding STATE_FIELDS_ALL, so it is refused rather than left to say yes by
     # accident the day somebody builds the entity that asks.
-    "X783": STATE_FIELDS_ALL - {"custom", "port_outputs"},
+    "X783": STATE_FIELDS_ALL - {"custom", "port_outputs", "mcu_version"},
     "X776": frozenset({"brightness", "sleep_time"}),
 }
+
+# Where Home Assistant may install the firmware the cloud offers. The X783's
+# path was watched whole, in the UGREEN app, taking one from 1.2.1 to 1.2.3:
+# the command, the progress it reports, and the state it comes back in. The
+# 160W very likely takes the same command -- the app sends it without looking
+# at the model -- but a flash is the one write here that cannot be taken back
+# by setting the old value again, so it waits until someone has seen it.
+FIRMWARE_INSTALL_MODELS: Final[frozenset[str]] = frozenset({"X783"})
 
 
 class StateLayout(NamedTuple):
@@ -504,6 +514,23 @@ def parse_port_outputs(body: bytes, model: str | None = None) -> dict[str, bool]
     if len(body) <= max(offset for _, _, offset in groups):
         return None
     return {name: bool(body[offset]) for name, _, offset in groups}
+
+
+# GET_UPGRADE_STATUS answers two bytes: a status and a percentage. The status
+# names are the app's own. It reads NOT_UPGRADING for the first seconds after
+# the command, while the charger is still fetching the file, and the app waits
+# through that rather than calling it a failure.
+UPGRADE_IDLE = 0
+UPGRADE_RUNNING = 1
+UPGRADE_DONE = 2
+UPGRADE_FAILED = 3
+
+
+def parse_upgrade_status(body: bytes) -> tuple[int, int] | None:
+    """(status, percent) from a GET_UPGRADE_STATUS reply; None if too short."""
+    if len(body) < 2:
+        return None
+    return body[0], min(body[1], 100)
 
 
 def crc16_modbus(data: bytes) -> int:
