@@ -267,6 +267,9 @@
     },
     "firmware_unconfirmed": {
       "message": "Das Ladegerät hat das Firmware-Update nicht bestätigt. Bitte die Firmware-Version in ein paar Minuten prüfen und es erneut versuchen, falls sie sich nicht geändert hat."
+    },
+    "firmware_installing": {
+      "message": "Auf diesem Ladegerät läuft bereits ein Firmware-Update."
     }
   },
   "issues": {

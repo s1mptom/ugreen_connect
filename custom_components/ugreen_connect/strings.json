@@ -267,6 +267,9 @@
     },
     "firmware_unconfirmed": {
       "message": "The charger did not confirm the firmware update. Check its firmware version in a few minutes; if it has not changed, try again."
+    },
+    "firmware_installing": {
+      "message": "A firmware update is already running on this charger."
     }
   },
   "issues": {

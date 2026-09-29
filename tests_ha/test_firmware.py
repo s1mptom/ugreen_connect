@@ -234,3 +234,175 @@ async def test_the_160w_is_told_of_firmware_and_not_given_the_button(hass, api, 
     features = UpdateEntityFeature(state.attributes["supported_features"])
     assert not features & UpdateEntityFeature.INSTALL
     assert ("030007", 4) in api.firmware_checks
+
+
+# What review found: each of these went wrong before it was fixed.
+
+
+async def test_two_installs_at_once_send_the_charger_one(hass, offered, started, rtcx):
+    """Two tabs, or the card and an automation, pressing within a second."""
+    import asyncio
+
+    ask = offered.check_firmware
+
+    async def _slow(*args):
+        # The real call is a round trip; the second press lands inside it.
+        await asyncio.sleep(0)
+        return await ask(*args)
+
+    offered.check_firmware = _slow
+    results = await asyncio.gather(_install(hass), _install(hass), return_exceptions=True)
+    assert len(rtcx.firmware_sent) == 1
+    assert sum(isinstance(r, HomeAssistantError) for r in results) == 1
+    assert not started.runtime_data.installs
+
+
+async def test_a_second_install_is_refused_by_the_coordinator_too(hass, offered, started, rtcx):
+    """Home Assistant's own check reads in_progress; this holds without it."""
+    from tests_ha.conftest import DEVICE
+
+    coordinator = started.runtime_data
+    coordinator.installs[DEVICE_CODE] = {"status": 1, "progress": 10}
+    with pytest.raises(HomeAssistantError) as err:
+        await coordinator.async_install_firmware(DEVICE_CODE, dict(DEVICE))
+    assert err.value.translation_key == "firmware_installing"
+    assert rtcx.firmware_sent == []
+    coordinator.installs.clear()
+
+
+async def test_an_odd_answer_from_the_cloud_costs_its_line_not_the_poll(hass, api, rtcx):
+    api.firmware["030002"] = {**FIRMWARE_OFFER, "changeList": ["a", "list"], "versionName": 123}
+    from tests_ha.test_chargers import _set_up as set_up
+
+    entry = await set_up(hass, api, rtcx)
+    assert entry.runtime_data.last_update_success
+    state = hass.states.get(FIRMWARE)
+    assert state.state == "on"
+    # Not a string, so not a name: the MCU version stands in.
+    assert state.attributes["latest_version"] == "58"
+    assert state.attributes["release_summary"] is None
+
+
+async def test_a_failing_check_is_not_asked_every_poll(hass, api, rtcx):
+    async def _fails(*_args):
+        api.firmware_checks.append(_args)
+        raise UgreenError("check_upgrade: code 500")
+
+    api.check_firmware = _fails
+    from tests_ha.test_chargers import _set_up as set_up
+
+    entry = await set_up(hass, api, rtcx)
+    for _ in range(3):
+        await entry.runtime_data.async_refresh()
+    assert len(api.firmware_checks) == 1
+    assert hass.states.get(FIRMWARE).state == "off"
+
+
+async def test_the_version_is_kept_when_the_restarted_charger_does_not_say_it(
+    hass, offered, started, rtcx
+):
+    async def _silent(_iot_id):
+        return None
+
+    # Silent from before the install, so every read after it goes unanswered.
+    rtcx.async_firmware_version = _silent
+    await _install(hass)
+    await started.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    state = hass.states.get(FIRMWARE)
+    assert state.state != "unavailable"
+    assert state.attributes["installed_version"] == "1.2.1"
+
+
+async def test_a_command_that_errored_is_still_followed(hass, offered, started, rtcx):
+    """A timed-out request may well have arrived; the charger's answer decides."""
+    sent = rtcx.async_start_firmware_update
+
+    async def _times_out(iot_id, **kw):
+        await sent(iot_id, **kw)
+        raise UgreenError("/client/thing/properties/set: timed out")
+
+    rtcx.async_start_firmware_update = _times_out
+    await _install(hass)
+    assert rtcx.state["mcu_version"] == 58
+
+
+async def test_any_error_in_a_progress_question_is_waited_through(hass, offered, started, rtcx):
+    rtcx.upgrade_answers = [ValueError("not JSON"), (1, 50), (2, 100)]
+    await _install(hass)
+    assert rtcx.state["mcu_version"] == 58
+
+
+async def test_silence_after_starting_is_settled_by_the_version(
+    hass, offered, started, rtcx, monkeypatch
+):
+    """The new firmware may not answer the progress question at once.
+
+    Settled by reading the version, not by waiting out the limit -- which is
+    set long here so that waiting would show.
+    """
+    import time
+
+    monkeypatch.setattr(
+        "custom_components.ugreen_connect.coordinator.FIRMWARE_INSTALL_TIMEOUT", 30
+    )
+    answers = iter([(1, 50), (1, 99)])
+
+    async def _status(_iot_id):
+        answer = next(answers, None)
+        if answer is None:
+            rtcx.state = {**rtcx.state, "mcu_version": 58}
+        return answer
+
+    rtcx.async_upgrade_status = _status
+    began = time.monotonic()
+    await _install(hass)
+    assert time.monotonic() - began < 10
+
+
+async def test_a_done_left_from_before_is_not_believed(hass, offered, started, rtcx, monkeypatch):
+    monkeypatch.setattr(
+        "custom_components.ugreen_connect.coordinator.FIRMWARE_START_TIMEOUT", 0.05
+    )
+
+    async def _stale(_iot_id):
+        return (2, 100)
+
+    rtcx.async_upgrade_status = _stale
+    with pytest.raises(HomeAssistantError) as err:
+        await _install(hass)
+    assert err.value.translation_key == "firmware_unconfirmed"
+
+
+async def test_a_failure_left_from_before_does_not_stop_a_new_install(
+    hass, offered, started, rtcx
+):
+    rtcx.upgrade_answers = [(3, 0), (1, 20), (1, 90), (2, 100)]
+    await _install(hass)
+    assert rtcx.state["mcu_version"] == 58
+
+
+async def test_an_entry_reloaded_mid_install_leaves_the_charger_alone(
+    hass, offered, started, rtcx
+):
+    coordinator = started.runtime_data
+    coordinator.installs[DEVICE_CODE] = {"status": 1, "progress": 30}
+    try:
+        from unittest.mock import patch
+
+        with (
+            patch("custom_components.ugreen_connect.async_get_clientsession"),
+            patch("custom_components.ugreen_connect.UgreenApi", return_value=offered),
+            patch("custom_components.ugreen_connect.RtcxClient", return_value=rtcx),
+        ):
+            assert await hass.config_entries.async_reload(started.entry_id)
+            await hass.async_block_till_done()
+        polled = len(rtcx.polled)
+        await started.runtime_data.async_refresh()
+        assert len(rtcx.polled) == polled, "the reloaded entry polled a charger mid-install"
+        # With no reading to show it is unavailable until the install ends --
+        # which also keeps Install from being offered over it.
+        state = hass.states.get(FIRMWARE)
+        assert state.state == "unavailable" or state.attributes["in_progress"] is True
+    finally:
+        coordinator.installs.clear()

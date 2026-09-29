@@ -387,7 +387,15 @@ class UgreenChargerCard extends HTMLElement {
     // The call returns when the charger has finished, or says why it could
     // not; the progress in between arrives as the entity's state.
     Promise.resolve(this._hass.callService('update', 'install', { entity_id: fw.id }))
-      .catch((err) => { this._fw.error = err?.message || String(err); })
+      .catch((err) => {
+        // A service error arrives as {code, message}; a dropped connection as
+        // {error: {code: 3, message}} -- and a phone that loses its socket
+        // for the two minutes has lost nothing else: the charger goes on, and
+        // its progress comes back with the connection.
+        const detail = err?.error || err;
+        if (detail?.code === 3) return;
+        this._fw.error = detail?.message || String(err);
+      })
       .finally(() => { this._fw.sent = false; this._sync(); });
   }
 
