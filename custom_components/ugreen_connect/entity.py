@@ -45,10 +45,29 @@ class UgreenDeviceEntity(CoordinatorEntity[UgreenCoordinator]):
     """
 
     _attr_has_entity_name = True
+    # The port an entity is about, where it is about one. Published as an
+    # attribute, because that is how the dashboard cards find a port's
+    # entities: the entity id is made from the translated name --
+    # `sensor.<device>_c1_leistung` on a German install -- and is the owner's
+    # to rename besides. The registry's translation key says which kind of
+    # entity it is; this says which port.
+    _port: str | None = None
 
     def __init__(self, coordinator: UgreenCoordinator, key: str) -> None:
         super().__init__(coordinator)
         self._key = key
+
+    @property
+    def capability_attributes(self) -> dict[str, Any] | None:
+        # A capability rather than an extra attribute, which Home Assistant
+        # drops while an entity is unavailable: a charger offline, or a
+        # priority switch outside `priority`, still has to be recognisable
+        # as that port's. Added to what the platform declares, never instead
+        # of it -- a sensor's state class travels the same way.
+        capabilities = super().capability_attributes
+        if not self._port:
+            return capabilities
+        return {**(capabilities or {}), "port": self._port}
 
     @property
     def _device(self) -> dict[str, Any]:

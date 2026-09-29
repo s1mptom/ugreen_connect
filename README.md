@@ -223,6 +223,13 @@ and the dashboard card lets you switch; give a card `device_id` to pin it to one
 | `custom:ugreen-wallpaper-card` | the charger's screen: screensaver, brightness and screen-off, with an editor for the clock and the picture |
 | `custom:ugreen-dashboard-card` | all of the above as one screen, for a view given over to the charger. With several chargers and no `device_id`, the chosen one's name heads the screen, with the others in a list behind it |
 
+The cards do not look entities up by their ids. They find a charger's
+entities by what they are: the translation key Home Assistant's entity
+registry keeps for each one, and, for a port's entities, the `port` attribute
+each of them carries. Entity ids are made from names in the language Home
+Assistant was set up in -- `sensor.<device>_gesamtleistung` on a German
+install -- and you may rename them. The cards work either way.
+
 A port keeps one colour on every card, picked to stay apart in light and dark
 themes and for common kinds of colour blindness; a theme can set
 `--ugreen-port-color-1` to `-8` to change them. Times follow the 12- or 24-hour
