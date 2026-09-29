@@ -259,6 +259,7 @@ class UgreenPortOutput(UgreenDeviceEntity, SwitchEntity):
     ) -> None:
         super().__init__(coordinator, key)
         self._group = name
+        self._port = name
         self._attr_translation_placeholders = {"port": name}
         self._attr_unique_id = f"{key}_{name}_output"
         self._attr_extra_state_attributes = {"ports": list(ports)}

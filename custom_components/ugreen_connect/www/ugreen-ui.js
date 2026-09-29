@@ -12,6 +12,61 @@
 
 /* Entities -------------------------------------------------------------- */
 
+/* Which entity is which, by what the integration calls it rather than by its id.
+ *
+ * An entity id is made from the entity's name in the language Home Assistant
+ * was set up in -- `sensor.<device>_gesamtleistung` on a German install, not
+ * `_total_power` (#45) -- and its owner may rename it besides. What does not
+ * move is the translation key, which the frontend's registry carries, and for
+ * a port's entities the port, which the integration puts in an attribute.
+ *
+ * Callers still say what they want by the suffix the English id ends in, and
+ * this table turns that into the key. The suffix itself is the fallback, for
+ * a registry that has not arrived. */
+const KEYS = {
+  'sensor/_total_power': 'total_power',
+  'sensor/_cloud_status': 'status',
+  'sensor/_power': 'port_power',
+  'sensor/_voltage': 'port_voltage',
+  'sensor/_current': 'port_current',
+  'sensor/_protocol': 'port_protocol',
+  'sensor/_session_energy': 'session_energy',
+  'sensor/_session_charge': 'session_charge',
+  'sensor/_energy': 'energy_total',
+  'sensor/_custom_mode_limit': 'custom_limit',
+  'binary_sensor/_charging': 'charging',
+  'event/_charging': 'charging_event',
+  'select/_charging_mode': 'charging_mode',
+  'select/_dc_port_voltage': 'dc_voltage',
+  'select/_wallpaper': 'wallpaper',
+  'select/_clock_style': 'clock_style',
+  'select/_time_format': 'time_format',
+  'select/_screen_off_time': 'screen_off_time',
+  'number/_screen_brightness': 'screen_brightness',
+  'switch/_screensaver': 'screensaver',
+  'switch/_dc_always_on': 'dc_always_on',
+  'switch/_charged_first': 'priority_port',
+  'switch/_output': 'port_output',
+  'update/_firmware': 'firmware',
+};
+// The charger's own energy counter, which a port's shares a suffix with.
+const CHARGER_KEYS = { 'sensor/energy': 'energy_total_charger' };
+
+/* This integration's entities of one domain and kind, in the order Home
+ * Assistant holds their states -- which is the order they were created in, and
+ * so for ports the charger's own. Null when the registry cannot say. */
+function keyed(hass, deviceId, domain, key) {
+  const entities = hass?.entities;
+  if (!entities || !key) return null;
+  const ours = Object.values(entities).some((e) => e?.platform === 'ugreen_connect' && e.translation_key);
+  if (!ours) return null;
+  return Object.keys(hass.states || {}).filter((id) => {
+    const entry = entities[id];
+    return entry?.platform === 'ugreen_connect' && entry.translation_key === key
+      && id.startsWith(`${domain}.`) && (!deviceId || entry.device_id === deviceId);
+  });
+}
+
 /* The chargers set up in Home Assistant: one entry per device that owns this
  * integration's total-power sensor, named as the device page names it.
  *
@@ -30,7 +85,8 @@ export function chargers(hass) {
   const seen = new Set();
   for (const [id, entry] of Object.entries(entities)) {
     if (entry?.platform !== 'ugreen_connect' || !entry.device_id || seen.has(entry.device_id)) continue;
-    if (!id.startsWith('sensor.') || !bare(id).endsWith('_total_power')) continue;
+    if (!id.startsWith('sensor.')) continue;
+    if (entry.translation_key ? entry.translation_key !== 'total_power' : !bare(id).endsWith('_total_power')) continue;
     seen.add(entry.device_id);
     const device = hass.devices?.[entry.device_id] || {};
     list.push({
@@ -105,17 +161,30 @@ function tailOf(id) {
 }
 
 export function findOne(hass, deviceId, domain, suffix) {
-  const wanted = resolveDevice(hass, deviceId);
-  return Object.keys(hass?.states || {}).find(
-    (id) => id.startsWith(`${domain}.`) && bare(id).endsWith(suffix) && belongs(hass, id, wanted),
-  );
+  return findAll(hass, deviceId, domain, suffix)[0];
 }
 
 export function findAll(hass, deviceId, domain, suffix) {
   const wanted = resolveDevice(hass, deviceId);
+  const found = keyed(hass, wanted, domain, KEYS[`${domain}/${suffix}`]);
+  if (found) return found;
   return Object.keys(hass?.states || {}).filter(
     (id) => id.startsWith(`${domain}.`) && bare(id).endsWith(suffix) && belongs(hass, id, wanted),
   );
+}
+
+/* This charger's entities that are about one port, by kind and port. */
+function byPort(hass, deviceId) {
+  const index = new Map();
+  const entities = hass?.entities || {};
+  for (const [id, state] of Object.entries(hass?.states || {})) {
+    const entry = entities[id];
+    const port = state?.attributes?.port;
+    if (entry?.platform !== 'ugreen_connect' || !entry.translation_key || !port) continue;
+    if (deviceId && entry.device_id !== deviceId) continue;
+    index.set(`${id.split('.')[0]}/${entry.translation_key}/${port}`, id);
+  }
+  return index;
 }
 
 /* The charger's ports, in the order it reports them.
@@ -124,8 +193,10 @@ export function findAll(hass, deviceId, domain, suffix) {
  * has never heard of still has one sensor per port, and the order they were
  * created in is the charger's own. */
 export function ports(hass, deviceId) {
-  const total = findOne(hass, deviceId, 'sensor', '_total_power');
-  return findAll(hass, deviceId, 'sensor', '_power')
+  const wanted = resolveDevice(hass, deviceId);
+  const total = findOne(hass, wanted, 'sensor', '_total_power');
+  const index = byPort(hass, wanted);
+  return findAll(hass, wanted, 'sensor', '_power')
     .filter((id) => id !== total)
     .map((id) => {
       const tail = tailOf(id);
@@ -136,15 +207,11 @@ export function ports(hass, deviceId) {
       // only right in English; it is the fallback for an older release.
       const name = hass.states[id].attributes.port
         || (hass.states[id].attributes.friendly_name || object).replace(/\s*power$/i, '').split(' ').pop();
-      return {
-        id,
-        base,
-        name,
-        charging: `binary_sensor.${object}_charging${tail}`,
-        event: `event.${object}_charging${tail}`,
-        // Another entity of this port, by what follows its name.
-        of: (domain, what) => `${domain}.${object}_${what}${tail}`,
-      };
+      // Another entity of this port: by kind and port where the registry
+      // says, else by what follows the power sensor's name in its id.
+      const of = (domain, what) => index.get(`${domain}/${KEYS[`${domain}/_${what}`]}/${name}`)
+        || `${domain}.${object}_${what}${tail}`;
+      return { id, base, name, charging: of('binary_sensor', 'charging'), event: of('event', 'charging'), of };
     });
 }
 
@@ -160,6 +227,8 @@ export function prefix(hass, deviceId) {
 
 /* An entity of the charger itself, by the name that follows its prefix. */
 export function chargerEntity(hass, deviceId, domain, name) {
+  const found = keyed(hass, resolveDevice(hass, deviceId), domain, CHARGER_KEYS[`${domain}/${name}`]);
+  if (found) return found[0];
   const base = prefix(hass, deviceId);
   const total = findOne(hass, deviceId, 'sensor', '_total_power');
   const id = base && `${domain}.${base}_${name}${total ? tailOf(total) : ''}`;
