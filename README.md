@@ -68,7 +68,7 @@ e.g. `sensor.ugreen_nexode_pro_x783_c1_power`.
 | `sensor.<device>_total_power` | sum across ports; firmware and Wi-Fi SSID in its attributes |
 | `sensor.<device>_cloud_status` | `online` / `offline`; MAC in its attributes |
 | `sensor.<device>_c1_custom_mode_limit` … | six of them -- C1–C5 and C6+A, which share one -- reading the watt limit that group is set to. Diagnostic; created the first time the charger is seen in the `custom` charging mode, and unavailable while any other one runs. The protocols the group may negotiate and the raw mask are attributes |
-| `update.<device>_firmware` | installed version, and whether one is waiting |
+| `update.<device>_firmware` | installed version, the one the UGREEN cloud offers and what changed in it; on a 300W, installs it too -- see [Firmware updates](#firmware-updates) |
 
 ### Controls
 
@@ -130,6 +130,26 @@ A 300W reports its ports in the order `C1 C2 C3 C4 C5 C6 A1 DC`, and a 160W as
 model with no entry gets `P1..Pn` counted from the report's own length. A port
 keeps its entities once it has been seen, so unplugging a cable does not delete
 its history.
+
+### Firmware updates
+
+Home Assistant asks the UGREEN cloud for new firmware every six hours. The
+question is the one the app asks, keyed on the version the charger itself
+reports. An update shows up in the update entity and on the charger card, with
+the notes UGREEN published for it.
+
+On a 300W (X783), **Install** does what the app does. It hands the charger the
+file, and the charger downloads and installs it by itself. Home Assistant then
+follows the charger's own progress until the charger says it is done. This was
+watched in the app on an X783 going from 1.2.1 to 1.2.3, and it took under two
+minutes. While the install runs, Home Assistant asks the charger nothing else
+and its readings show as unknown. The ports may stop charging while it
+restarts. The charging mode and screen settings came back as they were.
+
+A 160W (X776) is told about new firmware, but the update is installed in the
+UGREEN app. The app very likely sends it the same command, but nobody has
+watched one install, and a flash is the one write here that cannot be undone
+by setting the old value back.
 
 ### Charging sessions
 
@@ -195,7 +215,7 @@ and the dashboard card lets you switch; give a card `device_id` to pin it to one
 
 | Card | What it draws |
 |---|---|
-| `custom:ugreen-charger-card` | the total out of the charger's budget, cut into the ports drawing it; the charging mode and what it does -- in `priority`, the ports it charges first, to pick from; in DC turbo, the DC port's voltage and Always On, and which USB ports that turns off; in `custom`, its limits; cloud and firmware |
+| `custom:ugreen-charger-card` | the total out of the charger's budget, cut into the ports drawing it; the charging mode and what it does -- in `priority`, the ports it charges first, to pick from; in DC turbo, the DC port's voltage and Always On, and which USB ports that turns off; in `custom`, its limits; cloud and firmware, and a firmware update to install |
 | `custom:ugreen-ports-card` | one tile per port, in the order they sit on the charger: watts, volts, amps, protocol, a line of the last hour, what the current charge has put in, a *First* badge on the ports `priority` charges first, and *Off in DC turbo* on the ports DC turbo turns off |
 | `custom:ugreen-sessions-card` | the charges that have finished, newest first, one row per port |
 | `custom:ugreen-power-card` | power over the last hour, three hours or day, per port and in total, read from the recorder |

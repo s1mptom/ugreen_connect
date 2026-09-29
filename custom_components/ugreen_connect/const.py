@@ -149,6 +149,17 @@ WALLPAPER_SIZE: Final[tuple[int, int]] = (560, 170)
 
 # Firmware version and SSID never change between polls; re-read them rarely.
 STATIC_INFO_INTERVAL: Final = 3600
+# How often the account API is asked whether new firmware is out. A release
+# comes every few months; a few questions a day is plenty and costs nothing.
+FIRMWARE_CHECK_INTERVAL: Final = 6 * 3600
+# An install, as watched: the progress climbed to 96% in 70 s and the charger
+# called it done inside two minutes. Five times that before giving up on being
+# told, and a pause between questions on top of the one each question costs.
+FIRMWARE_INSTALL_TIMEOUT: Final = 600
+# ...but a charger that has not started within three minutes is not going to:
+# the file is 300 KB, and progress showed within seconds of the command.
+FIRMWARE_START_TIMEOUT: Final = 180
+FIRMWARE_POLL_SECONDS: Final = 1.0
 
 # Charging presets. "custom" is left out on purpose: setting a mode carries that
 # mode's parameter block, and composing a custom block is the app editor's

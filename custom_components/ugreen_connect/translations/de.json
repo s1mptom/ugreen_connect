@@ -252,6 +252,21 @@
     },
     "port_output_app_only": {
       "message": "Die Anschlüsse des 160W werden vorerst in der UGREEN-App ein- und ausgeschaltet. Home Assistant zeigt sie an, schaltet sie aber noch nicht."
+    },
+    "firmware_version_unknown": {
+      "message": "Das Ladegerät hat seine Firmware-Version noch nicht gemeldet. Bitte in einer Minute erneut versuchen."
+    },
+    "firmware_check_failed": {
+      "message": "Die Firmware-Datei konnte nicht von der UGREEN-Cloud abgefragt werden: {error}"
+    },
+    "firmware_current": {
+      "message": "Die UGREEN-Cloud bietet für dieses Ladegerät keine neuere Firmware mehr an."
+    },
+    "firmware_failed": {
+      "message": "Das Ladegerät meldet, dass das Firmware-Update fehlgeschlagen ist. Es läuft weiter mit der bisherigen Version."
+    },
+    "firmware_unconfirmed": {
+      "message": "Das Ladegerät hat das Firmware-Update nicht bestätigt. Bitte die Firmware-Version in ein paar Minuten prüfen und es erneut versuchen, falls sie sich nicht geändert hat."
     }
   },
   "issues": {

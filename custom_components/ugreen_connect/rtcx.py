@@ -61,6 +61,7 @@ from .protocol import (
     QUERY_GET_DEVICE_STATE,
     QUERY_GET_POWER_INFO,
     QUERY_GET_PRODUCT_VERSION,
+    QUERY_GET_UPGRADE_STATUS,
     QUERY_GET_WIFI_SSID,
     SETTING_SET_BRIGHTNESS,
     SETTING_SET_CHARGING_MODE,
@@ -76,6 +77,7 @@ from .protocol import (
     parse_port_outputs,
     parse_power_frame,
     parse_priority,
+    parse_upgrade_status,
     priority_mask,
     state_fields,
     state_layout,
@@ -213,8 +215,6 @@ class RtcxClient:
         # lock above, which async_login holds while call() waits on a token:
         # sharing one would deadlock the first ask that has to sign in.
         self._talk = asyncio.Lock()
-        # Last propertyMap seen, so OTA state can be read without another call.
-        self.last_properties: dict[str, Any] = {}
         # The last raw frame seen for each question asked, per charger. Keyed
         # by the device rather than globally: one client serves an account, so
         # two chargers on it would otherwise share one dict and a diagnostics
@@ -417,12 +417,6 @@ class RtcxClient:
             if stamp and (time.time() * 1000 - stamp) > PT_DATA_MAX_AGE * 1000:
                 _LOGGER.debug("PT_data for charger %s is stale (%s)", charger_tag(iot_id), stamp)
                 return None
-            # Keep the rest of the map: OTA state rides along in the same
-            # response, so reading it costs no extra round trip.
-            self.last_properties = {
-                name: (entries[0].get("value") if entries else None)
-                for name, entries in prop_map.items()
-            }
             if value and frame_body(value, frame_type, cmd) is not None:
                 seen = self.last_frames.setdefault(iot_id, {})
                 seen[f"{frame_type:02X}/{cmd}"] = value
@@ -433,34 +427,58 @@ class RtcxClient:
             )
         return None
 
-    def ota_state(self) -> dict[str, Any]:
-        """Firmware update state, read from the properties already fetched.
+    async def async_upgrade_status(self, iot_id: str) -> tuple[int, int] | None:
+        """How a firmware install is going: (status, percent), from the charger.
 
-        ``OTA_ugrade`` (the cloud's spelling) only appears once an update is
-        actually waiting -- its absence is how "up to date" is expressed, which
-        is why nothing here invents a version when it is missing.
+        What the app watches, about once a second, from the moment it sends
+        the command until the charger says it is done. The cloud's own
+        ``OTA_status`` property is no help: on the charger this was watched on
+        it read "100" throughout, last written a month and a half before.
         """
-        raw = self.last_properties.get("OTA_ugrade")
-        offer: dict[str, Any] = {}
-        if isinstance(raw, dict):
-            offer = raw
-        elif isinstance(raw, str) and raw:
-            try:
-                offer = json.loads(raw)
-            except json.JSONDecodeError:
-                _LOGGER.debug("OTA_ugrade is not JSON: %d characters", len(raw))
+        value = await self._ask(iot_id, FRAME_QUERY, QUERY_GET_UPGRADE_STATUS)
+        body = frame_body(value, FRAME_QUERY, QUERY_GET_UPGRADE_STATUS) if value else None
+        return parse_upgrade_status(body) if body else None
 
-        raw_progress = self.last_properties.get("OTA_status")
-        try:
-            progress: int | None = int(raw_progress)
-        except (TypeError, ValueError):
-            progress = None
-        return {
-            "available": offer.get("version"),
-            "module": offer.get("module"),
-            "size": offer.get("size"),
-            "progress": progress,
-        }
+    async def async_start_firmware_update(
+        self, iot_id: str, *, url: str, size: int, md5: str, version: int
+    ) -> None:
+        """Tell the charger to fetch and install a firmware file.
+
+        The app's command, as it was watched going out: a plain property, like
+        a picture, since the charger downloads the file itself -- which is why
+        ``url`` has to be the signed link the account API handed out, and a
+        fresh one. ``OTA_upgrade`` is spelt as the app spells it; the device's
+        own property list calls it ``OTA_ugrade``, and that name is not what
+        the app sends. ``version`` is the MCU version being installed (58 for
+        1.2.3), not the version's name. The charger answers nothing; progress
+        is read with ``async_upgrade_status``.
+
+        The numbers go as the app sends them, 307704.0 and 58.0: its bridge
+        hands every number over as a double. The device's property list calls
+        the size an integer and the version text, and it installed what it was
+        sent -- so that, and not the list, is what this reproduces.
+
+        Sent in a turn of its own, so it cannot land between a question in
+        flight and its answer.
+        """
+        async with self._talk:
+            await self.call(
+                "/client/thing/properties/set",
+                {
+                    "iotId": iot_id,
+                    "items": {
+                        "OTA_upgrade": {
+                            "size": float(size),
+                            "md5sum": md5,
+                            "version": float(version),
+                            "url": url,
+                        }
+                    },
+                },
+            )
+        # Everything the state reply holds comes back from a restart, the MCU
+        # version first among them.
+        self._state_dirty.add(iot_id)
 
     async def async_text_query(self, iot_id: str, cmd: int) -> str | None:
         """Queries whose reply is a plain string (SSID, serial number).
@@ -559,6 +577,10 @@ class RtcxClient:
                 if (chunk := body[at : at + IMAGE_ID_LEN]) != b"\xff" * IMAGE_ID_LEN
             ]
         state = {
+            # What the app sends the account API as `versionCode` when it asks
+            # for new firmware: the first two bytes, big-endian -- 0x0037, 55,
+            # on an X783 at 1.2.1. The app's own parser reads it so.
+            "mcu_version": int.from_bytes(body[0:2], "big"),
             "brightness": body[STATE_BRIGHTNESS],
             "sleep_time": body[STATE_SLEEP_TIME],
             "charging_mode": charging_modes(model).get(body[STATE_CHARGING_MODE]),

@@ -177,7 +177,11 @@ def test_reading_a_field_is_not_permission_to_write_it():
     # writes them, and a one-limit edit could leave a limit and a mask paired
     # the way the app never sends. It was in this table only because it rode
     # STATE_FIELDS_ALL.
-    assert p.state_writable("X783") == p.STATE_FIELDS_ALL - {"custom", "port_outputs"}
+    # And the MCU version, which is read to ask for firmware and changes only
+    # by installing some -- see FIRMWARE_INSTALL_MODELS for that.
+    assert p.state_writable("X783") == p.STATE_FIELDS_ALL - {
+        "custom", "port_outputs", "mcu_version",
+    }
     assert "custom" in p.state_fields("X783"), "read, though -- that is the point"
     assert p.state_writable("X999") == frozenset()
 
