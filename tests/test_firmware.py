@@ -11,9 +11,8 @@ import asyncio
 import json
 
 import pytest
+from conftest import protocol as p
 from conftest import rtcx as rtcx_module
-
-import custom_components.ugreen_connect.protocol as p
 
 # The params of the app's write, as captured, with the charger's id and the
 # signed link swapped for stand-ins.
