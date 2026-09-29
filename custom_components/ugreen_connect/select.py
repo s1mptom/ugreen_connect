@@ -62,9 +62,12 @@ async def async_setup_entry(
             if reading.get("wallpapers") and (key, "wallpaper") not in known:
                 known.add((key, "wallpaper"))
                 new.append(UgreenWallpaper(coordinator, key))
-            # The clock options only exist alongside the screensaver state.
+            # The clock options only exist alongside the screensaver state --
+            # and the clock style not on the 160W, whose byte in its place is
+            # the screen's auto-rotate.
             if reading.get("screensaver_theme") is not None:
-                if (key, "clock_style") not in known:
+                clock = reading.get("screensaver_flag") is not None
+                if clock and (key, "clock_style") not in known:
                     known.add((key, "clock_style"))
                     new.append(UgreenClockStyle(coordinator, key))
                 if (key, "time_format") not in known:

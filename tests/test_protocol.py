@@ -162,7 +162,8 @@ def test_a_model_nobody_has_read_gets_no_screen_at_all():
     assert p.state_fields("X999") == frozenset()
     # ...but a charger the account API would not name is far more often the one
     # this was written on than a stranger.
-    assert p.state_fields(None) == p.STATE_FIELDS_ALL
+    # Read as an X783, which has no rotating screen.
+    assert p.state_fields(None) == p.STATE_FIELDS_ALL - {"auto_rotate"}
 
 
 def test_reading_a_field_is_not_permission_to_write_it():
@@ -180,7 +181,7 @@ def test_reading_a_field_is_not_permission_to_write_it():
     # And the MCU version, which is read to ask for firmware and changes only
     # by installing some -- see FIRMWARE_INSTALL_MODELS for that.
     assert p.state_writable("X783") == p.STATE_FIELDS_ALL - {
-        "custom", "port_outputs", "mcu_version",
+        "custom", "port_outputs", "mcu_version", "auto_rotate",
     }
     assert "custom" in p.state_fields("X783"), "read, though -- that is the point"
     assert p.state_writable("X999") == frozenset()
@@ -332,10 +333,54 @@ def test_the_mask_is_only_a_mask_under_priority():
     assert p.parse_priority(CUSTOM_STATE, "X783") is None
 
 
-def test_the_160w_has_no_priority_ports_to_read():
-    assert p.parse_priority(_mode_body(p.PRIORITY_MODE, 0b010), "X776") is None
-    assert "priority" not in p.state_fields("X776")
+def test_the_160w_reads_its_priority_ports_from_its_own_frames():
+    """Its owner's changes in #2: C-Cable alone read 01, with C1 03.
+
+    The frame with the outputs off was taken under priority, mode 2 here,
+    with C1 chosen; the one with the new picture under Custom Power.
+    """
+    assert X776_OUTPUTS_OFF[p.STATE_CHARGING_MODE] == 2
+    assert p.parse_priority(X776_OUTPUTS_OFF, "X776") == ["C1"]
+    assert p.parse_priority(X776_NEW_PICTURE, "X776") is None, "custom, not priority"
+    for mask, ports in ((0x01, ["C-Cable"]), (0x03, ["C-Cable", "C1"])):
+        body = bytearray(X776_OUTPUTS_OFF)
+        body[p.STATE_MODE_PARAMS] = mask
+        assert p.parse_priority(bytes(body), "X776") == ports
+    # Mode 3 is Custom Power on the 160W, not priority as on the 300W.
+    body = bytearray(X776_OUTPUTS_OFF)
+    body[p.STATE_CHARGING_MODE] = 3
+    assert p.parse_priority(bytes(body), "X776") is None
+
+
+def test_a_160w_bit_nobody_has_named_is_left_unread():
+    body = bytearray(X776_OUTPUTS_OFF)
+    body[p.STATE_MODE_PARAMS] = 0b0111
+    assert p.parse_priority(bytes(body), "X776") == ["C-Cable", "C1"]
+
+
+def test_the_160w_s_priority_is_read_and_not_set():
+    assert "priority" in p.state_fields("X776")
+    assert "priority" not in p.state_writable("X776")
     assert "priority" in p.state_writable("X783")
+    assert p.priority_mask(["C-Cable", "C1"], "X776") == 0b11
+    with pytest.raises(ValueError):
+        p.priority_mask(["C2"], "X776")
+
+
+def test_the_160w_s_screen_turns_where_the_300w_keeps_its_clock_style():
+    """Byte 33: 1 with auto-rotate off, 0 with it on, one toggle at a time."""
+    at = p.state_layout("X776").screensaver + 2
+    assert at == 33
+    assert X776_OUTPUTS_OFF[at] == X776_NEW_PICTURE[at] == 1
+    assert p.parse_auto_rotate(X776_OUTPUTS_OFF, "X776") is False
+    body = bytearray(X776_OUTPUTS_OFF)
+    body[at] = 0
+    assert p.parse_auto_rotate(bytes(body), "X776") is True
+    # Not a clock style there, and not an auto-rotate on the 300W.
+    assert "screensaver_flag" not in p.state_fields("X776")
+    assert "auto_rotate" not in p.state_fields("X783")
+    assert p.parse_auto_rotate(bytes(60), "X783") is None
+    assert p.parse_auto_rotate(bytes(60), None) is None
 
 
 def test_a_body_that_stops_before_the_block_has_no_priority():

@@ -41,7 +41,8 @@ const TEXT = {
     mode: 'Charging mode',
     limits: 'Limits, set in the UGREEN app',
     first: 'Charged first',
-    firstHint: 'Any of the three, or all of them. The rest share what is left.',
+    firstHint: 'Any of them, or all at once. The rest share what is left.',
+    firstApp: 'Chosen in the UGREEN app.',
     lastFirst: 'One port always goes first',
     dcVoltage: 'DC port voltage',
     alwaysOn: 'Always on, even with nothing plugged in',
@@ -73,7 +74,8 @@ const TEXT = {
     mode: 'Lademodus',
     limits: 'Grenzen, in der UGREEN-App gesetzt',
     first: 'Zuerst geladen',
-    firstHint: 'Einer der drei oder alle. Die übrigen teilen sich den Rest.',
+    firstHint: 'Einer davon oder alle. Die übrigen teilen sich den Rest.',
+    firstApp: 'In der UGREEN-App gewählt.',
     lastFirst: 'Ein Anschluss wird immer zuerst geladen',
     dcVoltage: 'Spannung am DC-Anschluss',
     alwaysOn: 'Immer an, auch wenn nichts angeschlossen ist',
@@ -105,7 +107,8 @@ const TEXT = {
     mode: 'Режим зарядки',
     limits: 'Лимиты, заданные в приложении UGREEN',
     first: 'Заряжаются первыми',
-    firstHint: 'Любой из трёх или все сразу. Остальные делят то, что осталось.',
+    firstHint: 'Любой из них или все сразу. Остальные делят то, что осталось.',
+    firstApp: 'Выбирается в приложении UGREEN.',
     lastFirst: 'Хотя бы один порт всегда заряжается первым',
     dcVoltage: 'Напряжение DC-порта',
     alwaysOn: 'Всегда включён, даже если ничего не подключено',
@@ -544,12 +547,23 @@ class UgreenChargerCard extends HTMLElement {
    *
    * A press shows at once and holds until its call is done (see `_send`). */
   _syncFirst() {
+    const all = ports(this._hass, this._config.device_id);
+    // Named by the port each switch says it is about, in the charger's own
+    // order: an id says "c_cable" for C-Cable, and something else entirely
+    // on an install in another language.
     const switches = findAll(this._hass, this._config.device_id, 'switch', '_charged_first')
       .filter((id) => ['on', 'off'].includes(this._hass.states[id]?.state))
-      .map((id) => ({ id, name: bare(id).split('.')[1].slice(0, -'_charged_first'.length).split('_').pop().toUpperCase() }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .map((id) => ({
+        id,
+        name: this._hass.states[id].attributes.port
+          || bare(id).split('.')[1].slice(0, -'_charged_first'.length).split('_').pop().toUpperCase(),
+        settable: this._hass.states[id].attributes.settable !== false,
+      }))
+      .map((s) => ({ ...s, index: all.findIndex((p) => p.name === s.name) }))
+      .sort((a, b) => (a.index < 0 ? 99 : a.index) - (b.index < 0 ? 99 : b.index));
     if (!switches.length) return false;
-    const all = ports(this._hass, this._config.device_id);
+    // The 160W's are read and not yet set: shown, and not pressable.
+    const settable = switches.every((s) => s.settable);
     const on = (s) => this._shown(s.id) === 'on';
     const count = switches.filter(on).length;
 
@@ -559,26 +573,29 @@ class UgreenChargerCard extends HTMLElement {
     for (const s of switches) {
       const pressed = on(s);
       const last = pressed && count === 1;
-      const index = all.findIndex((p) => p.name === s.name);
+      const { index } = s;
       const pill = document.createElement('button');
       pill.type = 'button';
       pill.className = 'u-pill';
       pill.setAttribute('aria-pressed', String(pressed));
       pill.innerHTML = `<i style="background: ${index >= 0 ? SERIES[index % SERIES.length] : 'var(--secondary-text-color)'}"></i><span></span>`;
       pill.querySelector('span').textContent = s.name;
-      if (last) {
+      if (!settable) {
+        pill.setAttribute('aria-disabled', 'true');
+        pill.title = this._t('firstApp');
+      } else if (last) {
         pill.setAttribute('aria-disabled', 'true');
         pill.title = this._t('lastFirst');
       }
       pill.addEventListener('click', () => {
-        if (last) return;
+        if (last || !settable) return;
         this._send(s.id, pressed ? 'off' : 'on', 'switch', pressed ? 'turn_off' : 'turn_on');
       });
       row.appendChild(pill);
     }
     const hint = document.createElement('span');
     hint.className = 'hint';
-    hint.textContent = this._t('firstHint');
+    hint.textContent = this._t(settable ? 'firstHint' : 'firstApp');
     row.appendChild(hint);
     this._els.params.replaceChildren(row);
     return true;

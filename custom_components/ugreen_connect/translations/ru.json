@@ -100,6 +100,9 @@
       },
       "port_output": {
         "name": "{port}: выход"
+      },
+      "auto_rotate": {
+        "name": "Автоповорот экрана"
       }
     },
     "update": {
@@ -258,6 +261,9 @@
     },
     "firmware_installing": {
       "message": "На этой зарядке уже идёт обновление прошивки."
+    },
+    "auto_rotate_app_only": {
+      "message": "Автоповорот экрана 160W пока переключается в приложении UGREEN. Home Assistant его показывает, но пока не меняет."
     }
   },
   "issues": {

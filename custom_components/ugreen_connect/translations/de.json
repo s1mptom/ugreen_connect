@@ -112,6 +112,9 @@
       },
       "port_output": {
         "name": "{port} Ausgang"
+      },
+      "auto_rotate": {
+        "name": "Bildschirm automatisch drehen"
       }
     },
     "update": {
@@ -270,6 +273,9 @@
     },
     "firmware_installing": {
       "message": "Auf diesem Ladegerät läuft bereits ein Firmware-Update."
+    },
+    "auto_rotate_app_only": {
+      "message": "Die automatische Bildschirmdrehung des 160W wird vorerst in der UGREEN-App geschaltet. Home Assistant zeigt sie an, setzt sie aber noch nicht."
     }
   },
   "issues": {
