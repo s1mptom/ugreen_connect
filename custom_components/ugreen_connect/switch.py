@@ -14,7 +14,7 @@ from . import UgreenConfigEntry
 from .const import DOMAIN
 from .coordinator import UgreenCoordinator, device_key
 from .entity import UgreenDeviceEntity, cloud_errors
-from .protocol import PRIORITY_PORTS, port_output_groups
+from .protocol import port_output_groups, priority_ports, state_writable
 
 
 async def async_setup_entry(
@@ -44,10 +44,16 @@ async def async_setup_entry(
             # the charger has been seen in it.
             if "priority" in reading and (key, "priority") not in known:
                 known.add((key, "priority"))
-                new.extend(UgreenPriorityPort(coordinator, key, port) for port in PRIORITY_PORTS)
+                new.extend(
+                    UgreenPriorityPort(coordinator, key, port)
+                    for port in priority_ports(coordinator.model_for(key))
+                )
             if "dc_turbo" in reading and (key, "dc_turbo") not in known:
                 known.add((key, "dc_turbo"))
                 new.append(UgreenDcAlwaysOn(coordinator, key))
+            if reading.get("auto_rotate") is not None and (key, "auto_rotate") not in known:
+                known.add((key, "auto_rotate"))
+                new.append(UgreenAutoRotate(coordinator, key))
             if "port_outputs" in reading and (key, "port_outputs") not in known:
                 known.add((key, "port_outputs"))
                 new.extend(
@@ -113,14 +119,15 @@ class UgreenScreensaver(UgreenDeviceEntity, SwitchEntity):
 
 
 class UgreenPriorityPort(UgreenDeviceEntity, SwitchEntity):
-    """Whether one of C1..C3 is charged first while the priority mode runs.
+    """Whether one port is charged first while the priority mode runs.
 
     One switch a port rather than one control for the set, because that is the
-    shape of the choice: the app lets any of the three be on, all three
-    together included, and each is a yes or a no. Available only in `priority`
-    -- under another mode the byte they read is that mode's own setting.
+    shape of the choice: the app lets any of them be on, all together included,
+    and each is a yes or a no -- C1 to C3 on a 300W, C-Cable and C1 on a 160W.
+    Available only in `priority`: under another mode the byte they read is that
+    mode's own setting.
 
-    The three of a charger take turns, with every other write in the mode's
+    The switches of a charger take turns, with every other write in the mode's
     frame (`UgreenCoordinator.mode_turns`). Each writes the whole set, worked
     out from the last reading, so two presses close together -- C1 on, then C1
     off again -- would otherwise both start from the reading before either: the
@@ -142,6 +149,14 @@ class UgreenPriorityPort(UgreenDeviceEntity, SwitchEntity):
     @property
     def _ports(self) -> list[str] | None:
         return (self._reading or {}).get("priority")
+
+    @property
+    def capability_attributes(self) -> dict[str, Any] | None:
+        # Whether a press does anything, for the card: on the 160W the ports
+        # are read and not yet set, and a pill that looks pressable and then
+        # refuses is worse than one that says where the choice is made.
+        settable = "priority" in state_writable(self.coordinator.model_for(self._key))
+        return {**(super().capability_attributes or {}), "settable": settable}
 
     @property
     def available(self) -> bool:
@@ -176,7 +191,8 @@ class UgreenPriorityPort(UgreenDeviceEntity, SwitchEntity):
         with cloud_errors():
             await self.coordinator.rtcx.async_set_priority_ports(
                 iot_id,
-                [port for port in PRIORITY_PORTS if port in wanted],
+                [port for port in priority_ports(self.coordinator.model_for(self._key))
+                 if port in wanted],
                 self.coordinator.model_for(self._key),
             )
         await self.coordinator.async_read_back(self._key, iot_id)
@@ -280,6 +296,42 @@ class UgreenPortOutput(UgreenDeviceEntity, SwitchEntity):
         raise ServiceValidationError(
             translation_domain=DOMAIN,
             translation_key="port_output_app_only",
+        )
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._async_refuse()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._async_refuse()
+
+
+class UgreenAutoRotate(UgreenDeviceEntity, SwitchEntity):
+    """Whether the 160W's screen turns with the charger.
+
+    Shown and not set, as the port switches beside it: the app turns it with
+    SET_SCREEN_AUTO_ROTATE, and nobody has watched that frame go out.
+    """
+
+    _attr_translation_key = "auto_rotate"
+    _attr_icon = "mdi:screen-rotation"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: UgreenCoordinator, key: str) -> None:
+        super().__init__(coordinator, key)
+        self._attr_unique_id = f"{key}_auto_rotate"
+
+    @property
+    def available(self) -> bool:
+        return super().available and (self._reading or {}).get("auto_rotate") is not None
+
+    @property
+    def is_on(self) -> bool | None:
+        return (self._reading or {}).get("auto_rotate")
+
+    async def _async_refuse(self) -> None:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="auto_rotate_app_only",
         )
 
     async def async_turn_on(self, **kwargs: Any) -> None:

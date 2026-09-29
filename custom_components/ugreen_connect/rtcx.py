@@ -57,7 +57,6 @@ from .protocol import (
     DC_VOLTAGE_BYTE,
     FRAME_QUERY,
     FRAME_SETTING,
-    PRIORITY_MODE,
     QUERY_GET_DEVICE_STATE,
     QUERY_GET_POWER_INFO,
     QUERY_GET_PRODUCT_VERSION,
@@ -72,6 +71,7 @@ from .protocol import (
     STATE_MODE_PARAMS,
     build_frame,
     frame_body,
+    parse_auto_rotate,
     parse_custom_mode,
     parse_dc_turbo,
     parse_port_outputs,
@@ -79,6 +79,7 @@ from .protocol import (
     parse_priority,
     parse_upgrade_status,
     priority_mask,
+    priority_mode,
     state_fields,
     state_layout,
     state_layout_measured,
@@ -588,6 +589,7 @@ class RtcxClient:
             "priority": parse_priority(body, model),
             "dc_turbo": parse_dc_turbo(body, model),
             "port_outputs": parse_port_outputs(body, model),
+            "auto_rotate": parse_auto_rotate(body, model),
             "screensaver": bool(body[layout.screensaver]),
             "screensaver_theme": body[layout.screensaver + 1],
             "screensaver_flag": body[layout.screensaver + 2],
@@ -790,13 +792,13 @@ class RtcxClient:
         At least one port: an empty mask is a question nobody has asked this
         charger, and the answer would be learned on the device.
         """
-        mask = priority_mask(ports)
+        mask = priority_mask(ports, model)
         if not mask:
             raise UgreenError("at least one port has to be charged first")
-        block = self._mode_block(iot_id, PRIORITY_MODE, model, "priority ports")
+        block = self._mode_block(iot_id, priority_mode(model), model, "priority ports")
         block[0] = mask
         await self._setting(
-            iot_id, SETTING_SET_CHARGING_MODE, bytes([PRIORITY_MODE]) + bytes(block)
+            iot_id, SETTING_SET_CHARGING_MODE, bytes([priority_mode(model)]) + bytes(block)
         )
 
     async def async_set_dc_turbo(

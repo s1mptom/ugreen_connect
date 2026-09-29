@@ -138,22 +138,28 @@ STATE_FIELDS_ALL: Final[frozenset[str]] = frozenset(
         "wallpapers",
         "port_outputs",
         "mcu_version",
+        "auto_rotate",
     }
 )
 
 STATE_FIELDS_BY_MODEL: Final[dict[str, frozenset[str]]] = {
     # The 300W has no per-port switches in its app, so nothing to read.
-    "X783": STATE_FIELDS_ALL - {"port_outputs"},
+    "X783": STATE_FIELDS_ALL - {"port_outputs", "auto_rotate"},
     # `custom` is missing on purpose: five wattages, a shared pair in steps and
     # six masks is the X783's shape, and the 160W's block is 26 bytes where
     # this shape needs 35, with nobody having mapped what it holds. Its
     # wallpaper library is read without the X783's count byte (see
     # StateLayout).
-    # `priority` too: its mask is the first byte of a block nobody has mapped
-    # on this model, and a port choice read from the wrong byte is a control
-    # that sets the wrong ports. And `dc_turbo`, for the same reason: the 160W
-    # has no DC port for its first two bytes to be about.
-    "X776": STATE_FIELDS_ALL - {"custom", "priority", "dc_turbo"},
+    # `dc_turbo` too: the 160W has no DC port for its first two bytes to be
+    # about. `priority` is read, from its owner's changes in #2: the block's
+    # first byte is the mask, as on the X783.
+    #
+    # And `screensaver_flag` is not what it is on the X783. There it is the
+    # clock style; on the 160W, turning only the screen's auto-rotate off and
+    # on moved that byte, 1 for off and 0 for on, which is `auto_rotate`. The
+    # clock style had been put there on a change that also moved the byte
+    # before it, both of them never written until then.
+    "X776": STATE_FIELDS_ALL - {"custom", "dc_turbo", "screensaver_flag"},
 }
 
 # Reading a byte and writing it are separate permissions, because the commands
@@ -179,7 +185,7 @@ STATE_WRITABLE_BY_MODEL: Final[dict[str, frozenset[str]]] = {
     # could leave a pair the app never sends. `custom` arrived in this table by
     # riding STATE_FIELDS_ALL, so it is refused rather than left to say yes by
     # accident the day somebody builds the entity that asks.
-    "X783": STATE_FIELDS_ALL - {"custom", "port_outputs", "mcu_version"},
+    "X783": STATE_FIELDS_ALL - {"custom", "port_outputs", "mcu_version", "auto_rotate"},
     "X776": frozenset({"brightness", "sleep_time"}),
 }
 
@@ -231,7 +237,8 @@ def state_fields(model: str | None) -> frozenset[str]:
     next door refuses the other half for the same unknown model.
     """
     if model is None:
-        return STATE_FIELDS_ALL
+        # Read as the X783 it most likely is, which has no rotating screen.
+        return STATE_FIELDS_ALL - {"auto_rotate"}
     return STATE_FIELDS_BY_MODEL.get(model, frozenset())
 
 
@@ -428,6 +435,27 @@ def parse_custom_mode(
 # three at once included.
 PRIORITY_PORTS: Final[tuple[str, ...]] = ("C1", "C2", "C3")
 
+# The same byte on the 160W, where `priority` is mode 2 rather than 3: C-Cable
+# alone read 01, and with C1 added 03, on its owner's charger in #2. The bits
+# are the ports in the order the charger reports them, as on the X783. Which of
+# C2 and A the app also offers, and at which bits, nobody has seen, so they are
+# not named -- a bit without a name is left unread rather than guessed at.
+PRIORITY_PORTS_BY_MODEL: Final[dict[str, tuple[str, ...]]] = {
+    "X783": PRIORITY_PORTS,
+    "X776": ("C-Cable", "C1"),
+}
+PRIORITY_MODE_BY_MODEL: Final[dict[str, int]] = {"X783": PRIORITY_MODE, "X776": 2}
+
+
+def priority_ports(model: str | None) -> tuple[str, ...]:
+    """The ports this model's priority mode can charge first, bit by bit."""
+    return PRIORITY_PORTS_BY_MODEL.get(model or "", PRIORITY_PORTS)
+
+
+def priority_mode(model: str | None) -> int:
+    """The mode byte `priority` has on this model."""
+    return PRIORITY_MODE_BY_MODEL.get(model or "", PRIORITY_MODE)
+
 
 def parse_priority(body: bytes, model: str | None = None) -> list[str] | None:
     """Which ports the priority mode charges first, while it is the mode.
@@ -438,18 +466,37 @@ def parse_priority(body: bytes, model: str | None = None) -> list[str] | None:
     """
     if "priority" not in state_fields(model):
         return None
-    if len(body) <= STATE_MODE_PARAMS or body[STATE_CHARGING_MODE] != PRIORITY_MODE:
+    if len(body) <= STATE_MODE_PARAMS or body[STATE_CHARGING_MODE] != priority_mode(model):
         return None
     mask = body[STATE_MODE_PARAMS]
-    return [port for bit, port in enumerate(PRIORITY_PORTS) if mask >> bit & 1]
+    return [port for bit, port in enumerate(priority_ports(model)) if mask >> bit & 1]
 
 
-def priority_mask(ports: list[str] | tuple[str, ...] | set[str]) -> int:
+def priority_mask(
+    ports: list[str] | tuple[str, ...] | set[str], model: str | None = None
+) -> int:
     """The byte for a set of ports charged first. Unknown names are refused."""
-    unknown = set(ports) - set(PRIORITY_PORTS)
+    known = priority_ports(model)
+    unknown = set(ports) - set(known)
     if unknown:
         raise ValueError(f"not a priority port: {', '.join(sorted(unknown))}")
-    return sum(1 << PRIORITY_PORTS.index(port) for port in set(ports))
+    return sum(1 << known.index(port) for port in set(ports))
+
+
+def parse_auto_rotate(body: bytes, model: str | None = None) -> bool | None:
+    """Whether the 160W's screen turns with the charger.
+
+    Its byte sits where the X783 keeps the clock style, two after the
+    screensaver switch, and reads 0 with auto-rotate on and 1 with it off --
+    one toggle at a time in the app, twenty seconds apart, on its owner's
+    charger in #2.
+    """
+    if "auto_rotate" not in state_fields(model):
+        return None
+    at = state_layout(model).screensaver + 2
+    if len(body) <= at:
+        return None
+    return body[at] == 0
 
 
 # --- The DC turbo mode's settings -------------------------------------------

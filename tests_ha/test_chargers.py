@@ -280,3 +280,46 @@ async def test_a_port_s_power_sensor_names_its_port(hass, api, rtcx):
     await _set_up(hass, api, rtcx)
     power = hass.states.get(_entity(hass, "sensor", f"{SECOND_CODE}_C-Cable_power"))
     assert power.attributes["port"] == "C-Cable"
+
+
+async def test_the_160w_shows_its_priority_ports_and_does_not_set_them(hass, api, rtcx):
+    """C-Cable and C1, the two its owner has picked in the app; read-only for now."""
+    api.devices = [dict(DEVICE), dict(SECOND)]
+    rtcx.second_state = {**rtcx.second_state, "charging_mode": "priority", "priority": ["C1"]}
+    await _set_up(hass, api, rtcx)
+
+    first = {
+        port: hass.states.get(_entity(hass, "switch", f"{SECOND_CODE}_{port}_priority"))
+        for port in ("C-Cable", "C1")
+    }
+    assert {port: state.state for port, state in first.items()} == {"C-Cable": "off", "C1": "on"}
+    assert _entity(hass, "switch", f"{SECOND_CODE}_C2_priority") is None, "no bit named for C2"
+    assert first["C1"].attributes["settable"] is False
+    x783 = hass.states.get(_entity(hass, "switch", f"{DEVICE_CODE}_C1_priority"))
+    assert x783.attributes["settable"] is True
+
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            "switch", "turn_on", {"entity_id": first["C-Cable"].entity_id}, blocking=True
+        )
+    assert err.value.translation_key == "not_writable_on_model"
+    assert not rtcx.priority_writes
+
+
+async def test_the_160w_s_byte_33_is_auto_rotate_not_a_clock_style(hass, api, rtcx):
+    api.devices = [dict(DEVICE), dict(SECOND)]
+    await _set_up(hass, api, rtcx)
+
+    rotate = hass.states.get(_entity(hass, "switch", f"{SECOND_CODE}_auto_rotate"))
+    assert rotate.state == "off"
+    assert _entity(hass, "select", f"{SECOND_CODE}_clock_style") is None
+    assert _entity(hass, "select", f"{SECOND_CODE}_time_format") is not None
+    # The 300W keeps its clock style and has no auto-rotate.
+    assert _entity(hass, "select", f"{DEVICE_CODE}_clock_style") is not None
+    assert _entity(hass, "switch", f"{DEVICE_CODE}_auto_rotate") is None
+
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            "switch", "turn_on", {"entity_id": rotate.entity_id}, blocking=True
+        )
+    assert err.value.translation_key == "auto_rotate_app_only"

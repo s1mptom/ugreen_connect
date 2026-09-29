@@ -112,6 +112,9 @@
       },
       "port_output": {
         "name": "{port} output"
+      },
+      "auto_rotate": {
+        "name": "Screen auto-rotate"
       }
     },
     "update": {
@@ -270,6 +273,9 @@
     },
     "firmware_installing": {
       "message": "A firmware update is already running on this charger."
+    },
+    "auto_rotate_app_only": {
+      "message": "The 160W's screen auto-rotate is switched in the UGREEN app for now. Home Assistant shows it but does not set it yet."
     }
   },
   "issues": {

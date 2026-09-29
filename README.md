@@ -78,11 +78,12 @@ e.g. `sensor.ugreen_nexode_pro_x783_c1_power`.
 | `select.<device>_screen_off_time` | 1, 5, 10, 30 minutes, or always on |
 | `select.<device>_charging_mode` | adaptive power, thermal safe, DC turbo, priority; a 160W, which has no DC port, offers adaptive power, thermal safe and priority |
 | `switch.<device>_screensaver` | the clock the screen shows once it sleeps |
-| `switch.<device>_c1_charged_first` … | C1, C2 and C3: whether the `priority` mode charges that port first. Any of them, all three included, but never none -- turning off the last one is refused. Unavailable under any other mode |
+| `switch.<device>_c1_charged_first` … | C1, C2 and C3: whether the `priority` mode charges that port first. Any of them, all three included, but never none -- turning off the last one is refused. Unavailable under any other mode. A 160W has C-Cable and C1, shown and not set yet |
 | `select.<device>_dc_port_voltage` | 12, 15 or 20 V: what DC turbo gives the DC port. Unavailable under any other mode |
 | `switch.<device>_dc_always_on` | whether DC turbo keeps the DC port live with nothing plugged in. Unavailable under any other mode |
 | `select.<device>_time_format` | 12- or 24-hour |
-| `select.<device>_clock_style` | the two faces the charger draws |
+| `select.<device>_clock_style` | the two faces the charger draws; a 300W's |
+| `switch.<device>_auto_rotate` | a 160W's screen auto-rotate, which sits where a 300W keeps its clock style. Shown, not set yet |
 | `select.<device>_wallpaper` | any picture in your UGREEN library, or none |
 | `switch.<device>_c_cable_output` … | a 160W's port switches: C-Cable, C1, and C2 & A, which the app switches together. Shown, not set yet: the app switches them with a command nobody has watched go out |
 
@@ -466,7 +467,8 @@ the reviews, which caught rather more of mine than the other way round.
 The 160W's field offsets came from its owner in
 [#2](https://github.com/s1mptom/ugreen_connect/issues/2), mapped one setting at a
 time on hardware nobody here has: its screen settings, its own numbering of the
-charging modes, its port switches and its picture library.
+charging modes, its port switches, its priority ports, its screen auto-rotate
+and its picture library.
 
 ## Contributing
 
