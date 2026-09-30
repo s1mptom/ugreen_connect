@@ -67,7 +67,7 @@ e.g. `sensor.ugreen_nexode_pro_x783_c1_power`.
 | `event.<device>_c1_charging` | `started` and `ended`, with `energy_wh`, `duration`, `peak_power` and `protocol` on the event |
 | `sensor.<device>_total_power` | sum across ports; firmware and Wi-Fi SSID in its attributes |
 | `sensor.<device>_cloud_status` | `online` / `offline`; MAC in its attributes |
-| `sensor.<device>_c1_custom_mode_limit` … | six of them -- C1–C5 and C6+A, which share one -- reading the watt limit that group is set to. Diagnostic; created the first time the charger is seen in the `custom` charging mode, and unavailable while any other one runs. The protocols the group may negotiate and the raw mask are attributes |
+| `sensor.<device>_c1_custom_mode_limit` … | six of them -- C1–C5 and C6+A, which share one -- reading the watt limit that group is set to. Diagnostic; created the first time the charger is seen in the `custom` charging mode, and unavailable while any other one runs. The protocols the group may negotiate and the raw mask are attributes. A 160W has two, C-Cable and C1, without protocols: those are not mapped on it yet |
 | `update.<device>_firmware` | installed version, the one the UGREEN cloud offers and what changed in it; on a 300W, installs it too -- see [Firmware updates](#firmware-updates) |
 
 ### Controls

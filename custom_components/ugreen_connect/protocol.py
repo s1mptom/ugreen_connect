@@ -145,13 +145,12 @@ STATE_FIELDS_ALL: Final[frozenset[str]] = frozenset(
 STATE_FIELDS_BY_MODEL: Final[dict[str, frozenset[str]]] = {
     # The 300W has no per-port switches in its app, so nothing to read.
     "X783": STATE_FIELDS_ALL - {"port_outputs", "auto_rotate"},
-    # `custom` is missing on purpose: five wattages, a shared pair in steps and
-    # six masks is the X783's shape, and the 160W's block is 26 bytes where
-    # this shape needs 35, with nobody having mapped what it holds. Its
-    # wallpaper library is read without the X783's count byte (see
+    # `custom` is read with the 160W's own layout, one byte a port (see
+    # CUSTOM_BYTES_BY_MODEL), not the X783's five wattages, shared pair and
+    # masks. Its wallpaper library is read without the X783's count byte (see
     # StateLayout).
-    # `dc_turbo` too: the 160W has no DC port for its first two bytes to be
-    # about. `priority` is read, from its owner's changes in #2: the block's
+    # `dc_turbo` is missing on purpose: the 160W has no DC port for its first
+    # two bytes to be about. `priority` is read, from its owner's changes in #2: the block's
     # first byte is the mask, as on the X783.
     #
     # And `screensaver_flag` is not what it is on the X783. There it is the
@@ -159,7 +158,7 @@ STATE_FIELDS_BY_MODEL: Final[dict[str, frozenset[str]]] = {
     # on moved that byte, 1 for off and 0 for on, which is `auto_rotate`. The
     # clock style had been put there on a change that also moved the byte
     # before it, both of them never written until then.
-    "X776": STATE_FIELDS_ALL - {"custom", "dc_turbo", "screensaver_flag"},
+    "X776": STATE_FIELDS_ALL - {"dc_turbo", "screensaver_flag"},
 }
 
 # Reading a byte and writing it are separate permissions, because the commands
@@ -186,6 +185,7 @@ STATE_WRITABLE_BY_MODEL: Final[dict[str, frozenset[str]]] = {
     # riding STATE_FIELDS_ALL, so it is refused rather than left to say yes by
     # accident the day somebody builds the entity that asks.
     "X783": STATE_FIELDS_ALL - {"custom", "port_outputs", "mcu_version", "auto_rotate"},
+    # Set from Home Assistant and followed at once, its owner reported (#2).
     "X776": frozenset({"brightness", "sleep_time"}),
 }
 
@@ -353,6 +353,16 @@ STATE_CUSTOM_MASKS = 16
 STATE_CUSTOM_END = 40
 CUSTOM_LIMITS = 5
 
+# The 160W's Custom Power is one byte a port, in watts. Its owner set C-Cable
+# to 70 and C1 to 45 and read 46 and 2d at bytes 5 and 6, then moved C1 to 30
+# and read 1e (#2). Custom Power is mode 3 there. Byte 7 read 17 in every
+# frame and nothing moved it, and whatever protocol boxes the app has are not
+# mapped -- so this is the two limits, and nothing is read as a mask.
+CUSTOM_MODE_BY_MODEL: Final[dict[str, int]] = {"X783": CUSTOM_MODE, "X776": 3}
+CUSTOM_BYTES_BY_MODEL: Final[dict[str, tuple[tuple[str, int], ...]]] = {
+    "X776": (("C-Cable", 5), ("C1", 6)),
+}
+
 
 def parse_custom_mode(
     body: bytes, model: str | None = None
@@ -397,6 +407,12 @@ def parse_custom_mode(
         # put numbers on a page that mean nothing, which is worse than
         # showing none.
         return None
+    if (simple := CUSTOM_BYTES_BY_MODEL.get(model or "")) is not None:
+        if len(body) <= max(at for _, at in simple):
+            return None
+        if body[STATE_CHARGING_MODE] != CUSTOM_MODE_BY_MODEL[model or ""]:
+            return None
+        return [{"port": port, "limit": body[at]} for port, at in simple]
     if len(body) < STATE_CUSTOM_END:
         return None
     if body[STATE_CHARGING_MODE] != CUSTOM_MODE:
@@ -437,9 +453,9 @@ PRIORITY_PORTS: Final[tuple[str, ...]] = ("C1", "C2", "C3")
 
 # The same byte on the 160W, where `priority` is mode 2 rather than 3: C-Cable
 # alone read 01, and with C1 added 03, on its owner's charger in #2. The bits
-# are the ports in the order the charger reports them, as on the X783. Which of
-# C2 and A the app also offers, and at which bits, nobody has seen, so they are
-# not named -- a bit without a name is left unread rather than guessed at.
+# are the ports in the order the charger reports them, as on the X783. Those
+# two are all its app offers -- C2 and A cannot be picked -- so any other bit
+# is left unread rather than guessed at.
 PRIORITY_PORTS_BY_MODEL: Final[dict[str, tuple[str, ...]]] = {
     "X783": PRIORITY_PORTS,
     "X776": ("C-Cable", "C1"),
