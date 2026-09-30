@@ -323,3 +323,21 @@ async def test_the_160w_s_byte_33_is_auto_rotate_not_a_clock_style(hass, api, rt
             "switch", "turn_on", {"entity_id": rotate.entity_id}, blocking=True
         )
     assert err.value.translation_key == "auto_rotate_app_only"
+
+
+async def test_the_160w_s_custom_limits_are_shown_without_protocols(hass, api, rtcx):
+    """Two limits a byte each; its protocol boxes are not mapped, so not claimed."""
+    api.devices = [dict(DEVICE), dict(SECOND)]
+    rtcx.second_state = {
+        **rtcx.second_state,
+        "custom": [{"port": "C-Cable", "limit": 70}, {"port": "C1", "limit": 30}],
+    }
+    await _set_up(hass, api, rtcx)
+    limits = {
+        port: hass.states.get(_entity(hass, "sensor", f"{SECOND_CODE}_{port}_custom_limit"))
+        for port in ("C-Cable", "C1")
+    }
+    assert {port: s.state for port, s in limits.items()} == {"C-Cable": "70", "C1": "30"}
+    assert limits["C1"].attributes["port"] == "C1"
+    assert "protocols" not in limits["C1"].attributes
+    assert "protocol_mask" not in limits["C1"].attributes

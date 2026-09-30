@@ -508,9 +508,17 @@ class UgreenChargerCard extends HTMLElement {
     if (current === 'priority' && this._syncFirst()) return;
     if (current === 'dc_turbo' && this._syncTurbo()) return;
     if (current === 'custom') {
+      // In the charger's order, by the port each names -- sorting the ids put
+      // C1 before C-Cable, and any order at all on ids in another language.
+      const order = ports(this._hass, this._config.device_id).map((p) => p.name);
+      const place = (id) => {
+        const name = this._hass.states[id].attributes.port;
+        const at = name ? order.findIndex((p) => name === p || name.startsWith(`${p}+`)) : -1;
+        return at < 0 ? 99 : at;
+      };
       const limits = findAll(this._hass, this._config.device_id, 'sensor', '_custom_mode_limit')
         .filter((id) => !['unavailable', 'unknown'].includes(this._hass.states[id]?.state))
-        .sort();
+        .sort((a, b) => place(a) - place(b) || a.localeCompare(b));
       if (limits.length) {
         const row = document.createElement('div');
         row.className = 'limits';

@@ -329,6 +329,10 @@ class UgreenCustomLimitSensor(UgreenDeviceEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         group = self._group or {}
+        if "mask" not in group:
+            # The 160W's: its limits are read and its protocol boxes are not,
+            # and an empty list here would say that none is ticked.
+            return {}
         return {
             "protocols": group.get("protocols") or [],
             # The raw mask as well as the names read out of it: a bit nobody
