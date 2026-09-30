@@ -155,9 +155,9 @@ STATE_FIELDS_BY_MODEL: Final[dict[str, frozenset[str]]] = {
     #
     # And `screensaver_flag` is not what it is on the X783. There it is the
     # clock style; on the 160W, turning only the screen's auto-rotate off and
-    # on moved that byte, 1 for off and 0 for on, which is `auto_rotate`. The
-    # clock style had been put there on a change that also moved the byte
-    # before it, both of them never written until then.
+    # on moved that byte, 1 for off and 0 for on, which is `auto_rotate`. Its
+    # clock style is the byte before, `screensaver_theme` -- the X783's time
+    # format -- and see CLOCK_STYLE_FIELD_BY_MODEL for which is which.
     "X776": STATE_FIELDS_ALL - {"dc_turbo", "screensaver_flag"},
 }
 
@@ -355,12 +355,13 @@ CUSTOM_LIMITS = 5
 
 # The 160W's Custom Power is one byte a port, in watts. Its owner set C-Cable
 # to 70 and C1 to 45 and read 46 and 2d at bytes 5 and 6, then moved C1 to 30
-# and read 1e (#2). Custom Power is mode 3 there. Byte 7 read 17 in every
-# frame and nothing moved it, and whatever protocol boxes the app has are not
-# mapped -- so this is the two limits, and nothing is read as a mask.
+# and read 1e (#2). Custom Power is mode 3 there. The protocol
+# boxes, if the app has them, are not mapped -- so this is the limits, and
+# nothing is read as a mask.
 CUSTOM_MODE_BY_MODEL: Final[dict[str, int]] = {"X783": CUSTOM_MODE, "X776": 3}
+# Byte 7 is the third slider, C2 & A together: moving only it to 45 W read 2d.
 CUSTOM_BYTES_BY_MODEL: Final[dict[str, tuple[tuple[str, int], ...]]] = {
-    "X776": (("C-Cable", 5), ("C1", 6)),
+    "X776": (("C-Cable", 5), ("C1", 6), ("C2 & A", 7)),
 }
 
 
@@ -497,6 +498,33 @@ def priority_mask(
     if unknown:
         raise ValueError(f"not a priority port: {', '.join(sorted(unknown))}")
     return sum(1 << known.index(port) for port in set(ports))
+
+
+# Which byte of the screensaver group holds which clock setting. On the X783
+# the byte after the screensaver switch is the time format and the one after
+# that the clock style, each written and read back. On the 160W the byte after
+# the switch is the clock style -- changing only that in the app moved byte 32,
+# 00 for top right and 01 for centred -- and the time format is not in the
+# reply at all: changing only it moved nothing (#2). The byte after the clock
+# style there is the auto-rotate.
+CLOCK_STYLE_FIELD_BY_MODEL: Final[dict[str, str]] = {
+    "X783": "screensaver_flag",
+    "X776": "screensaver_theme",
+}
+TIME_FORMAT_FIELD_BY_MODEL: Final[dict[str, str | None]] = {
+    "X783": "screensaver_theme",
+    "X776": None,
+}
+
+
+def clock_style_field(model: str | None) -> str:
+    """The state field this model keeps its clock style in."""
+    return CLOCK_STYLE_FIELD_BY_MODEL.get(model or "", "screensaver_flag")
+
+
+def time_format_field(model: str | None) -> str | None:
+    """The state field this model keeps its 12/24-hour choice in, if any."""
+    return TIME_FORMAT_FIELD_BY_MODEL.get(model or "", "screensaver_theme")
 
 
 def parse_auto_rotate(body: bytes, model: str | None = None) -> bool | None:

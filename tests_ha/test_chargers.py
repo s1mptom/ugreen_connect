@@ -312,8 +312,17 @@ async def test_the_160w_s_byte_33_is_auto_rotate_not_a_clock_style(hass, api, rt
 
     rotate = hass.states.get(_entity(hass, "switch", f"{SECOND_CODE}_auto_rotate"))
     assert rotate.state == "off"
-    assert _entity(hass, "select", f"{SECOND_CODE}_clock_style") is None
-    assert _entity(hass, "select", f"{SECOND_CODE}_time_format") is not None
+    # Its clock style is byte 32, its own two faces; its hours are not read.
+    style = hass.states.get(_entity(hass, "select", f"{SECOND_CODE}_clock_style"))
+    assert style.state == "top_right"
+    assert style.attributes["options"] == ["top_right", "centred"]
+    assert _entity(hass, "select", f"{SECOND_CODE}_time_format") is None
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            "select", "select_option",
+            {"entity_id": style.entity_id, "option": "centred"}, blocking=True,
+        )
+    assert err.value.translation_key == "not_writable_on_model"
     # The 300W keeps its clock style and has no auto-rotate.
     assert _entity(hass, "select", f"{DEVICE_CODE}_clock_style") is not None
     assert _entity(hass, "switch", f"{DEVICE_CODE}_auto_rotate") is None

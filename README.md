@@ -67,7 +67,7 @@ e.g. `sensor.ugreen_nexode_pro_x783_c1_power`.
 | `event.<device>_c1_charging` | `started` and `ended`, with `energy_wh`, `duration`, `peak_power` and `protocol` on the event |
 | `sensor.<device>_total_power` | sum across ports; firmware and Wi-Fi SSID in its attributes |
 | `sensor.<device>_cloud_status` | `online` / `offline`; MAC in its attributes |
-| `sensor.<device>_c1_custom_mode_limit` … | six of them -- C1–C5 and C6+A, which share one -- reading the watt limit that group is set to. Diagnostic; created the first time the charger is seen in the `custom` charging mode, and unavailable while any other one runs. The protocols the group may negotiate and the raw mask are attributes. A 160W has two, C-Cable and C1, without protocols: those are not mapped on it yet |
+| `sensor.<device>_c1_custom_mode_limit` … | six of them -- C1–C5 and C6+A, which share one -- reading the watt limit that group is set to. Diagnostic; created the first time the charger is seen in the `custom` charging mode, and unavailable while any other one runs. The protocols the group may negotiate and the raw mask are attributes. A 160W has three, C-Cable, C1 and C2 & A, without protocols: those are not mapped on it yet |
 | `update.<device>_firmware` | installed version, the one the UGREEN cloud offers and what changed in it; on a 300W, installs it too -- see [Firmware updates](#firmware-updates) |
 
 ### Controls
@@ -81,8 +81,8 @@ e.g. `sensor.ugreen_nexode_pro_x783_c1_power`.
 | `switch.<device>_c1_charged_first` … | C1, C2 and C3: whether the `priority` mode charges that port first. Any of them, all three included, but never none -- turning off the last one is refused. Unavailable under any other mode. A 160W has C-Cable and C1, shown and not set yet |
 | `select.<device>_dc_port_voltage` | 12, 15 or 20 V: what DC turbo gives the DC port. Unavailable under any other mode |
 | `switch.<device>_dc_always_on` | whether DC turbo keeps the DC port live with nothing plugged in. Unavailable under any other mode |
-| `select.<device>_time_format` | 12- or 24-hour |
-| `select.<device>_clock_style` | the two faces the charger draws; a 300W's |
+| `select.<device>_time_format` | 12- or 24-hour; a 300W's -- a 160W does not report it |
+| `select.<device>_clock_style` | the two faces the charger draws: centred or on the left on a 300W, centred or top right on a 160W, where it is shown and not set yet |
 | `switch.<device>_auto_rotate` | a 160W's screen auto-rotate, which sits where a 300W keeps its clock style. Shown, not set yet |
 | `select.<device>_wallpaper` | any picture in your UGREEN library, or none |
 | `switch.<device>_c_cable_output` … | a 160W's port switches: C-Cable, C1, and C2 & A, which the app switches together. Shown, not set yet: the app switches them with a command nobody has watched go out |

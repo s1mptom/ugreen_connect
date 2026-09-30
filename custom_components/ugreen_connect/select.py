@@ -19,12 +19,13 @@ from .const import (
     SLEEP_OPTIONS,
     TIME_FORMATS,
     charging_modes,
+    clock_styles,
     selectable_modes,
 )
 from .coordinator import UgreenCoordinator, device_key
 from .entity import UgreenDeviceEntity, cloud_errors
 from .image_proxy import wallpaper_path
-from .protocol import DC_VOLTAGE_BYTE
+from .protocol import DC_VOLTAGE_BYTE, clock_style_field, time_format_field
 
 CLOCK_STYLE_VALUE = {name: value for value, name in CLOCK_STYLES.items()}
 TIME_FORMAT_VALUE = {name: value for value, name in TIME_FORMATS.items()}
@@ -62,17 +63,19 @@ async def async_setup_entry(
             if reading.get("wallpapers") and (key, "wallpaper") not in known:
                 known.add((key, "wallpaper"))
                 new.append(UgreenWallpaper(coordinator, key))
-            # The clock options only exist alongside the screensaver state --
-            # and the clock style not on the 160W, whose byte in its place is
-            # the screen's auto-rotate.
-            if reading.get("screensaver_theme") is not None:
-                clock = reading.get("screensaver_flag") is not None
-                if clock and (key, "clock_style") not in known:
-                    known.add((key, "clock_style"))
-                    new.append(UgreenClockStyle(coordinator, key))
-                if (key, "time_format") not in known:
-                    known.add((key, "time_format"))
-                    new.append(UgreenTimeFormat(coordinator, key))
+            # Each clock option where this model's reply carries it: the 160W
+            # keeps its clock style where the 300W keeps the time format, and
+            # its time format nowhere in the reply at all.
+            model = coordinator.model_for(key)
+            if reading.get(clock_style_field(model)) is not None and (
+                (key, "clock_style") not in known
+            ):
+                known.add((key, "clock_style"))
+                new.append(UgreenClockStyle(coordinator, key))
+            hours = time_format_field(model)
+            if hours and reading.get(hours) is not None and (key, "time_format") not in known:
+                known.add((key, "time_format"))
+                new.append(UgreenTimeFormat(coordinator, key))
         if new:
             async_add_entities(new)
 
@@ -334,21 +337,34 @@ class UgreenClockStyle(_UgreenScreensaverOption):
 
     _attr_translation_key = "clock_style"
     _attr_icon = "mdi:clock-outline"
-    _attr_options = list(CLOCK_STYLES.values())
 
     def __init__(self, coordinator: UgreenCoordinator, key: str) -> None:
         super().__init__(coordinator, key)
         self._attr_unique_id = f"{key}_clock_style"
 
     @property
+    def _model(self) -> str | None:
+        return self.coordinator.model_for(self._key)
+
+    @property
+    def options(self) -> list[str]:
+        return list(clock_styles(self._model).values())
+
+    @property
     def available(self) -> bool:
-        return super().available and (self._reading or {}).get("screensaver_flag") is not None
+        field = clock_style_field(self._model)
+        return super().available and (self._reading or {}).get(field) is not None
 
     @property
     def current_option(self) -> str | None:
-        return CLOCK_STYLES.get((self._reading or {}).get("screensaver_flag"))
+        return clock_styles(self._model).get(
+            (self._reading or {}).get(clock_style_field(self._model))
+        )
 
     async def async_select_option(self, option: str) -> None:
+        # Refused where the byte is not the X783's -- rather than an option
+        # the 300W's table does not know passing through as nothing at all.
+        self._require_writable(clock_style_field(self._model))
         if option in CLOCK_STYLE_VALUE:
             await self._send(flag=CLOCK_STYLE_VALUE[option])
 
@@ -366,11 +382,13 @@ class UgreenTimeFormat(_UgreenScreensaverOption):
 
     @property
     def available(self) -> bool:
-        return super().available and (self._reading or {}).get("screensaver_theme") is not None
+        field = time_format_field(self.coordinator.model_for(self._key))
+        return super().available and bool(field) and (self._reading or {}).get(field) is not None
 
     @property
     def current_option(self) -> str | None:
-        return TIME_FORMATS.get((self._reading or {}).get("screensaver_theme"))
+        field = time_format_field(self.coordinator.model_for(self._key))
+        return TIME_FORMATS.get((self._reading or {}).get(field)) if field else None
 
     async def async_select_option(self, option: str) -> None:
         if option in TIME_FORMAT_VALUE:
