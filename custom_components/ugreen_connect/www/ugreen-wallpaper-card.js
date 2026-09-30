@@ -650,6 +650,16 @@ class UgreenWallpaperCard extends HTMLElement {
     for (const b of this._root.querySelectorAll('[data-fmt]')) b.setAttribute('aria-checked', String(b.dataset.fmt === fmt));
     const sty = this._asked.read('style', this._state(ent.style)?.state);
     for (const b of this._root.querySelectorAll('[data-sty]')) b.setAttribute('aria-checked', String(b.dataset.sty === sty));
+    // Only what this charger has, as the faces it has. The 160W keeps no
+    // 12/24-hour choice in its reply, and its two faces are centred and top
+    // right, not the 300W's centred and left these pictures show.
+    const faces = this._state(ent.style)?.attributes?.options || [];
+    const fmtRow = this._root.querySelector('[data-fmt]')?.parentElement;
+    const styles = this._root.querySelector('.styles');
+    if (fmtRow) fmtRow.hidden = !ent.format;
+    if (styles) styles.hidden = !(faces.includes('style_1') && faces.includes('style_2'));
+    const clockBlock = styles?.closest('.block');
+    if (clockBlock) clockBlock.hidden = Boolean(fmtRow?.hidden && styles?.hidden);
 
     const wall = this._state(ent.wallpaper);
     const list = wall?.attributes?.wallpapers || [];

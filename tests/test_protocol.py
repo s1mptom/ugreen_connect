@@ -473,11 +473,11 @@ def test_another_model_is_not_measured_with_this_ruler():
     # Five wattages, a shared pair in steps and six masks is the X783's shape.
     # The 160W's block is 26 bytes where this shape needs 35.
     assert p.parse_custom_mode(CUSTOM_STATE, "X776") is None
-    # Its own is a byte a port, C-Cable and C1, never the X783's groups.
+    # Its own is a byte a slider -- C-Cable, C1, C2 & A -- never the X783's groups.
     body = bytearray(CUSTOM_STATE)
     body[p.STATE_CHARGING_MODE] = 3
     groups = p.parse_custom_mode(bytes(body), "X776")
-    assert [g["port"] for g in groups] == ["C-Cable", "C1"]
+    assert [g["port"] for g in groups] == ["C-Cable", "C1", "C2 & A"]
     assert all("mask" not in g for g in groups)
 
 
@@ -626,17 +626,22 @@ def test_a_charger_without_port_switches_has_none_to_read():
 def test_the_160w_s_custom_power_is_a_byte_a_port():
     """Its owner's lines in #2, one slider at a time with Custom Power running.
 
-    70 and 45 read 46 and 2d at bytes 5 and 6; C1 moved to 30 read 1e.
+    70 and 45 read 46 and 2d at bytes 5 and 6; C1 moved to 30 read 1e; the
+    third slider, C2 & A, moved to 45 read 2d at byte 7.
     """
     assert X776_NEW_PICTURE[p.STATE_CHARGING_MODE] == 3, "Custom Power on the 160W"
     assert p.parse_custom_mode(X776_NEW_PICTURE, "X776") == [
-        {"port": "C-Cable", "limit": 15}, {"port": "C1", "limit": 15},
+        {"port": "C-Cable", "limit": 15},
+        {"port": "C1", "limit": 15},
+        {"port": "C2 & A", "limit": 23},
     ]
     body = bytearray(X776_NEW_PICTURE)
     body[5], body[6] = 0x46, 0x2D
-    assert [g["limit"] for g in p.parse_custom_mode(bytes(body), "X776")] == [70, 45]
+    assert [g["limit"] for g in p.parse_custom_mode(bytes(body), "X776")] == [70, 45, 23]
     body[6] = 0x1E
-    assert [g["limit"] for g in p.parse_custom_mode(bytes(body), "X776")] == [70, 30]
+    assert [g["limit"] for g in p.parse_custom_mode(bytes(body), "X776")] == [70, 30, 23]
+    body[7] = 0x2D
+    assert [g["limit"] for g in p.parse_custom_mode(bytes(body), "X776")] == [70, 30, 45]
     # Under priority those bytes are the priority block, not limits.
     assert p.parse_custom_mode(X776_OUTPUTS_OFF, "X776") is None
     # Mode 4 is the 300W's custom; on the 160W it is not a mode at all.
@@ -647,4 +652,15 @@ def test_the_160w_s_custom_power_is_a_byte_a_port():
 def test_the_160w_s_custom_limits_are_read_and_not_set():
     assert "custom" in p.state_fields("X776")
     assert "custom" not in p.state_writable("X776")
+
+
+def test_the_160w_keeps_its_clock_style_where_the_300w_keeps_its_hours():
+    """Changing only the clock style moved byte 32; only the hours moved nothing."""
+    assert p.clock_style_field("X776") == "screensaver_theme"
+    assert p.time_format_field("X776") is None
+    assert p.clock_style_field("X783") == "screensaver_flag"
+    assert p.time_format_field("X783") == "screensaver_theme"
+    # A charger nobody could name is read as the X783 it most likely is.
+    assert p.clock_style_field(None) == "screensaver_flag"
+    assert p.time_format_field(None) == "screensaver_theme"
 

@@ -78,7 +78,11 @@ SECOND_STATE: dict[str, Any] = {
     # Custom Power is running, so the priority block is not there to read --
     # and its two limits are, one byte a port.
     "priority": None,
-    "custom": [{"port": "C-Cable", "limit": 15}, {"port": "C1", "limit": 15}],
+    "custom": [
+        {"port": "C-Cable", "limit": 15},
+        {"port": "C1", "limit": 15},
+        {"port": "C2 & A", "limit": 23},
+    ],
     "wallpaper": "438EF2",
     "wallpapers": ["3E7F82", "EA1A3B", "FC1C77", "438EF2"],
     "port_outputs": {"C-Cable": True, "C1": True, "C2 & A": False},

@@ -137,7 +137,9 @@
         "name": "Uhrenstil",
         "state": {
           "style_1": "Stil 1",
-          "style_2": "Stil 2"
+          "style_2": "Stil 2",
+          "top_right": "Oben rechts",
+          "centred": "Zentriert"
         }
       },
       "time_format": {

@@ -212,6 +212,16 @@ def selectable_modes(model: str | None) -> tuple[str, ...]:
 # the first as a clock position, which it is not.)
 TIME_FORMATS: Final[dict[int, str]] = {0: "12h", 1: "24h"}
 CLOCK_STYLES: Final[dict[int, str]] = {0: "style_1", 1: "style_2"}
+# The 160W's two faces are not the 300W's: centred, and in the top right
+# rather than on the left -- and its byte counts them the other way round.
+CLOCK_STYLES_BY_MODEL: Final[dict[str, dict[int, str]]] = {
+    "X776": {0: "top_right", 1: "centred"},
+}
+
+
+def clock_styles(model: str | None) -> dict[int, str]:
+    """This model's clock faces, by the value of its byte."""
+    return CLOCK_STYLES_BY_MODEL.get(model or "", CLOCK_STYLES)
 
 # Screen Off Time is plain minutes; zero means the screen never sleeps. These
 # are the app's own choices, confirmed by tapping each one and reading the frame

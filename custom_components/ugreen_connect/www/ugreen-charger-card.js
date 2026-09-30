@@ -513,7 +513,7 @@ class UgreenChargerCard extends HTMLElement {
       const order = ports(this._hass, this._config.device_id).map((p) => p.name);
       const place = (id) => {
         const name = this._hass.states[id].attributes.port;
-        const at = name ? order.findIndex((p) => name === p || name.startsWith(`${p}+`)) : -1;
+        const at = name ? order.findIndex((p) => name === p || name.startsWith(`${p}+`) || name.startsWith(`${p} `)) : -1;
         return at < 0 ? 99 : at;
       };
       const limits = findAll(this._hass, this._config.device_id, 'sensor', '_custom_mode_limit')
