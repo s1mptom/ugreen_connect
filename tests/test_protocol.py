@@ -367,16 +367,19 @@ def test_the_160w_s_priority_is_read_and_not_set():
         p.priority_mask(["C2"], "X776")
 
 
-def test_the_160w_s_screen_turns_where_the_300w_keeps_its_clock_style():
-    """Byte 33: 1 with auto-rotate off, 0 with it on, one toggle at a time."""
-    at = p.state_layout("X776").screensaver + 2
-    assert at == 33
-    assert X776_OUTPUTS_OFF[at] == X776_NEW_PICTURE[at] == 1
-    assert p.parse_auto_rotate(X776_OUTPUTS_OFF, "X776") is False
+def test_the_160w_s_screen_auto_rotate_is_byte_29():
+    """Its owner's logged change: auto-rotate turned off read `byte 29 01>00`."""
+    assert X776_OUTPUTS_OFF[29] == X776_NEW_PICTURE[29] == 1
+    assert p.parse_auto_rotate(X776_OUTPUTS_OFF, "X776") is True
     body = bytearray(X776_OUTPUTS_OFF)
-    body[at] = 0
+    body[29] = 0
+    assert p.parse_auto_rotate(bytes(body), "X776") is False
+    # Byte 33, once taken for it, says nothing about it.
+    body = bytearray(X776_OUTPUTS_OFF)
+    body[33] ^= 1
     assert p.parse_auto_rotate(bytes(body), "X776") is True
-    # Not a clock style there, and not an auto-rotate on the 300W.
+    # Nobody has seen byte 33 move, so it is not read; nor is there an
+    # auto-rotate on the 300W.
     assert "screensaver_flag" not in p.state_fields("X776")
     assert "auto_rotate" not in p.state_fields("X783")
     assert p.parse_auto_rotate(bytes(60), "X783") is None

@@ -153,11 +153,12 @@ STATE_FIELDS_BY_MODEL: Final[dict[str, frozenset[str]]] = {
     # two bytes to be about. `priority` is read, from its owner's changes in #2: the block's
     # first byte is the mask, as on the X783.
     #
-    # And `screensaver_flag` is not what it is on the X783. There it is the
-    # clock style; on the 160W, turning only the screen's auto-rotate off and
-    # on moved that byte, 1 for off and 0 for on, which is `auto_rotate`. Its
-    # clock style is the byte before, `screensaver_theme` -- the X783's time
-    # format -- and see CLOCK_STYLE_FIELD_BY_MODEL for which is which.
+    # And `screensaver_flag` is not read. On the X783 it is the clock style;
+    # the 160W keeps its clock style in the byte before, `screensaver_theme`
+    # -- the X783's time format, see CLOCK_STYLE_FIELD_BY_MODEL -- and nobody
+    # has seen this one move. It was taken for the screen's auto-rotate on a
+    # comparison of two saved readings; the logged change put that at byte 29
+    # (see AUTO_ROTATE_BYTE_BY_MODEL).
     "X776": STATE_FIELDS_ALL - {"dc_turbo", "screensaver_flag"},
 }
 
@@ -505,8 +506,8 @@ def priority_mask(
 # that the clock style, each written and read back. On the 160W the byte after
 # the switch is the clock style -- changing only that in the app moved byte 32,
 # 00 for top right and 01 for centred -- and the time format is not in the
-# reply at all: changing only it moved nothing (#2). The byte after the clock
-# style there is the auto-rotate.
+# reply at all: changing only it moved nothing (#2). What the byte after the
+# clock style holds there, nobody has seen move.
 CLOCK_STYLE_FIELD_BY_MODEL: Final[dict[str, str]] = {
     "X783": "screensaver_flag",
     "X776": "screensaver_theme",
@@ -527,20 +528,20 @@ def time_format_field(model: str | None) -> str | None:
     return TIME_FORMAT_FIELD_BY_MODEL.get(model or "", "screensaver_theme")
 
 
-def parse_auto_rotate(body: bytes, model: str | None = None) -> bool | None:
-    """Whether the 160W's screen turns with the charger.
+# The 160W's screen auto-rotate: byte 29, 01 with it on and 00 with it off.
+# Its owner turned only auto-rotate off in the app, waited, and the log read
+# `byte 29 01>00` (#2). Both earlier frames of theirs read 01 there.
+AUTO_ROTATE_BYTE_BY_MODEL: Final[dict[str, int]] = {"X776": 29}
 
-    Its byte sits where the X783 keeps the clock style, two after the
-    screensaver switch, and reads 0 with auto-rotate on and 1 with it off --
-    one toggle at a time in the app, twenty seconds apart, on its owner's
-    charger in #2.
-    """
+
+def parse_auto_rotate(body: bytes, model: str | None = None) -> bool | None:
+    """Whether the 160W's screen turns with the charger."""
     if "auto_rotate" not in state_fields(model):
         return None
-    at = state_layout(model).screensaver + 2
-    if len(body) <= at:
+    at = AUTO_ROTATE_BYTE_BY_MODEL.get(model or "")
+    if at is None or len(body) <= at:
         return None
-    return body[at] == 0
+    return bool(body[at])
 
 
 # --- The DC turbo mode's settings -------------------------------------------
