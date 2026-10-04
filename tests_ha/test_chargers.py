@@ -306,12 +306,12 @@ async def test_the_160w_shows_its_priority_ports_and_does_not_set_them(hass, api
     assert not rtcx.priority_writes
 
 
-async def test_the_160w_s_byte_33_is_auto_rotate_not_a_clock_style(hass, api, rtcx):
+async def test_the_160w_has_auto_rotate_and_its_own_clock_style(hass, api, rtcx):
     api.devices = [dict(DEVICE), dict(SECOND)]
     await _set_up(hass, api, rtcx)
 
     rotate = hass.states.get(_entity(hass, "switch", f"{SECOND_CODE}_auto_rotate"))
-    assert rotate.state == "off"
+    assert rotate.state == "on"
     # Its clock style is byte 32, its own two faces; its hours are not read.
     style = hass.states.get(_entity(hass, "select", f"{SECOND_CODE}_clock_style"))
     assert style.state == "top_right"

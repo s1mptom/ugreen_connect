@@ -83,7 +83,7 @@ e.g. `sensor.ugreen_nexode_pro_x783_c1_power`.
 | `switch.<device>_dc_always_on` | whether DC turbo keeps the DC port live with nothing plugged in. Unavailable under any other mode |
 | `select.<device>_time_format` | 12- or 24-hour; a 300W's -- a 160W does not report it |
 | `select.<device>_clock_style` | the two faces the charger draws: centred or on the left on a 300W, centred or top right on a 160W, where it is shown and not set yet |
-| `switch.<device>_auto_rotate` | a 160W's screen auto-rotate, which sits where a 300W keeps its clock style. Shown, not set yet |
+| `switch.<device>_auto_rotate` | a 160W's screen auto-rotate. Shown, not set yet |
 | `select.<device>_wallpaper` | any picture in your UGREEN library, or none |
 | `switch.<device>_c_cable_output` … | a 160W's port switches: C-Cable, C1, and C2 & A, which the app switches together. Shown, not set yet: the app switches them with a command nobody has watched go out |
 
