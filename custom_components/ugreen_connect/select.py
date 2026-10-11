@@ -19,7 +19,6 @@ from .const import (
     SLEEP_OPTIONS,
     TIME_FORMATS,
     charging_modes,
-    clock_styles,
     selectable_modes,
 )
 from .coordinator import UgreenCoordinator, device_key
@@ -64,12 +63,11 @@ async def async_setup_entry(
                 known.add((key, "wallpaper"))
                 new.append(UgreenWallpaper(coordinator, key))
             # Each clock option where this model's reply carries it: the 160W
-            # keeps its clock style where the 300W keeps the time format, and
-            # its time format nowhere in the reply at all.
+            # has its time format where the 300W does, and no clock style that
+            # anyone has found.
             model = coordinator.model_for(key)
-            if reading.get(clock_style_field(model)) is not None and (
-                (key, "clock_style") not in known
-            ):
+            clock = clock_style_field(model)
+            if clock and reading.get(clock) is not None and (key, "clock_style") not in known:
                 known.add((key, "clock_style"))
                 new.append(UgreenClockStyle(coordinator, key))
             hours = time_format_field(model)
@@ -337,34 +335,28 @@ class UgreenClockStyle(_UgreenScreensaverOption):
 
     _attr_translation_key = "clock_style"
     _attr_icon = "mdi:clock-outline"
+    _attr_options = list(CLOCK_STYLES.values())
 
     def __init__(self, coordinator: UgreenCoordinator, key: str) -> None:
         super().__init__(coordinator, key)
         self._attr_unique_id = f"{key}_clock_style"
 
     @property
-    def _model(self) -> str | None:
-        return self.coordinator.model_for(self._key)
-
-    @property
-    def options(self) -> list[str]:
-        return list(clock_styles(self._model).values())
+    def _field(self) -> str | None:
+        return clock_style_field(self.coordinator.model_for(self._key))
 
     @property
     def available(self) -> bool:
-        field = clock_style_field(self._model)
-        return super().available and (self._reading or {}).get(field) is not None
+        field = self._field
+        return super().available and bool(field) and (self._reading or {}).get(field) is not None
 
     @property
     def current_option(self) -> str | None:
-        return clock_styles(self._model).get(
-            (self._reading or {}).get(clock_style_field(self._model))
-        )
+        field = self._field
+        return CLOCK_STYLES.get((self._reading or {}).get(field)) if field else None
 
     async def async_select_option(self, option: str) -> None:
-        # Refused where the byte is not the X783's -- rather than an option
-        # the 300W's table does not know passing through as nothing at all.
-        self._require_writable(clock_style_field(self._model))
+        self._require_writable(self._field or "screensaver_flag")
         if option in CLOCK_STYLE_VALUE:
             await self._send(flag=CLOCK_STYLE_VALUE[option])
 

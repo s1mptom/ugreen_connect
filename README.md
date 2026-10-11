@@ -81,8 +81,8 @@ e.g. `sensor.ugreen_nexode_pro_x783_c1_power`.
 | `switch.<device>_c1_charged_first` … | C1, C2 and C3: whether the `priority` mode charges that port first. Any of them, all three included, but never none -- turning off the last one is refused. Unavailable under any other mode. A 160W has C-Cable and C1, shown and not set yet |
 | `select.<device>_dc_port_voltage` | 12, 15 or 20 V: what DC turbo gives the DC port. Unavailable under any other mode |
 | `switch.<device>_dc_always_on` | whether DC turbo keeps the DC port live with nothing plugged in. Unavailable under any other mode |
-| `select.<device>_time_format` | 12- or 24-hour; a 300W's -- a 160W does not report it |
-| `select.<device>_clock_style` | the two faces the charger draws: centred or on the left on a 300W, centred or top right on a 160W, where it is shown and not set yet |
+| `select.<device>_time_format` | 12- or 24-hour; on a 160W shown and not set yet |
+| `select.<device>_clock_style` | the two faces the charger draws, centred or on the left; a 300W's -- where a 160W keeps its own has not been found |
 | `switch.<device>_auto_rotate` | a 160W's screen auto-rotate. Shown, not set yet |
 | `select.<device>_wallpaper` | any picture in your UGREEN library, or none |
 | `switch.<device>_c_cable_output` … | a 160W's port switches: C-Cable, C1, and C2 & A, which the app switches together. Shown, not set yet: the app switches them with a command nobody has watched go out |

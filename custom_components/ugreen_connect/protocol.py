@@ -154,10 +154,9 @@ STATE_FIELDS_BY_MODEL: Final[dict[str, frozenset[str]]] = {
     # first byte is the mask, as on the X783.
     #
     # And `screensaver_flag` is not read. On the X783 it is the clock style;
-    # the 160W keeps its clock style in the byte before, `screensaver_theme`
-    # -- the X783's time format, see CLOCK_STYLE_FIELD_BY_MODEL -- and nobody
-    # has seen this one move. It was taken for the screen's auto-rotate on a
-    # comparison of two saved readings; the logged change put that at byte 29
+    # on the 160W nobody has seen it move (see CLOCK_STYLE_FIELD_BY_MODEL). It
+    # was taken for the screen's auto-rotate on a comparison of two saved
+    # readings; the logged change put that at byte 29
     # (see AUTO_ROTATE_BYTE_BY_MODEL).
     "X776": STATE_FIELDS_ALL - {"dc_turbo", "screensaver_flag"},
 }
@@ -504,22 +503,26 @@ def priority_mask(
 # Which byte of the screensaver group holds which clock setting. On the X783
 # the byte after the screensaver switch is the time format and the one after
 # that the clock style, each written and read back. On the 160W the byte after
-# the switch is the clock style -- changing only that in the app moved byte 32,
-# 00 for top right and 01 for centred -- and the time format is not in the
-# reply at all: changing only it moved nothing (#2). What the byte after the
-# clock style holds there, nobody has seen move.
-CLOCK_STYLE_FIELD_BY_MODEL: Final[dict[str, str]] = {
+# the switch is the time format too: toggling 12/24-hour in the app flipped
+# Home Assistant's reading of that byte, in its owner's logbook (#2, 5
+# October), and a change to 24-hour in September wrote 01 there.
+#
+# One logged line on 30 September had put the clock style there instead, and
+# for v0.25.0 it was believed. The check from Home Assistant's side, made
+# afterwards, contradicts it, so the clock style is not read on the 160W at
+# all -- where it is, if the reply carries it, nobody has seen.
+CLOCK_STYLE_FIELD_BY_MODEL: Final[dict[str, str | None]] = {
     "X783": "screensaver_flag",
-    "X776": "screensaver_theme",
+    "X776": None,
 }
 TIME_FORMAT_FIELD_BY_MODEL: Final[dict[str, str | None]] = {
     "X783": "screensaver_theme",
-    "X776": None,
+    "X776": "screensaver_theme",
 }
 
 
-def clock_style_field(model: str | None) -> str:
-    """The state field this model keeps its clock style in."""
+def clock_style_field(model: str | None) -> str | None:
+    """The state field this model keeps its clock style in, if any."""
     return CLOCK_STYLE_FIELD_BY_MODEL.get(model or "", "screensaver_flag")
 
 

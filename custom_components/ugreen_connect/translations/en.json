@@ -137,9 +137,7 @@
         "name": "Clock style",
         "state": {
           "style_1": "Style 1",
-          "style_2": "Style 2",
-          "top_right": "Top right",
-          "centred": "Centred"
+          "style_2": "Style 2"
         }
       },
       "time_format": {

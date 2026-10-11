@@ -657,10 +657,17 @@ def test_the_160w_s_custom_limits_are_read_and_not_set():
     assert "custom" not in p.state_writable("X776")
 
 
-def test_the_160w_keeps_its_clock_style_where_the_300w_keeps_its_hours():
-    """Changing only the clock style moved byte 32; only the hours moved nothing."""
-    assert p.clock_style_field("X776") == "screensaver_theme"
-    assert p.time_format_field("X776") is None
+def test_the_160w_keeps_its_hours_where_the_300w_does():
+    """Toggling 12/24-hour in the app flipped Home Assistant's reading of byte 32.
+
+    A logged line had put the clock style there; the check from Home
+    Assistant's side contradicted it, so the clock style is not read.
+    """
+    assert p.time_format_field("X776") == "screensaver_theme"
+    assert p.state_layout("X776").screensaver + 1 == 32
+    assert p.clock_style_field("X776") is None
+    # The September change to 24-hour wrote 01 there, as the 300W counts it.
+    assert X776_OUTPUTS_OFF[32] == 1
     assert p.clock_style_field("X783") == "screensaver_flag"
     assert p.time_format_field("X783") == "screensaver_theme"
     # A charger nobody could name is read as the X783 it most likely is.
