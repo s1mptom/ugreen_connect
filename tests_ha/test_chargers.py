@@ -306,21 +306,20 @@ async def test_the_160w_shows_its_priority_ports_and_does_not_set_them(hass, api
     assert not rtcx.priority_writes
 
 
-async def test_the_160w_has_auto_rotate_and_its_own_clock_style(hass, api, rtcx):
+async def test_the_160w_has_auto_rotate_and_its_hours_but_no_clock_style(hass, api, rtcx):
     api.devices = [dict(DEVICE), dict(SECOND)]
     await _set_up(hass, api, rtcx)
 
     rotate = hass.states.get(_entity(hass, "switch", f"{SECOND_CODE}_auto_rotate"))
     assert rotate.state == "on"
-    # Its clock style is byte 32, its own two faces; its hours are not read.
-    style = hass.states.get(_entity(hass, "select", f"{SECOND_CODE}_clock_style"))
-    assert style.state == "top_right"
-    assert style.attributes["options"] == ["top_right", "centred"]
-    assert _entity(hass, "select", f"{SECOND_CODE}_time_format") is None
+    # Byte 32 is its 12/24-hour choice, as on the 300W; no clock style is read.
+    hours = hass.states.get(_entity(hass, "select", f"{SECOND_CODE}_time_format"))
+    assert hours.state == "12h"
+    assert _entity(hass, "select", f"{SECOND_CODE}_clock_style") is None
     with pytest.raises(ServiceValidationError) as err:
         await hass.services.async_call(
             "select", "select_option",
-            {"entity_id": style.entity_id, "option": "centred"}, blocking=True,
+            {"entity_id": hours.entity_id, "option": "24h"}, blocking=True,
         )
     assert err.value.translation_key == "not_writable_on_model"
     # The 300W keeps its clock style and has no auto-rotate.
