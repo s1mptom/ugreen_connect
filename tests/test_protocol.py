@@ -378,9 +378,7 @@ def test_the_160w_s_screen_auto_rotate_is_byte_29():
     body = bytearray(X776_OUTPUTS_OFF)
     body[33] ^= 1
     assert p.parse_auto_rotate(bytes(body), "X776") is True
-    # Nobody has seen byte 33 move, so it is not read; nor is there an
-    # auto-rotate on the 300W.
-    assert "screensaver_flag" not in p.state_fields("X776")
+    # Nor is there an auto-rotate on the 300W.
     assert "auto_rotate" not in p.state_fields("X783")
     assert p.parse_auto_rotate(bytes(60), "X783") is None
     assert p.parse_auto_rotate(bytes(60), None) is None
@@ -665,7 +663,11 @@ def test_the_160w_keeps_its_hours_where_the_300w_does():
     """
     assert p.time_format_field("X776") == "screensaver_theme"
     assert p.state_layout("X776").screensaver + 1 == 32
-    assert p.clock_style_field("X776") is None
+    # And the clock style the byte after, as on the 300W: `byte 33 01>00`
+    # changing only it, centred to top right.
+    assert p.clock_style_field("X776") == "screensaver_flag"
+    assert "screensaver_flag" in p.state_fields("X776")
+    assert X776_OUTPUTS_OFF[33] == 1, "centred"
     # The September change to 24-hour wrote 01 there, as the 300W counts it.
     assert X776_OUTPUTS_OFF[32] == 1
     assert p.clock_style_field("X783") == "screensaver_flag"
