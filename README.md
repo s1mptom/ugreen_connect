@@ -464,11 +464,18 @@ counters, the `custom` mode decoded and reported, and the read-back that made
 every control publish what the charger did rather than what it was asked. Also
 the reviews, which caught rather more of mine than the other way round.
 
-The 160W's field offsets came from its owner in
-[#2](https://github.com/s1mptom/ugreen_connect/issues/2), mapped one setting at a
-time on hardware nobody here has: its screen settings, its own numbering of the
-charging modes, its port switches, its priority ports, its screen auto-rotate
-and its picture library.
+The 160W's support is [@KL11111](https://github.com/KL11111)'s work, in
+[#2](https://github.com/s1mptom/ugreen_connect/issues/2). They mapped it one
+setting at a time on hardware nobody here has, and then checked each release
+against the app:
+- its port layout and readings;
+- its own numbering of the charging modes;
+- its priority ports and Custom Power limits;
+- its port switches;
+- its screen settings, clock style, time format and auto-rotate;
+- its picture library.
+
+They also confirmed the first writes anyone made to a 160W.
 
 ## Contributing
 
