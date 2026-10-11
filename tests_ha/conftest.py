@@ -73,6 +73,8 @@ SECOND_STATE: dict[str, Any] = {
     "charging_mode": "custom",
     "screensaver": True,
     "screensaver_theme": 0,
+    # Byte 33, the clock style: 01 is centred on this model.
+    "screensaver_flag": 1,
     # Byte 29 is the screen's auto-rotate on this model, 01 in its owner's frames.
     "auto_rotate": True,
     # Custom Power is running, so the priority block is not there to read --

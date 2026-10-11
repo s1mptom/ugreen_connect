@@ -153,12 +153,10 @@ STATE_FIELDS_BY_MODEL: Final[dict[str, frozenset[str]]] = {
     # two bytes to be about. `priority` is read, from its owner's changes in #2: the block's
     # first byte is the mask, as on the X783.
     #
-    # And `screensaver_flag` is not read. On the X783 it is the clock style;
-    # on the 160W nobody has seen it move (see CLOCK_STYLE_FIELD_BY_MODEL). It
-    # was taken for the screen's auto-rotate on a comparison of two saved
-    # readings; the logged change put that at byte 29
-    # (see AUTO_ROTATE_BYTE_BY_MODEL).
-    "X776": STATE_FIELDS_ALL - {"dc_turbo", "screensaver_flag"},
+    # The screensaver group is the X783's: switch, time format, clock style at
+    # 31, 32 and 33 (see CLOCK_STYLE_FIELD_BY_MODEL). Byte 33 was once taken
+    # for the screen's auto-rotate, which the logged change put at byte 29.
+    "X776": STATE_FIELDS_ALL - {"dc_turbo"},
 }
 
 # Reading a byte and writing it are separate permissions, because the commands
@@ -507,13 +505,13 @@ def priority_mask(
 # Home Assistant's reading of that byte, in its owner's logbook (#2, 5
 # October), and a change to 24-hour in September wrote 01 there.
 #
-# One logged line on 30 September had put the clock style there instead, and
-# for v0.25.0 it was believed. The check from Home Assistant's side, made
-# afterwards, contradicts it, so the clock style is not read on the 160W at
-# all -- where it is, if the reply carries it, nobody has seen.
+# The clock style is the byte after, as on the X783: changing only it in the
+# app, centred to top right, read `byte 33 01>00` (#2, 11 October). One
+# logged line on 30 September had put the clock style at byte 32; the check
+# from Home Assistant's side showed that was the time format.
 CLOCK_STYLE_FIELD_BY_MODEL: Final[dict[str, str | None]] = {
     "X783": "screensaver_flag",
-    "X776": None,
+    "X776": "screensaver_flag",
 }
 TIME_FORMAT_FIELD_BY_MODEL: Final[dict[str, str | None]] = {
     "X783": "screensaver_theme",
