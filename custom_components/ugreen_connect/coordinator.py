@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from datetime import timedelta
 from typing import Any
@@ -68,7 +69,7 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         api: UgreenApi,
         rtcx: RtcxClient,
         *,
-        debug_dump: bool = True,
+        debug_dump: bool = False,
         models: dict[str, str] | None = None,
         model_store: Store[dict[str, str]] | None = None,
         params_store: Store[dict[str, str]] | None = None,
@@ -113,6 +114,10 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._static: dict[str, tuple[dict[str, Any], float]] = {}
         self._wallpaper_cache: dict[str, tuple[list[dict[str, Any]], float]] = {}
         self._wallpaper_missed: dict[str, float] = {}
+        # When the library was last re-read for the preview view, and the turn
+        # it waits in: one refresh a minute at most, however many ask.
+        self._wallpaper_refreshed = 0.0
+        self._wallpaper_refreshing = asyncio.Lock()
         self._products: dict[str, Any] = {}
         # What the account API answered when asked which model a charger is.
         # A key here means it has answered; the value may still be None, which
@@ -368,7 +373,8 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "power_errors": errors,
         }
 
-        if self._debug_dump:
+        if self._debug_dump and not self._dumped:
+            self._dumped = True
             await self.hass.async_add_executor_job(self._write_dump, data)
 
         # The settings are taken from the cache once more, after every await
@@ -912,27 +918,73 @@ class UgreenCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         does before giving up on a picture.
         """
         if refresh:
-            self._wallpaper_cache.clear()
-            for device in self.data.get("devices", []):
-                reading = (self.data.get("power") or {}).get(device_key(device) or "")
-                if reading is not None:
-                    reading["wallpaper_list"] = await self._wallpapers(device)
+            async with self._wallpaper_refreshing:
+                # Asked again within the minute, the list just read is the
+                # answer; the cloud is not asked twice for the same thing.
+                if time.time() - self._wallpaper_refreshed >= WALLPAPER_MISS_INTERVAL:
+                    self._wallpaper_refreshed = time.time()
+                    self._wallpaper_cache.clear()
+                    for device in self.data.get("devices", []):
+                        key = device_key(device) or ""
+                        reading = (self.data.get("power") or {}).get(key)
+                        if reading is not None:
+                            reading["wallpaper_list"] = await self._wallpapers(device)
         for reading in (self.data.get("power") or {}).values():
             for item in (reading or {}).get("wallpaper_list") or []:
                 if item.get("id") == image_id and item.get("url"):
                     return item["url"]
         return None
 
+    def knows_wallpaper(self, image_id: str) -> bool:
+        """Whether a picture by this id is one of this account's."""
+        for reading in ((self.data or {}).get("power") or {}).values():
+            reading = reading or {}
+            if image_id in (reading.get("wallpapers") or []):
+                return True
+            if any(item.get("id") == image_id for item in reading.get("wallpaper_list") or []):
+                return True
+        return False
+
     def _write_dump(self, data: dict[str, Any]) -> None:
-        """Write one raw snapshot so the entity layer can be built from real data."""
+        """Write one raw snapshot so the entity layer can be built from real data.
+
+        Once a run, readable by the owner alone, and without the signed links:
+        each opens a picture or a firmware file for anyone who has it, and this
+        file goes into every backup.
+        """
         path = self.hass.config.path(DEBUG_DUMP_FILE)
         try:
-            with open(path, "w", encoding="utf-8") as handle:
-                json.dump(data, handle, ensure_ascii=False, indent=2)
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            os.chmod(path, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                json.dump(_unlinked(data), handle, ensure_ascii=False, indent=2)
         except OSError as err:
             _LOGGER.warning("Could not write %s: %s", path, err)
         else:
             _LOGGER.info("Wrote raw UGREEN cloud snapshot to %s", path)
+
+
+def _unlinked(value: Any) -> Any:
+    """A copy of `value` with every signed link left out."""
+    if isinstance(value, dict):
+        return {
+            key: _unlinked(item)
+            for key, item in value.items()
+            if key not in ("url", "fileUrl")
+        }
+    if isinstance(value, list):
+        return [_unlinked(item) for item in value]
+    return value
+
+
+def remove_dump(hass: HomeAssistant) -> None:
+    """Delete the debug snapshot, if there is one. Runs in the executor."""
+    try:
+        os.remove(hass.config.path(DEBUG_DUMP_FILE))
+    except FileNotFoundError:
+        pass
+    except OSError as err:
+        _LOGGER.warning("Could not remove %s: %s", DEBUG_DUMP_FILE, err)
 
 
 def _offer(data: dict[str, Any] | None, mcu: int) -> dict[str, Any] | None:

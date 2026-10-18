@@ -65,8 +65,9 @@ e.g. `sensor.ugreen_nexode_pro_x783_c1_power`.
 | `sensor.<device>_c1_energy`, `sensor.<device>_energy` | kilowatt-hours since the counter began, per port and for the charger. Integrated here, since the device keeps no total of its own; feed the Energy dashboard one or the other, never both |
 | `binary_sensor.<device>_c1_charging` | whether charge is flowing on that port right now, which is a different question from whether a session is open -- seconds apart when the cable is pulled, and close to two hours apart when a full device is left plugged in |
 | `event.<device>_c1_charging` | `started` and `ended`, with `energy_wh`, `duration`, `peak_power` and `protocol` on the event |
-| `sensor.<device>_total_power` | sum across ports; firmware and Wi-Fi SSID in its attributes |
-| `sensor.<device>_cloud_status` | `online` / `offline`; MAC in its attributes |
+| `sensor.<device>_total_power` | sum across ports; firmware in its attributes |
+| `sensor.<device>_wifi_network` | the Wi-Fi network the charger is on. Diagnostic, and off until you turn it on: the name is your household's own |
+| `sensor.<device>_cloud_status` | `online` / `offline`; the MAC is on the device page |
 | `sensor.<device>_c1_custom_mode_limit` … | six of them -- C1–C5 and C6+A, which share one -- reading the watt limit that group is set to. Diagnostic; created the first time the charger is seen in the `custom` charging mode, and unavailable while any other one runs. The protocols the group may negotiate and the raw mask are attributes. A 160W has three, C-Cable, C1 and C2 & A, without protocols: those are not mapped on it yet |
 | `update.<device>_firmware` | installed version, the one the UGREEN cloud offers and what changed in it; on a 300W, installs it too -- see [Firmware updates](#firmware-updates) |
 

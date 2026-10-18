@@ -247,6 +247,12 @@ WALLPAPER_LIST_INTERVAL: Final = 900
 # like. Rate limited, because a picture that has been replaced in the library
 # stays on the charger and would otherwise be chased on every poll.
 WALLPAPER_MISS_INTERVAL: Final = 60
+# The most a picture may be, as bytes, before anything decodes it -- whether it
+# comes from the CDN to the preview view or from a user to set_wallpaper -- and
+# as pixels once its header is read. A small file can describe a huge image,
+# and decoding that is what would take a Home Assistant box down.
+MAX_PICTURE_BYTES: Final = 10 * 1024 * 1024
+MAX_PICTURE_PIXELS: Final = 40_000_000
 
 # How long to let the charger download a picture before pointing the screensaver
 # at it.

@@ -251,12 +251,13 @@ class UgreenWallpaper(UgreenDeviceEntity, SelectEntity):
         behind Home Assistant's own sign-in. Never the CDN `url` it came from:
         that link is signed, opens the picture -- the owner's own photo among
         them -- for anyone who has it until it expires, and an attribute puts it
-        in front of everyone who can read states and into the recorder.
+        in front of everyone who can read states and into the recorder. Nor the
+        file's name, which is the one it had on the owner's phone.
         """
         entry_id = self.coordinator.config_entry.entry_id
         return {
             "wallpapers": [
-                {k: v for k, v in item.items() if k != "url"}
+                {k: v for k, v in item.items() if k not in ("url", "name")}
                 | {"preview": wallpaper_path(entry_id, item["id"])}
                 for item in (self._reading or {}).get("wallpaper_list") or []
                 if item.get("id")

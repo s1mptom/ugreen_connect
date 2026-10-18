@@ -17,7 +17,7 @@
           "nominal_voltage": "Used only to read a session's watt-hours back as milliamp-hours. 3.85 V is the nominal cell voltage of phones, earbuds and handhelds; a laptop's pack is far higher, and its milliamp-hour figure means nothing until this matches it.",
           "efficiency": "How much of what leaves the port reaches the cell. The rest becomes heat in the cable and the device's own converter.",
           "session_idle_end": "How long a port must deliver nothing before its charging session is called finished and the next one may start. The charger keeps a port live for a bare cable, so this is the only thing that can end a session. Long enough that a phone topping itself up at 100% stays one session; shorter if you swap devices on the same cable within a couple of hours.",
-          "debug_dump": "Saves ugreen_connect_debug.json once per restart. Useful while the integration is still being built out; safe to turn off later."
+          "debug_dump": "Saves ugreen_connect_debug.json once per restart, readable by the owner only and without signed links. It holds identifiers of your chargers and Wi-Fi; it is deleted when this is turned off."
         }
       },
       "reauth_confirm": {
@@ -93,6 +93,9 @@
       },
       "custom_limit": {
         "name": "{port} custom-mode limit"
+      },
+      "wifi_network": {
+        "name": "Wi-Fi network"
       }
     },
     "number": {
@@ -225,7 +228,7 @@
         "data_description": {
           "scan_interval": "How often a reading arrives. Measured start to start, so the wait for the charger to answer comes out of this rather than being added to it. 5 s keeps the wattage live; raise it to lean less on UGREEN's servers.",
           "region": "Only change this if the account itself was moved to another server. The password is checked against the new region before the change is kept.",
-          "debug_dump": "Saves ugreen_connect_debug.json on every refresh. It is the unedited cloud payload.",
+          "debug_dump": "Saves ugreen_connect_debug.json once per restart, readable by the owner only and without signed links. It holds identifiers of your chargers and Wi-Fi; it is deleted when this is turned off.",
           "nominal_voltage": "Used only to read a session's watt-hours back as milliamp-hours. 3.85 V is the nominal cell voltage of phones, earbuds and handhelds; a laptop's pack is far higher, and its milliamp-hour figure means nothing until this matches it.",
           "efficiency": "How much of what leaves the port reaches the cell. The rest becomes heat in the cable and the device's own converter.",
           "session_idle_end": "How long a port must deliver nothing before its charging session is called finished and the next one may start. The charger keeps a port live for a bare cable, so this is the only thing that can end a session. Long enough that a phone topping itself up at 100% stays one session; shorter if you swap devices on the same cable within a couple of hours.",
