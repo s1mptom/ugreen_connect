@@ -18,7 +18,12 @@ import aiohttp
 import voluptuous as vol
 from homeassistant.const import CONF_DEVICE_ID
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import (
+    HomeAssistantError,
+    ServiceValidationError,
+    Unauthorized,
+    UnknownUser,
+)
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 
@@ -89,6 +94,18 @@ async def async_register(hass: HomeAssistant) -> None:
         return
 
     async def _handle(call: ServiceCall) -> None:
+        # A path reads a file off this machine and a URL fetches from any host
+        # it can reach, the local network included, and either ends up on the
+        # UGREEN cloud and the charger's screen. So both are an administrator's
+        # -- or an automation's, which runs with no user. A picture sent as
+        # `image`, which is all the wallpaper card sends, is anyone's.
+        if (call.data.get(ATTR_PATH) or call.data.get(ATTR_URL)) and call.context.user_id:
+            user = await hass.auth.async_get_user(call.context.user_id)
+            if user is None:
+                raise UnknownUser(context=call.context)
+            if not user.is_admin:
+                raise Unauthorized(context=call.context)
+
         device = dr.async_get(hass).async_get(call.data[CONF_DEVICE_ID])
         if device is None:
             raise HomeAssistantError("Unknown device")

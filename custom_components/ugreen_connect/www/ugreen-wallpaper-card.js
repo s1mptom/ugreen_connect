@@ -707,7 +707,7 @@ class UgreenWallpaperCard extends HTMLElement {
   /* Every strip on the card and in the editor: the chosen picture with the
      clock over it, in the chosen style. The app leads with the same thing. */
   _drawHero(list, current, sty, fmt) {
-    const pic = list.find((w) => w.id === current && (w.preview || w.url));
+    const pic = list.find((w) => w.id === current && w.preview);
     const clock = this._clock(fmt);
     for (const hero of this._root.querySelectorAll('.hero')) {
       const inStyle = hero.closest('.style');
@@ -740,8 +740,8 @@ class UgreenWallpaperCard extends HTMLElement {
 
      The address the integration serves needs Home Assistant's own credentials,
      which an <img> never sends, so it is fetched here and handed over as a
-     blob. The CDN link stays as a fallback -- it works for the first ten
-     minutes after the card is drawn, which is better than a broken image. */
+     blob. There is no CDN link to fall back on: the integration no longer
+     publishes it, since anyone holding one can open the picture. */
   async _show(img, w) {
     this._blobs ||= {};
     if (this._blobs[w.id]) { img.src = this._blobs[w.id]; return; }
@@ -753,15 +753,14 @@ class UgreenWallpaperCard extends HTMLElement {
           img.src = this._blobs[w.id] = URL.createObjectURL(await reply.blob());
           return;
         }
-      } catch (err) { /* fall through to the CDN */ }
+      } catch (err) { /* left blank: the tile still names the picture */ }
     }
-    if (w.url) img.src = w.url;
   }
 
   _tile(w, label, current, sending) {
     const el = document.createElement('button');
     el.type = 'button';
-    const pic = w.preview || w.url;
+    const pic = w.preview;
     el.className = pic ? 'tile' : 'tile plain';
     el.setAttribute('role', 'radio');
     el.setAttribute('aria-checked', String(w.id === current));
