@@ -196,11 +196,11 @@
         },
         "path": {
           "name": "File",
-          "description": "Path to an image on the Home Assistant host, e.g. /config/www/desk.jpg."
+          "description": "Path to an image on the Home Assistant host, e.g. /config/www/desk.jpg. Administrators and automations only."
         },
         "url": {
           "name": "URL",
-          "description": "Address of an image to fetch and upload."
+          "description": "Address of an image to fetch and upload. Administrators and automations only."
         },
         "image": {
           "name": "Image data",

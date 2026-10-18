@@ -247,15 +247,17 @@ class UgreenWallpaper(UgreenDeviceEntity, SelectEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """What the card draws its previews from; the device only knows ids.
 
-        Each picture carries a `preview` address served by this integration
-        alongside the CDN `url` it came from. The CDN link is signed and dies
-        after about ten minutes, far sooner than a dashboard is redrawn, so the
-        card is meant to use `preview` and keep `url` only as a fallback.
+        Each picture carries a `preview` address served by this integration,
+        behind Home Assistant's own sign-in. Never the CDN `url` it came from:
+        that link is signed, opens the picture -- the owner's own photo among
+        them -- for anyone who has it until it expires, and an attribute puts it
+        in front of everyone who can read states and into the recorder.
         """
         entry_id = self.coordinator.config_entry.entry_id
         return {
             "wallpapers": [
-                item | {"preview": wallpaper_path(entry_id, item["id"])}
+                {k: v for k, v in item.items() if k != "url"}
+                | {"preview": wallpaper_path(entry_id, item["id"])}
                 for item in (self._reading or {}).get("wallpaper_list") or []
                 if item.get("id")
             ]

@@ -312,7 +312,10 @@ data:
 ```
 
 Pictures given to the service, rather than to the card, are cover-cropped from
-the centre.
+the centre. A `path` or a `url` is an administrator's to give, or an
+automation's: either reaches into this machine or the network around it, and
+the picture ends up on the UGREEN cloud. `image`, which is what the card sends,
+works for every user. A `path` must also be in `allowlist_external_dirs`.
 
 Uploading needs **Pillow**, which any Home Assistant with `default_config`
 already has. Everything else in the integration works without it.

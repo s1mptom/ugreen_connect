@@ -1339,3 +1339,82 @@ async def test_a_changed_card_gets_a_new_address(hass, tmp_path, monkeypatch):
     assert f"{frontend.WWW_URL}/{second}/ugreen-ports-card.js" in urls
     assert ports not in urls, "the old address was left for the browser to prefer"
     assert len(urls) == len(frontend.CARD_FILES)
+
+
+def _x783_device(hass, entry):
+    return next(
+        d
+        for d in dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+        if (DOMAIN, DEVICE_CODE) in d.identifiers
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"), [("path", "/config/www/pet.jpg"), ("url", "http://192.168.1.20/snapshot.jpg")]
+)
+async def test_a_path_or_url_is_an_administrator_s_to_give(
+    hass, started, hass_read_only_user, field, value
+):
+    """Either reaches off this machine or into it, and ends up on the UGREEN cloud."""
+    from homeassistant.core import Context
+    from homeassistant.exceptions import Unauthorized
+
+    device = _x783_device(hass, started)
+    with pytest.raises(Unauthorized):
+        await hass.services.async_call(
+            DOMAIN, "set_wallpaper", {"device_id": device.id, field: value},
+            blocking=True, context=Context(user_id=hass_read_only_user.id),
+        )
+
+
+async def test_an_administrator_or_an_automation_may_give_a_path(
+    hass, started, hass_admin_user, monkeypatch
+):
+    """Past the check, the allowlist is what answers."""
+    from homeassistant.core import Context
+    from homeassistant.exceptions import HomeAssistantError, Unauthorized
+
+    monkeypatch.setattr(hass.config, "is_allowed_path", lambda _path: False)
+    device = _x783_device(hass, started)
+    for context in (Context(user_id=hass_admin_user.id), Context()):
+        with pytest.raises(HomeAssistantError) as err:
+            await hass.services.async_call(
+                DOMAIN, "set_wallpaper", {"device_id": device.id, "path": "/x.jpg"},
+                blocking=True, context=context,
+            )
+        assert not isinstance(err.value, Unauthorized)
+        assert "allowlist" in str(err.value)
+
+
+async def test_a_picture_sent_whole_is_anyone_s(hass, started, hass_read_only_user):
+    """What the wallpaper card sends, so the card works for everyone."""
+    from homeassistant.core import Context
+    from homeassistant.exceptions import HomeAssistantError, Unauthorized
+
+    device = _x783_device(hass, started)
+    with pytest.raises(HomeAssistantError) as err:
+        await hass.services.async_call(
+            DOMAIN, "set_wallpaper", {"device_id": device.id, "image": "not base64!"},
+            blocking=True, context=Context(user_id=hass_read_only_user.id),
+        )
+    assert not isinstance(err.value, Unauthorized)
+    assert "base64" in str(err.value)
+
+
+async def test_the_signed_picture_links_are_not_published(hass, started, api):
+    """Anyone with one opens the picture; states and the recorder are not the place."""
+    async def _library(*_args):
+        return [{
+            "fileNameMd5": "31F207", "url": "https://cdn.example/31F207.jpg?auth_key=signed",
+            "fileName": "mine.jpg", "fileSize": 12345, "stock": False,
+        }]
+
+    api.get_wallpapers = _library
+    await started.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    entity = er.async_get(hass).async_get_entity_id("select", DOMAIN, f"{DEVICE_CODE}_wallpaper")
+    pictures = hass.states.get(entity).attributes["wallpapers"]
+    assert [p["id"] for p in pictures] == ["31F207"]
+    assert "url" not in pictures[0]
+    assert pictures[0]["preview"].startswith("/api/ugreen_connect/wallpaper/")
+    assert "auth_key" not in str(hass.states.get(entity).attributes)

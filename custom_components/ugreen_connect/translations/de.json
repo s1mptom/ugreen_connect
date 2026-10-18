@@ -196,11 +196,11 @@
         },
         "path": {
           "name": "Datei",
-          "description": "Pfad zu einem Bild auf dem Home-Assistant-Host, z. B. /config/www/desk.jpg."
+          "description": "Pfad zu einem Bild auf dem Home-Assistant-Host, z. B. /config/www/desk.jpg. Nur für Administratoren und Automationen."
         },
         "url": {
           "name": "URL",
-          "description": "Adresse eines Bildes, das geholt und hochgeladen wird."
+          "description": "Adresse eines Bildes, das geholt und hochgeladen wird. Nur für Administratoren und Automationen."
         },
         "image": {
           "name": "Bilddaten",
