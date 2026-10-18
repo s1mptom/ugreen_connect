@@ -273,3 +273,16 @@ def install(scope: str) -> None:
         return record
 
     logging.setLogRecordFactory(_factory)
+
+
+def account_title(email: str) -> str:
+    """How an entry is named: the account, without spelling it out.
+
+    Home Assistant quotes an entry's title in its own log lines, which this
+    integration does not scrub; the first letter and the domain still tell two
+    accounts apart.
+    """
+    name, at, domain = (email or "").partition("@")
+    if not at:
+        return "UGREEN account"
+    return f"{name[:1]}***@{domain}"

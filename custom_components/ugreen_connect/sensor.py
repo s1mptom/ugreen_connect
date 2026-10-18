@@ -82,6 +82,7 @@ async def async_setup_entry(
                 known_ports.add((key, "total"))
                 new.append(UgreenTotalPowerSensor(coordinator, key))
                 new.append(UgreenChargerEnergySensor(coordinator, key))
+                new.append(UgreenWifiSensor(coordinator, key))
             # Only once the charger has reported a custom mode. Under a preset
             # the parser returns nothing -- those bytes are that preset's own
             # settings and not this layout -- so there is nothing to describe
@@ -139,9 +140,10 @@ class UgreenStatusSensor(UgreenDeviceEntity, SensorEntity):
             "device_type": device.get("deviceType"),
             "product_serial_no": device.get("productSerialNo"),
             "product_key": self._product.get("productKey"),
-            "iot_id": extra.get("iotId"),
+            # Not the cloud id or the MAC: an attribute is in front of every
+            # user and in the recorder, and both are this household's own --
+            # the device page has the MAC already, for whoever needs it.
             "network_connected": extra.get("networkStatus") == ONLINE,
-            "mac": device.get("deviceMac"),
         }
 
 
@@ -228,11 +230,9 @@ class UgreenTotalPowerSensor(UgreenDeviceEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        reading = self._reading or {}
-        return {
-            "firmware": reading.get("firmware"),
-            "ssid": reading.get("ssid"),
-        }
+        # The Wi-Fi network's name has a sensor of its own, off by default: here
+        # it went into the recorder with every reading of the total.
+        return {"firmware": (self._reading or {}).get("firmware")}
 
 
 class UgreenSessionSensor(UgreenDeviceEntity, SensorEntity):
@@ -507,3 +507,29 @@ class UgreenSessionChargeSensor(UgreenSessionSensor):
             ),
             "efficiency": options.get(CONF_EFFICIENCY, DEFAULT_EFFICIENCY),
         }
+
+
+class UgreenWifiSensor(UgreenDeviceEntity, SensorEntity):
+    """The Wi-Fi network the charger is on.
+
+    Off until its owner turns it on: the network's name is the household's own,
+    and an enabled sensor is in front of every user and in the recorder.
+    """
+
+    _attr_translation_key = "wifi_network"
+    _attr_icon = "mdi:wifi"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, coordinator: UgreenCoordinator, key: str) -> None:
+        super().__init__(coordinator, key)
+        self._attr_unique_id = f"{key}_wifi_network"
+
+    @property
+    def available(self) -> bool:
+        return super().available and bool((self._reading or {}).get("ssid"))
+
+    @property
+    def native_value(self) -> str | None:
+        return (self._reading or {}).get("ssid")
+

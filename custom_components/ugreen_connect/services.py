@@ -27,14 +27,17 @@ from homeassistant.exceptions import (
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 
-from .const import DOMAIN, WALLPAPER_SIZE
+from .const import DOMAIN, MAX_PICTURE_BYTES, MAX_PICTURE_PIXELS, WALLPAPER_SIZE
 from .coordinator import charger_keys, device_key
+from .image_proxy import read_capped
 from .logsafe import charger_tag
 from .protocol import state_writable
 
 _LOGGER = logging.getLogger(__name__)
 
 SERVICE_SET_WALLPAPER = "set_wallpaper"
+# What a picture may be: the formats a phone or a camera hands over.
+PICTURE_FORMATS = ("JPEG", "PNG", "WEBP", "GIF", "BMP")
 ATTR_PATH = "path"
 ATTR_URL = "url"
 ATTR_IMAGE = "image"
@@ -69,7 +72,14 @@ def _to_wallpaper(raw: bytes) -> bytes:
         raise HomeAssistantError("Pillow is required to resize the picture") from err
 
     width, height = WALLPAPER_SIZE
-    image = Image.open(io.BytesIO(raw))
+    # The header is read before anything is decoded, so a small file that
+    # describes an enormous picture is turned away before it costs memory.
+    try:
+        image = Image.open(io.BytesIO(raw), formats=PICTURE_FORMATS)
+    except Exception:  # noqa: BLE001 -- Pillow raises a family of its own
+        raise HomeAssistantError("That is not a picture this can use") from None
+    if image.width * image.height > MAX_PICTURE_PIXELS:
+        raise HomeAssistantError("The picture is too large")
     image = image.convert("RGB")
 
     scale = max(width / image.width, height / image.height)
@@ -146,6 +156,8 @@ async def async_register(hass: HomeAssistant) -> None:
             raw = _decode(encoded)
         else:
             raise HomeAssistantError("Give one of path, url or image")
+        if len(raw) > MAX_PICTURE_BYTES:
+            raise HomeAssistantError("The picture is too large")
 
         image = await hass.async_add_executor_job(_to_wallpaper, raw)
         file_name = f"ha_wallpaper_{int(time.time())}.jpg"
@@ -231,6 +243,9 @@ async def _fetch(hass: HomeAssistant, url: str) -> bytes:
         async with async_get_clientsession(hass).get(url, timeout=30) as resp:
             if resp.status != 200:
                 raise HomeAssistantError(f"Could not fetch the picture: HTTP {resp.status}")
-            return await resp.read()
+            body = await read_capped(resp.content, MAX_PICTURE_BYTES)
+            if body is None:
+                raise HomeAssistantError("The picture is too large")
+            return body
     except (aiohttp.ClientError, TimeoutError) as err:
         raise HomeAssistantError(f"Could not fetch the picture: {type(err).__name__}") from None

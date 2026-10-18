@@ -158,6 +158,7 @@ def charger_selector(devices: list[dict[str, Any]]) -> SelectSelector:
     )
 
 
+
 class UgreenConnectConfigFlow(ConfigFlow, domain=DOMAIN):
     """Ask for the UgreenConnect account and verify it against the cloud."""
 
@@ -229,7 +230,7 @@ class UgreenConnectConfigFlow(ConfigFlow, domain=DOMAIN):
                 if keys:
                     self._options |= {CONF_CHARGERS: keys, CONF_OFFERED: keys}
                 return self.async_create_entry(
-                    title=email, data=self._data, options=self._options
+                    title=logsafe.account_title(email), data=self._data, options=self._options
                 )
 
         return self.async_show_form(
@@ -253,7 +254,7 @@ class UgreenConnectConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "no_charger"
             else:
                 return self.async_create_entry(
-                    title=self._data[CONF_EMAIL],
+                    title=logsafe.account_title(self._data[CONF_EMAIL]),
                     data=self._data,
                     options=self._options | {CONF_CHARGERS: chosen, CONF_OFFERED: keys},
                 )

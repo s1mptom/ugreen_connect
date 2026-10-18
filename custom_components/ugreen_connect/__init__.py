@@ -28,7 +28,7 @@ from .const import (
     PARAMS_STORE_VERSION,
     REGIONS,
 )
-from .coordinator import UgreenCoordinator, charger_keys, device_key
+from .coordinator import UgreenCoordinator, charger_keys, device_key, remove_dump
 from .frontend import async_register_card
 from .image_proxy import async_register_view
 from .rtcx import RtcxClient
@@ -65,6 +65,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
     logsafe.install(__package__)
     logsafe.remember(entry.data.get(CONF_EMAIL), "<account>")
     logsafe.remember(entry.data.get(CONF_PASSWORD), "<password>")
+    # An entry used to be titled with the account's e-mail, and Home
+    # Assistant's own messages about an entry quote its title -- in logs this
+    # integration does not scrub, and which people are asked to post.
+    if entry.title == entry.data.get(CONF_EMAIL):
+        hass.config_entries.async_update_entry(
+            entry, title=logsafe.account_title(entry.title)
+        )
 
     try:
         await async_register_card(hass)
@@ -116,6 +123,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> bo
     store: Store[dict[str, str]] = Store(
         hass, MODEL_STORE_VERSION, f"{MODEL_STORE_KEY}.{entry.entry_id}"
     )
+    # A snapshot left from when the option was on goes once it is off.
+    if not entry.data.get(CONF_DEBUG_DUMP, False):
+        await hass.async_add_executor_job(remove_dump, hass)
     coordinator = UgreenCoordinator(
         hass,
         entry,
@@ -203,3 +213,5 @@ async def async_remove_entry(hass: HomeAssistant, entry: UgreenConfigEntry) -> N
         hass, PARAMS_STORE_VERSION, f"{PARAMS_STORE_KEY}.{entry.entry_id}"
     )
     await params_store.async_remove()
+    if not hass.config_entries.async_entries(DOMAIN):
+        await hass.async_add_executor_job(remove_dump, hass)
