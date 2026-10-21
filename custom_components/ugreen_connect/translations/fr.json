@@ -1,0 +1,292 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "UGREEN Connect",
+        "description": "Connectez-vous avec le même compte que dans l'app UgreenConnect. Choisissez la région où le compte a été créé : les comptes ne sont pas partagés entre régions.",
+        "data": {
+          "email": "E-mail",
+          "password": "Mot de passe",
+          "region": "Région",
+          "nominal_voltage": "Tension de la batterie",
+          "efficiency": "Rendement de charge",
+          "session_idle_end": "Fin de session après",
+          "debug_dump": "Écrire un instantané brut du cloud dans le dossier de configuration"
+        },
+        "data_description": {
+          "nominal_voltage": "Sert uniquement à convertir les Wh d'une session en mAh. 3,85 V est la tension nominale des téléphones, écouteurs et consoles portables ; la batterie d'un portable est bien plus haute, et son chiffre en mAh n'a de sens qu'une fois cette valeur ajustée.",
+          "efficiency": "Part de ce qui sort du port qui arrive réellement dans la batterie. Le reste part en chaleur dans le câble et le convertisseur de l'appareil.",
+          "session_idle_end": "Durée pendant laquelle un port ne doit rien débiter avant que sa session de charge soit considérée comme terminée et que la suivante puisse commencer. Le chargeur garde un port actif même avec un câble seul, c'est donc la seule façon de clore une session. Assez long pour qu'un téléphone qui se recharge par petites touches à 100 % reste une seule session ; plus court si vous changez d'appareil sur le même câble en moins de deux heures.",
+          "debug_dump": "Enregistre ugreen_connect_debug.json une fois par redémarrage. Utile tant que l'intégration est en développement ; peut être désactivé sans risque ensuite."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reconnecter UGREEN Connect",
+        "description": "Le mot de passe de {email} a été refusé. Saisissez-le à nouveau.",
+        "data": {
+          "password": "Mot de passe"
+        }
+      },
+      "chargers": {
+        "title": "Chargeurs de ce compte",
+        "description": "Cochez les chargeurs à ajouter. Chacun est lu selon son propre modèle, indiqué par le compte, et le tableau de bord passe de l'un à l'autre. Les autres pourront être ajoutés plus tard via Configurer.",
+        "data": {
+          "chargers": "Chargeurs"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossible de joindre le cloud UGREEN.",
+      "invalid_auth": "Compte ou mot de passe refusé.",
+      "no_charger": "Cochez au moins un chargeur."
+    },
+    "abort": {
+      "already_configured": "Ce compte est déjà configuré.",
+      "reauth_successful": "Reconnexion réussie."
+    }
+  },
+  "selector": {
+    "region": {
+      "options": {
+        "europe": "Europe",
+        "america": "Amériques",
+        "asia": "Asie / Reste du monde",
+        "china": "Chine"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "État du cloud",
+        "state": {
+          "online": "En ligne",
+          "offline": "Hors ligne"
+        }
+      },
+      "total_power": {
+        "name": "Puissance totale"
+      },
+      "port_power": {
+        "name": "{port} puissance"
+      },
+      "port_voltage": {
+        "name": "{port} tension"
+      },
+      "port_current": {
+        "name": "{port} courant"
+      },
+      "port_protocol": {
+        "name": "{port} protocole"
+      },
+      "session_energy": {
+        "name": "{port} énergie de la session"
+      },
+      "session_charge": {
+        "name": "{port} charge de la session"
+      },
+      "energy_total": {
+        "name": "{port} énergie"
+      },
+      "energy_total_charger": {
+        "name": "Énergie"
+      },
+      "custom_limit": {
+        "name": "{port} limite du mode personnalisé"
+      },
+      "wifi_network": {
+        "name": "Réseau Wi-Fi"
+      }
+    },
+    "number": {
+      "screen_brightness": {
+        "name": "Luminosité de l'écran"
+      }
+    },
+    "switch": {
+      "screensaver": {
+        "name": "Économiseur d'écran"
+      },
+      "priority_port": {
+        "name": "{port} chargé en priorité"
+      },
+      "dc_always_on": {
+        "name": "DC toujours actif"
+      },
+      "port_output": {
+        "name": "{port} sortie"
+      },
+      "auto_rotate": {
+        "name": "Rotation auto de l'écran"
+      }
+    },
+    "update": {
+      "firmware": {
+        "name": "Firmware"
+      }
+    },
+    "select": {
+      "charging_mode": {
+        "name": "Mode de charge",
+        "state": {
+          "adaptive_power": "Puissance adaptative",
+          "thermal_safe": "Protection thermique",
+          "dc_turbo": "DC turbo",
+          "priority": "Priorité",
+          "custom": "Personnalisé"
+        }
+      },
+      "clock_style": {
+        "name": "Style d'horloge",
+        "state": {
+          "style_1": "Style 1",
+          "style_2": "Style 2",
+          "top_right": "En haut à droite",
+          "centred": "Centrée"
+        }
+      },
+      "time_format": {
+        "name": "Format de l'heure",
+        "state": {
+          "12h": "12 heures",
+          "24h": "24 heures"
+        }
+      },
+      "screen_off_time": {
+        "name": "Extinction de l'écran",
+        "state": {
+          "1_min": "1 minute",
+          "5_min": "5 minutes",
+          "10_min": "10 minutes",
+          "30_min": "30 minutes",
+          "always_on": "Toujours allumé"
+        }
+      },
+      "wallpaper": {
+        "name": "Fond d'écran",
+        "state": {
+          "none": "Aucun"
+        }
+      },
+      "dc_voltage": {
+        "name": "Tension du port DC",
+        "state": {
+          "12": "12 V",
+          "15": "15 V",
+          "20": "20 V"
+        }
+      }
+    },
+    "binary_sensor": {
+      "charging": {
+        "name": "{port} en charge"
+      }
+    },
+    "event": {
+      "charging_event": {
+        "name": "{port} cycle de charge"
+      }
+    }
+  },
+  "services": {
+    "set_wallpaper": {
+      "name": "Définir le fond d'écran",
+      "description": "Envoie une image et l'affiche sur l'écran du chargeur. Elle est recadrée en 560x170 depuis le centre ; la carte permet de choisir le recadrage.",
+      "fields": {
+        "device_id": {
+          "name": "Chargeur",
+          "description": "Le chargeur auquel envoyer l'image."
+        },
+        "path": {
+          "name": "Fichier",
+          "description": "Chemin d'une image sur l'hôte Home Assistant, ex. /config/www/bureau.jpg."
+        },
+        "url": {
+          "name": "URL",
+          "description": "Adresse d'une image à télécharger puis envoyer."
+        },
+        "image": {
+          "name": "Données de l'image",
+          "description": "L'image elle-même, encodée en base64, avec ou sans préfixe data:."
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options UGREEN Connect",
+        "data": {
+          "scan_interval": "Interroger toutes les",
+          "region": "Région",
+          "debug_dump": "Écrire un instantané brut du cloud dans le dossier de configuration",
+          "nominal_voltage": "Tension de la batterie",
+          "efficiency": "Rendement de charge",
+          "session_idle_end": "Fin de session après",
+          "chargers": "Chargeurs"
+        },
+        "data_description": {
+          "scan_interval": "Fréquence des relevés. Mesurée d'un début au suivant : l'attente de la réponse du chargeur est donc incluse et ne s'y ajoute pas. 5 s garde la puissance en direct ; augmentez-la pour moins solliciter les serveurs UGREEN.",
+          "region": "À changer uniquement si le compte a été déplacé vers un autre serveur. Le mot de passe est vérifié sur la nouvelle région avant d'enregistrer.",
+          "debug_dump": "Enregistre ugreen_connect_debug.json à chaque actualisation. Ce sont les données brutes du cloud, non modifiées.",
+          "nominal_voltage": "Sert uniquement à convertir les Wh d'une session en mAh. 3,85 V est la tension nominale des téléphones, écouteurs et consoles portables ; la batterie d'un portable est bien plus haute, et son chiffre en mAh n'a de sens qu'une fois cette valeur ajustée.",
+          "efficiency": "Part de ce qui sort du port qui arrive réellement dans la batterie. Le reste part en chaleur dans le câble et le convertisseur de l'appareil.",
+          "session_idle_end": "Durée pendant laquelle un port ne doit rien débiter avant que sa session de charge soit considérée comme terminée et que la suivante puisse commencer. Le chargeur garde un port actif même avec un câble seul, c'est donc la seule façon de clore une session. Assez long pour qu'un téléphone qui se recharge par petites touches à 100 % reste une seule session ; plus court si vous changez d'appareil sur le même câble en moins de deux heures.",
+          "chargers": "Les chargeurs de ce compte suivis par Home Assistant. En décocher un supprime son appareil et ses entités ; le recocher les recrée."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossible de joindre le cloud UGREEN.",
+      "invalid_auth": "Compte ou mot de passe refusé dans cette région.",
+      "no_charger": "Cochez au moins un chargeur."
+    }
+  },
+  "exceptions": {
+    "not_writable_on_model": {
+      "message": "Ce réglage n'a pas été validé sur le {model} : il est affiché mais pas écrit. Il peut être modifié dans l'app UGREEN."
+    },
+    "mode_not_selectable": {
+      "message": "Le mode Personnalisé se règle uniquement dans l'app UgreenConnect. Home Assistant applique les préréglages ; le mode Personnalisé se configure et se choisit dans l'éditeur de l'app."
+    },
+    "priority_not_running": {
+      "message": "Le chargeur n'est pas en mode Priorité : impossible de choisir les ports prioritaires. Choisissez d'abord Priorité."
+    },
+    "priority_needs_a_port": {
+      "message": "Au moins un port doit être prioritaire en mode Priorité. Activez-en un autre avant de désactiver celui-ci."
+    },
+    "dc_turbo_not_running": {
+      "message": "Le chargeur n'est pas en DC turbo : les réglages du port DC ne peuvent pas être modifiés. Choisissez d'abord DC turbo."
+    },
+    "port_output_app_only": {
+      "message": "Les ports du 160W s'activent et se désactivent dans l'app UGREEN pour l'instant. Home Assistant les affiche sans les piloter."
+    },
+    "firmware_version_unknown": {
+      "message": "Le chargeur n'a pas encore indiqué sa version de firmware. Réessayez dans une minute."
+    },
+    "firmware_check_failed": {
+      "message": "Impossible de demander le fichier de firmware au cloud UGREEN : {error}"
+    },
+    "firmware_current": {
+      "message": "Le cloud UGREEN ne propose plus de firmware plus récent pour ce chargeur."
+    },
+    "firmware_failed": {
+      "message": "Le chargeur indique que la mise à jour du firmware a échoué. Il garde sa version actuelle."
+    },
+    "firmware_unconfirmed": {
+      "message": "Le chargeur n'a pas confirmé la mise à jour. Vérifiez sa version de firmware dans quelques minutes ; si elle n'a pas changé, réessayez."
+    },
+    "firmware_installing": {
+      "message": "Une mise à jour du firmware est déjà en cours sur ce chargeur."
+    },
+    "auto_rotate_app_only": {
+      "message": "La rotation auto de l'écran du 160W se règle dans l'app UGREEN pour l'instant. Home Assistant l'affiche sans la piloter."
+    }
+  },
+  "issues": {
+    "new_charger": {
+      "title": "Un nouveau chargeur est sur votre compte UGREEN",
+      "description": "{names} est sur votre compte UGREEN mais pas encore dans Home Assistant. Pour l'ajouter : Paramètres → Appareils et services → UGREEN Connect → Configurer, puis cochez-le. Enregistrer sans le cocher fait disparaître ce message."
+    }
+  }
+}
