@@ -27,7 +27,7 @@ const TEXT = {
   },
   fr: {
     title: 'Terminées récemment', nothing: "Aucune charge terminée pour l'instant.",
-    today: "Aujourd'hui {time}', yesterday: 'Hier",
+    today: "Aujourd'hui {time}", yesterday: 'Hier',
     noPorts: 'Aucune entité de chargeur trouvée. Renseignez device_id dans la carte.',
   },
   de: {
