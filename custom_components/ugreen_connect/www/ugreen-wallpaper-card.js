@@ -434,7 +434,7 @@ class UgreenWallpaperCard extends HTMLElement {
           </div>
           <div class="main">
             <div class="headrow">
-              <h2 class="title">${this._config.title || t('title')}</h2>
+              <h2 class="title"></h2>
               <label class="sw">${t('screensaver')}<ha-switch class="power" aria-label="${t('screensaver')}"></ha-switch></label>
             </div>
             <label class="line"><span>${t('brightness')}</span><input type="range" class="bright" min="0" max="100" step="1"><span class="val"></span></label>
@@ -521,6 +521,8 @@ class UgreenWallpaperCard extends HTMLElement {
           </div>
         </div>
       </dialog>`);
+    // As text: a title from the card's config is not this card's to trust as markup.
+    this._root.querySelector('h2.title').textContent = this._config.title || t('title');
 
     const $ = (sel) => this._root.querySelector(sel);
     const $$ = (sel) => [...this._root.querySelectorAll(sel)];

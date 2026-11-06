@@ -109,7 +109,7 @@ class UgreenEnergyCard extends HTMLElement {
         <style>${STYLE}</style>
         <div class="body">
           <div class="head">
-            <h2 class="u-card-title">${this._config.title || this._t('titled', { period: this._t(this._period()) })}</h2>
+            <h2 class="u-card-title"></h2>
             <span class="feeds"></span>
           </div>
           <div class="bars"></div>
@@ -118,6 +118,8 @@ class UgreenEnergyCard extends HTMLElement {
         </div>
       </ha-card>
     `);
+    // As text: a title from the card's config is not this card's to trust as markup.
+    this._root.querySelector('h2.u-card-title').textContent = this._config.title || this._t('titled', { period: this._t(this._period()) });
     this._els = {
       body: this._root.querySelector('.body'),
       tip: this._root.querySelector('.u-tip'),
