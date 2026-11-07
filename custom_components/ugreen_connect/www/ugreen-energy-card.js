@@ -28,6 +28,17 @@ const TEXT = {
     nothing: 'Nothing recorded for this period yet.',
     noDevice: 'No charger entities found. Set device_id in the card config.',
   },
+  fr: {
+    title: 'Énergie par port',
+    titled: 'Énergie {period}',
+    inAll: '{kwh} kWh au total',
+    day: "aujourd'hui",
+    week: 'cette semaine',
+    month: 'ce mois-ci',
+    all: 'depuis le début',
+    nothing: "Rien d'enregistré sur cette période.",
+    noDevice: 'Aucune entité de chargeur trouvée. Renseignez device_id dans la carte.',
+  },
   de: {
     title: 'Energie je Anschluss',
     titled: 'Energie {period}',

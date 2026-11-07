@@ -31,6 +31,12 @@ const TEXT = {
     switchedOff: 'Output off',
     noPorts: 'No charger entities found. Set device_id in the card config.',
   },
+  fr: {
+    energy: 'Énergie', charge: 'Charge', time: 'En charge depuis', first: 'Prioritaire', firstTitle: 'Chargé en priorité',
+    idle: 'Pas en charge', cable: 'Câble seul', onPort: '{v} V sur le port', turboOff: 'Coupé en DC turbo',
+    switchedOff: 'Sortie coupée',
+    noPorts: 'Aucune entité de chargeur trouvée. Renseignez device_id dans la carte.',
+  },
   de: {
     energy: 'Energie', charge: 'Ladung', time: 'Lädt seit', first: 'Zuerst', firstTitle: 'Zuerst geladen',
     idle: 'Lädt nicht', cable: 'Nur Kabel', onPort: '{v} V am Anschluss', turboOff: 'Aus im DC-Turbo',
