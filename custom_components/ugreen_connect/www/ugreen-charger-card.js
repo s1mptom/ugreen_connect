@@ -344,12 +344,15 @@ class UgreenChargerCard extends HTMLElement {
       });
     }
     const fw = this._firmware();
-    if (fw) items.push({ html: this._t('firmware', { version: fw.installed || '' }), entity: fw.id });
+    // As text: the version arrives from the charger through the cloud, and is
+    // not this card's to trust as markup.
+    if (fw) items.push({ text: this._t('firmware', { version: fw.installed || '' }), entity: fw.id });
     const made = items.map((item) => {
       const el = document.createElement('button');
       el.type = 'button';
       el.className = item.cls || '';
-      el.innerHTML = item.html;
+      if (item.text !== undefined) el.textContent = item.text;
+      else el.innerHTML = item.html;
       el.addEventListener('click', () => this._moreInfo(item.entity));
       return el;
     });

@@ -96,7 +96,7 @@ class UgreenPowerCard extends HTMLElement {
         <style>${STYLE}</style>
         <div class="body">
           <div class="head">
-            <h2 class="u-card-title">${this._config.title || this._t('title')}</h2>
+            <h2 class="u-card-title"></h2>
             <div class="ranges u-seg small" role="radiogroup"></div>
           </div>
           <div class="chart"></div>
@@ -105,6 +105,8 @@ class UgreenPowerCard extends HTMLElement {
         </div>
       </ha-card>
     `);
+    // As text: a title from the card's config is not this card's to trust as markup.
+    this._root.querySelector('h2.u-card-title').textContent = this._config.title || this._t('title');
     this._els = {
       ranges: this._root.querySelector('.ranges'),
       chart: this._root.querySelector('.chart'),
