@@ -29,9 +29,15 @@ get readings into Home Assistant without a Bluetooth proxy next to the device.
 
 ## Install
 
-**HACS** → three-dot menu → *Custom repositories* → add `s1mptom/ugreen_connect`
-as type *Integration* → install → **restart Home Assistant** → *Settings →
-Devices & Services → Add integration → UGREEN Connect*.
+[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=s1mptom&repository=ugreen_connect&category=integration)
+
+**HACS**: search for *UGREEN Connect* → download → **restart Home Assistant** →
+*Settings → Devices & Services → Add integration → UGREEN Connect*. The button
+above opens the same page in your own Home Assistant.
+
+If the search does not find it yet, HACS has not refreshed its list: add it by
+hand under three-dot menu → *Custom repositories* → `s1mptom/ugreen_connect`, type
+*Integration*, then carry on as above.
 
 Manual: copy `custom_components/ugreen_connect` into your `config/` and restart.
 
