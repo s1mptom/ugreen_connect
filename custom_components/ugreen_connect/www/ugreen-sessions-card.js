@@ -25,6 +25,11 @@ const TEXT = {
     today: 'Today {time}', yesterday: 'Yesterday',
     noPorts: 'No charger entities found. Set device_id in the card config.',
   },
+  es: {
+    title: 'Terminadas hace poco', nothing: 'Todavía no ha terminado ninguna carga.',
+    today: 'Hoy {time}', yesterday: 'Ayer',
+    noPorts: 'No se han encontrado entidades del cargador. Indica device_id en la configuración de la tarjeta.',
+  },
   fr: {
     title: 'Terminées récemment', nothing: "Aucune charge terminée pour l'instant.",
     today: "Aujourd'hui {time}", yesterday: 'Hier',

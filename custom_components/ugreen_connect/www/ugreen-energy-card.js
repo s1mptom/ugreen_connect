@@ -28,6 +28,17 @@ const TEXT = {
     nothing: 'Nothing recorded for this period yet.',
     noDevice: 'No charger entities found. Set device_id in the card config.',
   },
+  es: {
+    title: 'Energía por puerto',
+    titled: 'Energía {period}',
+    inAll: '{kwh} kWh en total',
+    day: 'de hoy',
+    week: 'de esta semana',
+    month: 'de este mes',
+    all: 'total',
+    nothing: 'Aún no hay nada registrado en este periodo.',
+    noDevice: 'No se han encontrado entidades del cargador. Indica device_id en la configuración de la tarjeta.',
+  },
   fr: {
     title: 'Énergie par port',
     titled: 'Énergie {period}',
