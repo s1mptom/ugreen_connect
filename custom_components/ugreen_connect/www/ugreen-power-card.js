@@ -28,6 +28,14 @@ const TEXT = {
     noData: 'No history yet — the recorder has nothing for this range.',
     noDevice: 'No charger entities found. Set device_id in the card config.',
   },
+  es: {
+    title: 'Potencia',
+    total: 'Total',
+    hour: '{n} h',
+    day: '24 h',
+    noData: 'Aún no hay historial registrado para este intervalo.',
+    noDevice: 'No se han encontrado entidades del cargador. Indica device_id en la configuración de la tarjeta.',
+  },
   fr: {
     title: 'Puissance',
     total: 'Total',

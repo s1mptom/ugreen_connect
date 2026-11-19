@@ -45,6 +45,7 @@ import './ugreen-wallpaper-card.js';
 
 const TEXT = {
   en: { chargers: 'Chargers' },
+  es: { chargers: 'Cargadores' },
   fr: { chargers: 'Chargeurs' },
   de: { chargers: 'Ladegeräte' },
   ru: { chargers: 'Зарядки' },

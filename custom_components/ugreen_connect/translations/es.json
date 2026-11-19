@@ -1,0 +1,292 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "UGREEN Connect",
+        "description": "Inicia sesión con la misma cuenta que usas en la app UgreenConnect. Elige la región en la que se registró tu cuenta: las cuentas no se comparten entre regiones.",
+        "data": {
+          "email": "Correo electrónico",
+          "password": "Contraseña",
+          "region": "Región",
+          "nominal_voltage": "Voltaje de la batería",
+          "efficiency": "Eficiencia de carga",
+          "session_idle_end": "La sesión termina tras",
+          "debug_dump": "Guardar una instantánea sin procesar de la nube en la carpeta de configuración"
+        },
+        "data_description": {
+          "nominal_voltage": "Solo se usa para expresar los vatios hora de una sesión en miliamperios hora. 3,85 V es el voltaje nominal de la celda de móviles, auriculares y consolas portátiles; la batería de un portátil tiene uno mucho más alto, y su cifra en miliamperios hora no significa nada hasta que este valor coincida con el suyo.",
+          "efficiency": "Qué parte de lo que sale del puerto llega a la celda. El resto se convierte en calor en el cable y en el propio convertidor del dispositivo.",
+          "session_idle_end": "Cuánto tiempo tiene que pasar un puerto sin entregar nada para que su sesión de carga se dé por terminada y pueda empezar la siguiente. El cargador mantiene activo un puerto aunque solo tenga un cable conectado, así que esto es lo único que puede terminar una sesión. Lo bastante largo para que un móvil que se va recargando al 100 % siga siendo una sola sesión; más corto si cambias de dispositivo en el mismo cable en un par de horas.",
+          "debug_dump": "Guarda ugreen_connect_debug.json una vez por reinicio, legible solo por el propietario y sin enlaces firmados. Contiene identificadores de tus cargadores y de tu Wi-Fi; se borra al desactivar esta opción."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Volver a autenticar UGREEN Connect",
+        "description": "Se ha rechazado la contraseña de {email}. Vuelve a introducirla.",
+        "data": {
+          "password": "Contraseña"
+        }
+      },
+      "chargers": {
+        "title": "Cargadores de esta cuenta",
+        "description": "Marca los cargadores que quieras añadir. Cada uno se lee como su propio modelo, el que indica la cuenta, y el panel permite cambiar de uno a otro. El resto se pueden añadir más tarde en Configurar.",
+        "data": {
+          "chargers": "Cargadores"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "No se ha podido conectar con la nube de UGREEN.",
+      "invalid_auth": "Se ha rechazado la cuenta o la contraseña.",
+      "no_charger": "Marca al menos un cargador."
+    },
+    "abort": {
+      "already_configured": "Esta cuenta ya está configurada.",
+      "reauth_successful": "La reautenticación se ha realizado correctamente."
+    }
+  },
+  "selector": {
+    "region": {
+      "options": {
+        "europe": "Europa",
+        "america": "América",
+        "asia": "Asia / Resto del mundo",
+        "china": "China"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Estado de la nube",
+        "state": {
+          "online": "En línea",
+          "offline": "Sin conexión"
+        }
+      },
+      "total_power": {
+        "name": "Potencia total"
+      },
+      "port_power": {
+        "name": "Potencia {port}"
+      },
+      "port_voltage": {
+        "name": "Voltaje {port}"
+      },
+      "port_current": {
+        "name": "Corriente {port}"
+      },
+      "port_protocol": {
+        "name": "Protocolo {port}"
+      },
+      "session_energy": {
+        "name": "Energía de la sesión {port}"
+      },
+      "session_charge": {
+        "name": "Carga de la sesión {port}"
+      },
+      "energy_total": {
+        "name": "Energía {port}"
+      },
+      "energy_total_charger": {
+        "name": "Energía"
+      },
+      "custom_limit": {
+        "name": "Límite del modo personalizado {port}"
+      },
+      "wifi_network": {
+        "name": "Red Wi-Fi"
+      }
+    },
+    "number": {
+      "screen_brightness": {
+        "name": "Brillo de la pantalla"
+      }
+    },
+    "switch": {
+      "screensaver": {
+        "name": "Salvapantallas"
+      },
+      "priority_port": {
+        "name": "Carga prioritaria {port}"
+      },
+      "dc_always_on": {
+        "name": "DC siempre activo"
+      },
+      "port_output": {
+        "name": "Salida {port}"
+      },
+      "auto_rotate": {
+        "name": "Rotación automática de la pantalla"
+      }
+    },
+    "update": {
+      "firmware": {
+        "name": "Firmware"
+      }
+    },
+    "select": {
+      "charging_mode": {
+        "name": "Modo de carga",
+        "state": {
+          "adaptive_power": "Potencia adaptativa",
+          "thermal_safe": "Protección térmica",
+          "dc_turbo": "DC turbo",
+          "priority": "Prioridad",
+          "custom": "Personalizado"
+        }
+      },
+      "clock_style": {
+        "name": "Estilo del reloj",
+        "state": {
+          "style_1": "Estilo 1",
+          "style_2": "Estilo 2",
+          "top_right": "Arriba a la derecha",
+          "centred": "Centrado"
+        }
+      },
+      "time_format": {
+        "name": "Formato de hora",
+        "state": {
+          "12h": "12 horas",
+          "24h": "24 horas"
+        }
+      },
+      "screen_off_time": {
+        "name": "Apagado de la pantalla",
+        "state": {
+          "1_min": "1 minuto",
+          "5_min": "5 minutos",
+          "10_min": "10 minutos",
+          "30_min": "30 minutos",
+          "always_on": "Siempre encendida"
+        }
+      },
+      "wallpaper": {
+        "name": "Fondo de pantalla",
+        "state": {
+          "none": "Ninguno"
+        }
+      },
+      "dc_voltage": {
+        "name": "Voltaje del puerto DC",
+        "state": {
+          "12": "12 V",
+          "15": "15 V",
+          "20": "20 V"
+        }
+      }
+    },
+    "binary_sensor": {
+      "charging": {
+        "name": "{port} cargando"
+      }
+    },
+    "event": {
+      "charging_event": {
+        "name": "Sesión de carga {port}"
+      }
+    }
+  },
+  "services": {
+    "set_wallpaper": {
+      "name": "Establecer fondo de pantalla",
+      "description": "Sube una imagen y la muestra en la pantalla del cargador. Se recorta a 560x170 desde el centro; la tarjeta te permite elegir el recorte.",
+      "fields": {
+        "device_id": {
+          "name": "Cargador",
+          "description": "A qué cargador enviar la imagen."
+        },
+        "path": {
+          "name": "Archivo",
+          "description": "Ruta a una imagen en el host de Home Assistant, p. ej. /config/www/desk.jpg. Solo para administradores y automatizaciones."
+        },
+        "url": {
+          "name": "URL",
+          "description": "Dirección de una imagen que se descarga y se sube. Solo para administradores y automatizaciones."
+        },
+        "image": {
+          "name": "Datos de la imagen",
+          "description": "La propia imagen, codificada en base64, con o sin el prefijo data:."
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opciones de UGREEN Connect",
+        "data": {
+          "scan_interval": "Consultar cada",
+          "region": "Región",
+          "debug_dump": "Guardar una instantánea sin procesar de la nube en la carpeta de configuración",
+          "nominal_voltage": "Voltaje de la batería",
+          "efficiency": "Eficiencia de carga",
+          "session_idle_end": "La sesión termina tras",
+          "chargers": "Cargadores"
+        },
+        "data_description": {
+          "scan_interval": "Cada cuánto llega una lectura. Se mide de inicio a inicio, así que la espera a que responda el cargador se descuenta de este tiempo en lugar de sumarse. Con 5 s la potencia se ve en tiempo real; súbelo para cargar menos los servidores de UGREEN.",
+          "region": "Cámbiala solo si la propia cuenta se trasladó a otro servidor. La contraseña se comprueba en la nueva región antes de guardar el cambio.",
+          "debug_dump": "Guarda ugreen_connect_debug.json una vez por reinicio, legible solo por el propietario y sin enlaces firmados. Contiene identificadores de tus cargadores y de tu Wi-Fi; se borra al desactivar esta opción.",
+          "nominal_voltage": "Solo se usa para expresar los vatios hora de una sesión en miliamperios hora. 3,85 V es el voltaje nominal de la celda de móviles, auriculares y consolas portátiles; la batería de un portátil tiene uno mucho más alto, y su cifra en miliamperios hora no significa nada hasta que este valor coincida con el suyo.",
+          "efficiency": "Qué parte de lo que sale del puerto llega a la celda. El resto se convierte en calor en el cable y en el propio convertidor del dispositivo.",
+          "session_idle_end": "Cuánto tiempo tiene que pasar un puerto sin entregar nada para que su sesión de carga se dé por terminada y pueda empezar la siguiente. El cargador mantiene activo un puerto aunque solo tenga un cable conectado, así que esto es lo único que puede terminar una sesión. Lo bastante largo para que un móvil que se va recargando al 100 % siga siendo una sola sesión; más corto si cambias de dispositivo en el mismo cable en un par de horas.",
+          "chargers": "Los cargadores de esta cuenta que Home Assistant consulta y muestra. Al desmarcar uno se eliminan su dispositivo y sus entidades; al volver a marcarlo, vuelven."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "No se ha podido conectar con la nube de UGREEN.",
+      "invalid_auth": "Se ha rechazado la cuenta o la contraseña en esa región.",
+      "no_charger": "Marca al menos un cargador."
+    }
+  },
+  "exceptions": {
+    "not_writable_on_model": {
+      "message": "Este ajuste no se ha verificado en el {model}, así que se muestra pero no se escribe. Su valor se puede cambiar en la app de UGREEN."
+    },
+    "mode_not_selectable": {
+      "message": "Personalizado solo se puede activar en la app UgreenConnect. Home Assistant activa los modos predefinidos; el modo Personalizado se configura y se elige en el editor de la propia app."
+    },
+    "priority_not_running": {
+      "message": "El cargador no está en Prioridad, así que no se puede elegir qué puertos carga primero. Elige primero Prioridad."
+    },
+    "priority_needs_a_port": {
+      "message": "En Prioridad, al menos un puerto tiene que cargarse primero. Activa otro antes de desactivar este."
+    },
+    "dc_turbo_not_running": {
+      "message": "El cargador no está en DC turbo, así que no se pueden cambiar los ajustes del puerto DC. Elige primero DC turbo."
+    },
+    "port_output_app_only": {
+      "message": "Por ahora, los puertos del 160W se encienden y apagan en la app de UGREEN. Home Assistant los muestra, pero todavía no los controla."
+    },
+    "firmware_version_unknown": {
+      "message": "El cargador aún no ha informado de su versión de firmware. Vuelve a intentarlo dentro de un minuto."
+    },
+    "firmware_check_failed": {
+      "message": "No se ha podido pedir el archivo de firmware a la nube de UGREEN: {error}"
+    },
+    "firmware_current": {
+      "message": "La nube de UGREEN ya no ofrece un firmware más reciente para este cargador."
+    },
+    "firmware_failed": {
+      "message": "El cargador ha informado de que la actualización de firmware ha fallado. Sigue funcionando con la versión que tenía."
+    },
+    "firmware_unconfirmed": {
+      "message": "El cargador no ha confirmado la actualización de firmware. Comprueba su versión de firmware dentro de unos minutos; si no ha cambiado, vuelve a intentarlo."
+    },
+    "firmware_installing": {
+      "message": "Ya hay una actualización de firmware en curso en este cargador."
+    },
+    "auto_rotate_app_only": {
+      "message": "Por ahora, la rotación automática de la pantalla del 160W se activa en la app de UGREEN. Home Assistant la muestra, pero todavía no la controla."
+    }
+  },
+  "issues": {
+    "new_charger": {
+      "title": "Hay un cargador nuevo en tu cuenta de UGREEN",
+      "description": "{names} está en tu cuenta de UGREEN, pero todavía no en Home Assistant. Para añadirlo, abre Ajustes → Dispositivos y servicios → UGREEN Connect → Configurar y márcalo. Si guardas sin marcarlo, este mensaje desaparece."
+    }
+  }
+}
